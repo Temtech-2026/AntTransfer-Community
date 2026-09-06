@@ -1,4 +1,4 @@
-# AntTransfer CE 系统设计文档
+# 🏗️ AntTransfer CE 系统设计文档
 
 | 项 | 内容 |
 | --- | --- |
@@ -13,7 +13,7 @@
 
 ---
 
-## 1. 总体架构
+## 1. 🧭 总体架构
 
 ### 1.1 运行形态与部署拓扑
 
@@ -67,7 +67,7 @@ entity       # 对应表实体（继承 BaseEntity）
 model        # DTO / VO / 上下文
 ```
 
-## 2. 认证与会话（To-Be，at-auth）
+## 2. 🔐 认证与会话（To-Be，at-auth）
 
 ### 2.1 双令牌模型（US-07）
 
@@ -123,7 +123,7 @@ DB 事务内执行 `token_epoch = token_epoch + 1`，并主动失效两个 Redis
   Controller 参数注入或静态上下文读取，业务层不再重复查库；
 - **异步边界**（线程池/定时任务）须显式透传或不透传（禁止隐式串号），同 TraceId 处理。
 
-## 3. 授权模型（To-Be，at-permission）
+## 3. 🗝️ 授权模型（To-Be，at-permission）
 
 ### 3.1 判定合并（Access Decision）
 
@@ -184,7 +184,7 @@ DB 事务内执行 `token_epoch = token_epoch + 1`，并主动失效两个 Redis
   `POST /api/v1/auth/token/refresh`、外发分享下载通道、健康检查端点；
 - **禁止仅在前端隐藏功能**（US-04：后端强制鉴权）。
 
-## 4. 数据模型与表族
+## 4. 🗄️ 数据模型与表族
 
 ### 4.1 表族地图
 
@@ -213,7 +213,7 @@ DB 事务内执行 `token_epoch = token_epoch + 1`，并主动失效两个 Redis
   **update_time 写入者须统一**（应用 MetaObjectHandler 或 DB `on update`，二选一，防时钟/覆盖漂移，[T-08]）；
 - 命名 snake_case；索引前缀 `idx_`，唯一键前缀 `uk_`。
 
-## 5. 核心业务流与状态机
+## 5. 🔄 核心业务流与状态机
 
 ### 5.1 上传主线（at-transfer + at-file，时序口径见 use-case-flows §1）
 
@@ -266,7 +266,7 @@ DB 事务内执行 `token_epoch = token_epoch + 1`，并主动失效两个 Redis
    尝试窗口，无正确性风险；
 4. 白名单端点：分享下载允许**无登录**，但校验严格限定在分享通道内，不泄露原存储路径（[V-07]）。
 
-## 6. 一致性、并发与事务设计基线（红线，实现必守）
+## 6. 🚧 一致性、并发与事务设计基线（红线，实现必守）
 
 | # | 原则 |
 | --- | --- |
@@ -281,7 +281,7 @@ DB 事务内执行 `token_epoch = token_epoch + 1`，并主动失效两个 Redis
 | P-9 | 时间：过期/回收等强一致判定统一**数据库时钟**（`expire_at <= now()` 交给 SQL），应用层只传参；`datetime` 语义与 JDBC/容器时区（Asia/Shanghai）在配置中显式统一 |
 | P-10 | 默认拒绝（§3.5）与最小权限；生产配置禁止调试端点（swagger/actuator）暴露 |
 
-## 7. 横切设计
+## 7. ✂️ 横切设计
 
 | 横切 | 决策 |
 | --- | --- |
@@ -312,7 +312,7 @@ Key 与 TTL 的**唯一权威常量**在 at-common `RedisKeyConstants`（各业�
 > 语义红线：本表中仅 `at:token:refresh:{userId}` 与“分享链接临时锁”属 Redis 单写（写丢失
 > 会放宽安全窗口但不会破坏数据正确性）；其余各键全部遵循 P-8（DB 为主、Redis 丢失可自愈）。
 
-## 8. 现状核对（As-Is）与实现顺序
+## 8. 🔍 现状核对（As-Is）与实现顺序
 
 **已落地**：8 模块结构 + 依赖铁律；`Result/ErrorCode/BaseEntity/BusinessException/TraceUtils`；
 网关过滤器/全局异常/CORS；`RequireLogin` / `RequirePermission` 注解（**尚无 AOP/拦截器实现**）；
@@ -332,7 +332,7 @@ Redis Key 规划定稿：at-common `RedisKeyConstants`（`at:` 前缀 Key/TTL �
 4. 审批主线（冲突判重 1008/1009 + CAS + 到期回收定时任务）；
 5. 外发分享（下载三校验 + 次数原子扣减 + 审计）。
 
-## 9. 关联文档
+## 9. 🔗 关联文档
 
 - 产品范围与验收：[PRD](../PRD.md)；时序基线：[use-case-flows](./use-case-flows.md)；
   接口契约：[API](../api/README.md)、[error-codes](../api/error-codes.md)；

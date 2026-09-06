@@ -1,6 +1,6 @@
-# Docker 部署物
+# 🐳 Docker 部署物
 
-## 内容
+## 📂 内容
 
 | 文件/位置 | 用途 |
 | --- | --- |
@@ -11,7 +11,7 @@
 | `.dockerignore` | 排除 `target/`、`archive/` 等，控制构建上下文 |
 | `.github/workflows/docker-image.yml` | 手动触发：构建并推送 `ghcr.io` 镜像 |
 
-## 镜像速览
+## 🖼️ 镜像速览
 
 ```bash
 # 本地构建
@@ -26,12 +26,12 @@ docker run --rm -p 8080:8080 \
   anttransfer/server:latest
 ```
 
-## 镜像内容（Dockerfile）
+## 🧱 镜像内容（Dockerfile）
 
-- 基础镜像：构建 `maven:3.9.16-eclipse-temurin-21`，运行 `eclipse-temurin:21-jre`
-- 时区 `Asia/Shanghai`，默认 `SPRING_PROFILES_ACTIVE=prod`
-- 暴露端口 `8080`，默认堆 `-Xms256m -Xmx512m`
+- ⚙️ 基础镜像：构建 `maven:3.9.16-eclipse-temurin-21`，运行 `eclipse-temurin:21-jre`
+- 🌏 时区 `Asia/Shanghai`，默认 `SPRING_PROFILES_ACTIVE=prod`
+- 🔌 暴露端口 `8080`，默认堆 `-Xms256m -Xmx512m`
 
-> 说明：运行时镜像仅包含 fat jar。Flyway 迁移脚本（仓库根 `sql/`）已在 Maven 构建阶段由
+> 💡 说明：运行时镜像仅包含 fat jar。Flyway 迁移脚本（仓库根 `sql/`）已在 Maven 构建阶段由
 > `at-bootstrap` 自动打包进 jar 内 `BOOT-INF/classes/db/migration`，运行时 Flyway 从
 > `classpath:db/migration` 命中即可，镜像与部署侧无需再携带 `sql/`。

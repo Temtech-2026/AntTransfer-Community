@@ -1,4 +1,4 @@
-# Helm
+# ⛵ Helm
 
 Helm Chart 为**预留目录**，尚未生成。
 
@@ -18,4 +18,4 @@ deploy/helm/anttransfer/
 
 落地前请先通过 [kubernetes 样例](../kubernetes/anttransfer-server.yaml) 验证部署参数。
 
-> 发布首个稳定版本（1.0.0）时随包提供，届时使用 `helm install anttransfer ./anttransfer` 即可。
+> 📦 发布首个稳定版本（1.0.0）时随包提供，届时使用 `helm install anttransfer ./anttransfer` 即可。

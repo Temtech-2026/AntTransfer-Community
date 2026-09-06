@@ -1,10 +1,10 @@
-# 核心用例时序（Use-Case Flows）
+# ⚙️ 核心用例时序（Use-Case Flows）
 
-> 两条核心闭环——**上传主线**（传输引擎）与**权限审批主线**（RBAC 标准流程）——的系统级时序。
-> 关联：[PRD §5](../PRD.md#5-主用例时序描述文字版)、[API 规范](../api/README.md)、[错误码](../api/error-codes.md)、[架构](./README.md)。
-> 状态：设计基线（draft）。骨架期仅具备实体与注解（见「现状核对」），Controller/Service 落地时以本文件为口径。
+> 🎯 两条核心闭环——**上传主线**（传输引擎）与**权限审批主线**（RBAC 标准流程）——的系统级时序。
+> 🔗 关联：[PRD §5](../PRD.md#5-主用例时序描述文字版)、[API 规范](../api/README.md)、[错误码](../api/error-codes.md)、[架构](./README.md)。
+> 🚧 状态：设计基线（draft）。骨架期仅具备实体与注解（见「现状核对」），Controller/Service 落地时以本文件为口径。
 
-## 0. 阅读约定
+## 0️⃣ 📌 阅读约定
 
 - 步骤以「前端 → 服务端」为主视角；`code` 指 `Result.body.code`（业务判据），括号内为 HTTP 状态。
 - 表均为 Flyway 新增脚本（`sql/V{n}__*.sql`），**禁止回改已发布脚本**。
@@ -12,7 +12,7 @@
 
 ---
 
-## 1. 上传主线
+## 1️⃣ ⬆️ 上传主线
 
 **参与模块**：`at-transfer`（任务/分片/合并）、`at-file`（元数据落库）。
 **设计要点**：双层 Hash —— ① 整件 SHA-256 = 秒传键（存 `sys_file.sha256`）；② 每分片 SHA-256 = 传输校验。二者职责不同，缺一不可。
@@ -45,13 +45,13 @@
 
 ---
 
-## 2. 权限审批主线（RBAC 标准流程）
+## 2️⃣ 🔐 权限审批主线（RBAC 标准流程）
 
 **参与模块**：`at-permission`（申请/审批/授权判定，主）、`at-auth`（当前用户/审批人身份）、`at-collaboration`（资源归属与通知域监听）、`at-common`（审计事件/`AuditSink` 扩展点）。
 
 **申请单要素**：`apply_type`（ACCESS/DOWNLOAD/EDIT/SHARE）+ `resource`（`resource_type`/`resource_id`）+ `purpose`（目的/理由）+ `desired_expire_at`（拟授权到期时刻，默认申请 24 h，批复可调整）。
 
-### 2.1 领域事件（进程内 `ApplicationEventPublisher`，事务提交后发布）
+### 2.1 📡 领域事件（进程内 `ApplicationEventPublisher`，事务提交后发布）
 
 | 事件 | 发布方 | 监听方 / 效果 |
 | --- | --- | --- |
@@ -60,11 +60,11 @@
 | `PermissionExpiredEvent` | at-permission（到期回收任务，PermissionGrantExpireScheduler） | 撤销授权状态；写审计；通知申请人（可选） |
 | `FileUploadedEvent` | at-file | 审计/后续处理管道（复用 PRD §8 管道 Hook） |
 
-> 模块化单体进程内事件即可；将来外发 MQ/异步化不改变事件语义（仅换通道），属扩展点。
+> 💡 模块化单体进程内事件即可；将来外发 MQ/异步化不改变事件语义（仅换通道），属扩展点。
 
-### 2.2 数据表（Flyway 脚本已落地）
+### 2.2 🗄️ 数据表（Flyway 脚本已落地）
 
-> 权威 DDL 见 [sql/V1__schema.sql](../../../sql/V1__schema.sql)（审批与授权族：`sys_approval_request` /
+> 📌 权威 DDL 见 [sql/V1__schema.sql](../../../sql/V1__schema.sql)（审批与授权族：`sys_approval_request` /
 > `sys_approval_node` / `sys_user_file_permission`，2026-09-06 二次重置并收敛原 V3 语义），
 > 本文档不再整段复制 DDL，以防双源漂移。要点：申请单 `uk_application_no` 单号唯一、
 > `idx_applicant_resource` 支撑活动态判重；授权表 `grant_source`（1-角色继承 / 2-审批获得）、
@@ -72,7 +72,7 @@
 
 **判定合并**：资源是否可访问 = **角色静态权限**（RBAC，at-permission 现状） ∪ **生效授权**（`sys_user_file_permission` 中 `status=1 且 expire_at > now`）。两路都拒绝才返回 `1004 NO_AUTH` 并引导申请。
 
-### 2.3 时序步骤
+### 2.3 📋 时序步骤
 
 | # | 步骤 | 行为 | 正常出口 | 分支 / 错误 |
 | --- | --- | --- | --- | --- |
@@ -88,13 +88,13 @@
 **申请状态机**：`0 待审 → 1 通过 / 2 驳回 / 3 转审(改指审批人，回到待审) / 4 撤销`。
 **授权状态机**：`1 生效 → 2 到期回收 / 3 撤销`（不可逆，回收即终态）。
 
-> **一致性注（事务边界，[红队 T-02](./red-team-review.md)）**：审批通过 = 「申请单 CAS `0→1` + 写入
+> ⚠️ **一致性注（事务边界，[红队 T-02](./red-team-review.md)）**：审批通过 = 「申请单 CAS `0→1` + 写入
 > `sys_user_file_permission(status=1)`」在**同一本地事务**提交，授权记录随事务生效，不依赖事件；
 > `PermissionGrantEvent` 仅作 `AFTER_COMMIT` 的非关键副作用（通知/审计）。审批人身份一律由服务端
 > 从登录态推导并 CAS 到当前待审记录，禁止信任请求体中的审批人/被审批人参数（转审目标须为对该资源
 > 有审批权且非申请人的用户）。
 
-### 2.4 到期回收与撤销
+### 2.4 ⏰ 到期回收与撤销
 
 - **自动回收**：定时任务 + `idx_expire (status, expire_at)` 索引扫描，回收是幂等写（重复触发无害），回收事件防重。
 - **主动撤销**：安全管理员/审批人可提前撤销授权 → `status=3`，等同到期回收路径（US-05/§6 关键产品规则）。
@@ -103,7 +103,7 @@
 - 访问判定只在**请求入口执行一次**即放行在途操作：已开始的下载/访问不因授权到期或回收而中断
   （在途不打断，与常规下载器语义一致，[红队 C-03](./red-team-review.md)）。
 
-### 2.5 现状核对（审批）与待办
+### 2.5 📌 现状核对（审批）与待办
 
 | 项 | 现状（PRD/骨架） | 本次对齐动作 |
 | --- | --- | --- |
@@ -116,8 +116,8 @@
 
 ---
 
-## 3. 关联文档
+## 3️⃣ 🔗 关联文档
 
-- 产品口径与验收：`docs/PRD.md`（§3 US-01/02/05、§5 用例 A/B、§6 关键产品规则）
-- HTTP 契约与错误码：`docs/api/README.md`、`docs/api/error-codes.md`
-- 模块边界与铁律：`docs/architecture/README.md`
+- 📋 产品口径与验收：`docs/PRD.md`（§3 US-01/02/05、§5 用例 A/B、§6 关键产品规则）
+- 🔌 HTTP 契约与错误码：`docs/api/README.md`、`docs/api/error-codes.md`
+- 🏗️ 模块边界与铁律：`docs/architecture/README.md`
