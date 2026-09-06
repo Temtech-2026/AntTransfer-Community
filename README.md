@@ -1,181 +1,122 @@
-# SpringBoot 项目初始模板
+# AntTransfer CE
 
-> 更新于 2026-08-26：技术栈升级至 Spring Boot 3.5.14 + JDK 21（LTS）
+> **AntTransfer CE** 是一个开源的「内容 / 文件安全传输与协作共享」解决方案：Spring Boot 3 模块化单体后端 + Ant Design Pro 前端，开箱即用、易于二次开发。
+>
+> **AntTransfer CE** is an open-source solution for secure file/content transfer & collaboration — a Spring Boot 3 modular-monolith backend plus an Ant Design Pro frontend, ready to run and easy to extend.
 
-基于 Java SpringBoot 的项目初始模板，整合了常用框架和主流业务的示例代码。
+<!-- 徽章位：接入 CI 后可补充真实 workflow 状态与版本徽章 -->
+![Java](https://img.shields.io/badge/Java-21-orange.svg?logo=openjdk)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.14-6DB33F.svg?logo=springboot)
+![Maven](https://img.shields.io/badge/Maven-3.9-C71A36.svg?logo=apachemaven)
+![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1.svg?logo=mysql)
+![Redis](https://img.shields.io/badge/Redis-7.x-DC382D.svg?logo=redis)
+![Flyway](https://img.shields.io/badge/Flyway-versioned-CC0200.svg)
+![React](https://img.shields.io/badge/React-19-61DAFB.svg?logo=react)
+![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 
-只需 1 分钟即可完成内容网站的后端！！！大家还可以在此基础上快速开发自己的项目。
+---
 
-[toc]
+## 功能特性 / Features
 
-## 模板特点
+- **模块化单体**：后端 `server/` 下 8 个 Maven 模块（`at-common` / `at-gateway` / `at-auth` / `at-transfer` / `at-permission` / `at-file` / `at-collaboration` / `at-bootstrap`），模块间禁止循环依赖，可平滑演进拆分微服务；
+- **统一返回体与错误码**：`Result<T>`（code / message / data / traceId），分段业务错误码（`0 / 1xxx / 2xxx / 4xxx / 5xxx`）；
+- **全链路追踪**：`X-Trace-Id` 透传 + MDC 日志关联，全局异常兜底；
+- **领域骨架**：认证鉴权（`at-auth`）、RBAC 权限点（`at-permission`）、传输任务与断点续传模型（`at-transfer`）、文件元数据/秒传（`at-file`）、协作空间与分享（`at-collaboration`）；
+- **数据库版本化**：Flyway 迁移（脚本仓库 `sql/`），`dev` 默认关闭、`prod` 默认开启并支持存量库基线；
+- **接口文档**：SpringDoc OpenAPI 3（Swagger UI），生产默认关闭；
+- **前端工程**：`web/` 基于 Ant Design Pro v6（Umi Max + React 19 + TypeScript），已配置 `/api` 代理到后端；
+- **工程化**：Makefile 统一入口、Docker 多阶段镜像、`docker compose` 一键编排、GitHub Actions CI、Spotless 许可证校验。
 
-### 主流框架 & 特性
-
-- Spring Boot 3.5.x（LTS 稳定版，基于 JDK 21）
-- Spring MVC
-- MyBatis + MyBatis Plus 数据访问（开启分页）
-- Spring Boot 调试工具和项目处理器
-- Spring AOP 切面编程
-- Spring Scheduler 定时任务
-- Spring 事务注解
-
-### 数据存储
-
-- MySQL 数据库
-- Redis 内存数据库
-- Elasticsearch 搜索引擎
-- 腾讯云 COS 对象存储
-
-### 工具类
-
-- Easy Excel 表格处理
-- Hutool 工具库
-- Apache Commons Lang3 工具类
-- Lombok 注解
-
-### 业务特性
-
-- 业务代码生成器（支持自动生成 Service、Controller、数据模型代码）
-- Spring Session Redis 分布式登录
-- 全局请求响应拦截器（记录日志）
-- 全局异常处理器
-- 自定义错误码
-- 封装通用响应类
-- Swagger + Knife4j 接口文档（OpenAPI 3）
-- 自定义权限注解 + 全局校验
-- 全局跨域处理
-- 长整数丢失精度解决
-- 多环境配置
-
-
-## 业务功能
-
-- 提供示例 SQL（用户、帖子、帖子点赞、帖子收藏表）
-- 用户登录、注册、注销、更新、检索、权限管理
-- 帖子创建、删除、编辑、更新、数据库检索、ES 灵活检索
-- 帖子点赞、取消点赞
-- 帖子收藏、取消收藏、检索已收藏帖子
-- 帖子全量同步 ES、增量同步 ES 定时任务
-- 支持微信开放平台登录
-- 支持微信公众号订阅、收发消息、设置菜单
-- 支持分业务的文件上传
-
-### 单元测试
-
-- JUnit5 单元测试
-- 示例单元测试类
-
-### 架构设计
-
-- 合理分层
-
-
-## 快速上手
-
-> 所有需要修改的地方都标记了 `todo`，便于大家找到修改的位置~
-> 运行环境要求：JDK 21（LTS）+，Maven 3.9+
-
-### MySQL 数据库
-
-1）修改 `application.yml` 的数据库配置为你自己的：
-
-```yml
-spring:
-  datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/my_db
-    username: root
-    password: 123456
-```
-
-2）执行 `sql/create_table.sql` 中的数据库语句，自动创建库表
-
-3）启动项目，访问 `http://localhost:8101/api/doc.html` 即可打开接口文档，不需要写前端就能在线调试接口了~
-
-![](doc/swagger.png)
-
-### Redis 分布式登录
-
-1）修改 `application.yml` 的 Redis 配置为你自己的：
-
-```yml
-spring:
-  redis:
-    database: 1
-    host: localhost
-    port: 6379
-    timeout: 5000
-    password: 123456
-```
-
-2）修改 `application.yml` 中的 session 存储方式：
-
-```yml
-spring:
-  session:
-    store-type: redis
-```
-
-3）移除 `MainApplication` 类开头 `@SpringBootApplication` 注解内的 exclude 参数：
-
-修改前：
+## 项目结构 / Project Layout
 
 ```text
-@SpringBootApplication(exclude = {RedisAutoConfiguration.class})
+anttransfer-community/
+├── README.md  LICENSE  CHANGELOG.md
+├── CONTRIBUTING.md  CODE_OF_CONDUCT.md  SECURITY.md
+├── Makefile  docker-compose.yml  docker-compose.dev.yml  .env.example
+├── .github/{ISSUE_TEMPLATE,workflows,CODEOWNERS}
+├── docs/{getting-started,architecture,api,deployment,development}
+├── server/                # 后端 Maven 多模块
+│   ├── at-common / at-gateway / at-auth / at-transfer
+│   └── at-permission / at-file / at-collaboration / at-bootstrap
+├── web/                   # 前端 Ant Design Pro（Node ≥ 22）
+├── sql/                   # Flyway 脚本：V1__schema.sql / V2__init_data.sql / migrations/
+├── deploy/{docker,kubernetes,helm}
+├── scripts/
+└── tests/{e2e,performance}
 ```
 
-修改后：
+### 后端模块一览
 
+| 模块 | 职责 |
+| --- | --- |
+| `server/at-common` | 共享内核：`Result<T>` / 错误码 / `BaseEntity` / 链路 Trace / 业务异常 |
+| `server/at-gateway` | 统一接入层：全局异常、TraceId 过滤器、CORS |
+| `server/at-auth` | 认证鉴权：登录态 / 用户上下文 / `@RequireLogin` |
+| `server/at-transfer` | 传输任务核心：任务实体 / 状态机 / 断点续传骨架 |
+| `server/at-permission` | 权限控制：RBAC 权限点 / `@RequirePermission` |
+| `server/at-file` | 文件存储：`FileObject` 元数据 / 秒传预留 |
+| `server/at-collaboration` | 协作共享：协作空间 / 分享骨架 |
+| `server/at-bootstrap` | 聚合启动模块（唯一可运行，含 `application*.yml`） |
+
+**架构铁律**：业务模块与 `at-gateway` 之间禁止互相依赖，只允许依赖 `at-common`；`at-common` 禁止反向依赖任何 `at-*` 模块；版本统一在父工程 `dependencyManagement` 锁定。
+
+## 快速开始 / Quick Start
+
+> 前提：JDK 21、Maven 3.9+（可用 `./mvnw`）、Node ≥ 22（前端）、Docker（可选，用于一键拉依赖）。
+
+```bash
+# 1. 一键启动完整环境（MySQL + Redis + 后端，端口 8080）
+docker compose up -d --build
+
+# —— 或 —— 仅启动本地依赖（MySQL/Redis），后端用 IDE/命令行跑：
+docker compose -f docker-compose.dev.yml up -d
+./mvnw -pl server/at-bootstrap -am spring-boot:run
+
+# 2. 前端（默认 http://localhost:8000，/api 已代理到后端）
+cd web && npm install && npm run dev
+
+# 3. 验证
+# 接口文档（Swagger UI）：http://localhost:8080/api/swagger-ui/index.html
+# OpenAPI JSON：        http://localhost:8080/api/v3/api-docs
+```
+
+也支持 `make help` 查看全部常用命令（build / test / run / dev-up / web-dev …）。
+
+### 关键环境变量
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `SPRING_PROFILES_ACTIVE` | `dev` | 运行环境：`dev` / `prod`（prod 关闭 Swagger、默认开启 Flyway） |
+| `SERVER_PORT` | `8080` | 服务端口 |
+| `DB_URL` / `DB_USERNAME` / `DB_PASSWORD` | 本地 `anttransfer` 库 | MySQL 连接（生产必须覆盖） |
+| `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | 本地 Redis | Redis 连接 |
+| `FLYWAY_ENABLED` | dev `false` / prod `true` | 是否执行 Flyway 迁移 |
+
+## 文档 / Documentation
+
+- [快速开始](docs/getting-started/README.md) · [架构说明](docs/architecture/README.md) · [API 约定](docs/api/README.md)
+- [产品需求 PRD](docs/PRD.md) · [部署指南](docs/deployment/README.md) · [开发指南](docs/development/README.md)
+- [贡献指南](CONTRIBUTING.md) · [行为准则](CODE_OF_CONDUCT.md) · [安全策略](SECURITY.md) · [更新日志](CHANGELOG.md)
+
+## 路线图 / Roadmap
+
+- 前端页面按领域落地（登录/传输/文件/协作），替换模板示例页；
+- 各业务模块接口与测试完善，接入 E2E（`tests/e2e`）与性能基线（`tests/performance`）；
+- Kubernetes/Helm 正式部署物、首个稳定版本 1.0.0。
+
+## 安全漏洞披露 / Security Policy
+
+请勿在公开 Issue 中暴露安全漏洞细节，报告方式与支持范围见 [SECURITY.md](SECURITY.md)。
+
+## 许可证 / License
+
+**AntTransfer CE** 以 [Apache License 2.0](LICENSE) 协议开源；`web/` 目录内含 Ant Design Pro 模板的 MIT 授权声明（见 `web/LICENSE`）。
 
 ```text
-@SpringBootApplication
+Copyright (c) 2026 AntTransfer Community Contributors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0.
 ```
-
-### Elasticsearch 搜索引擎
-
-1）修改 `application.yml` 的 Elasticsearch 配置为你自己的：
-
-```yml
-spring:
-  elasticsearch:
-    uris: http://localhost:9200
-    username: root
-    password: 123456
-```
-
-2）复制 `sql/post_es_mapping.json` 文件中的内容，通过调用 Elasticsearch 的接口或者 Kibana Dev Tools 来创建索引（相当于数据库建表）
-
-```
-PUT post_v1
-{
- 参数见 sql/post_es_mapping.json 文件
-}
-```
-
-这步不会操作的话需要补充下 Elasticsearch 的知识，或者自行百度一下~
-
-3）开启同步任务，将数据库的帖子同步到 Elasticsearch
-
-找到 job 目录下的 `FullSyncPostToEs` 和 `IncSyncPostToEs` 文件，取消掉 `@Component` 注解的注释，再次执行程序即可触发同步：
-
-```java
-// todo 取消注释开启任务
-//@Component
-```
-
-### 业务代码生成器
-
-支持自动生成 Service、Controller、数据模型代码，配合 MyBatisX 插件，可以快速开发增删改查等实用基础功能。
-
-找到 `generate.CodeGenerator` 类，修改生成参数和生成路径，并且支持注释掉不需要的生成逻辑，然后运行即可。
-
-```
-// 指定生成参数
-String packageName = "com.fast.springbootinit";
-String dataName = "用户评论";
-String dataKey = "userComment";
-String upperDataKey = "UserComment";
-```
-
-生成代码后，可以移动到实际项目中，并且按照 `// todo` 注释的提示来针对自己的业务需求进行修改。

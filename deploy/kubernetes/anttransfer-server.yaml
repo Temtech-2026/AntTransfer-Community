@@ -1,0 +1,88 @@
+# =====================================================================
+# AntTransfer CE — Kubernetes 部署样例（Deployment + Service）
+#
+# 前提：集群内已具备 MySQL 与 Redis，并对外暴露 Service 名
+#   at-mysql（3306）、at-redis（6379），或按需修改下方 DB_URL。
+# 使用：
+#   kubectl create secret generic at-db-secret \
+#     --from-literal=username=root --from-literal=password=<你的密码>
+#   kubectl apply -f anttransfer-server.yaml
+# =====================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: at-server
+  labels:
+    app: anttransfer
+    tier: server
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: anttransfer
+      tier: server
+  template:
+    metadata:
+      labels:
+        app: anttransfer
+        tier: server
+    spec:
+      containers:
+        - name: server
+          # TODO: 替换为你实际推送的镜像（参考 .github/workflows/docker-image.yml）
+          image: ghcr.io/<your-org>/anttransfer/server:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "prod"
+            - name: SERVER_PORT
+              value: "8080"
+            - name: DB_URL
+              value: "jdbc:mysql://at-mysql:3306/anttransfer?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true"
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: at-db-secret
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: at-db-secret
+                  key: password
+            - name: REDIS_HOST
+              value: "at-redis"
+            - name: REDIS_PORT
+              value: "6379"
+            - name: FLYWAY_ENABLED
+              value: "true"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: at-server
+  labels:
+    app: anttransfer
+    tier: server
+spec:
+  selector:
+    app: anttransfer
+    tier: server
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

@@ -1,0 +1,49 @@
+name: Bug 报告
+description: 报告一个可复现的缺陷
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢提交 Bug。请尽量提供完整信息，缺失关键字段的 Issue 可能被标记为待补充。
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 描述发生了什么，期望行为与实际行为的差异。
+      placeholder: 期望 ……，实际却 ……
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 最小可复现步骤或接口调用序列。
+      placeholder: |
+        1. 启动后端（docker compose ...）
+        2. 调用 POST /api/auth/login
+        3. 观察 ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本 / 提交
+      description: master@<commit> 或发布版本号
+      placeholder: master@1a2b3c4d
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息
+      description: OS / JDK / Maven / MySQL / Redis / Node 等版本。
+      placeholder: Windows 11, JDK 21.0.10, MySQL 8.4, Redis 7
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志 / 截图
+      description: 如有报错堆栈、SQL、界面截图，请一并贴出。

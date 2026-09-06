@@ -1,56 +1,22 @@
-### @author <a href="https://github.com/liyupi">程序员鱼皮</a> ###
-### @from <a href="https://yupi.icu">编程导航知识星球</a> ###
+# =====================================================================
+# AntTransfer CE .gitignore
+# 覆盖范围：Java / Maven、Node、IDE、操作系统、本地配置与密钥、运行数据
+# =====================================================================
 
-HELP.md
+# ============ Java / Maven 构建产物 ============
 target/
-!.mvn/wrapper/maven-wrapper.jar
-!**/src/main/**/target/
-!**/src/test/**/target/
-
-### STS ###
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
-
-### IntelliJ IDEA ###
-.idea
-*.iws
-*.iml
-*.ipr
-
-### NetBeans ###
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
-build/
-!**/src/main/**/build/
-!**/src/test/**/build/
-
-### VS Code ###
-.vscode/
-
-### macOS ###
-.DS_Store
-### Java template
-# Compiled class file
 *.class
+out/
+dependency-reduced-pom.xml
+buildNumber.properties
+release.properties
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+.mvn/timing.properties
 
-# Log file
-*.log
-
-# BlueJ files
-*.ctxt
-
-# Mobile Tools for Java (J2ME)
-.mtj.tmp/
-
-# Package Files #
+# 打包产物（若确有需要随仓库分发的 jar，请在下方用 ! 显式取消忽略）
 *.jar
 *.war
 *.nar
@@ -59,92 +25,121 @@ build/
 *.tar.gz
 *.rar
 
-# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+# Maven Wrapper 自带的 wrapper jar（保留不忽略）
+!.mvn/wrapper/maven-wrapper.jar
+
+# JVM 崩溃日志
 hs_err_pid*
 
-### Maven template
-target/
-pom.xml.tag
-pom.xml.releaseBackup
-pom.xml.versionsBackup
-pom.xml.next
-release.properties
-dependency-reduced-pom.xml
-buildNumber.properties
-.mvn/timing.properties
-# https://github.com/takari/maven-wrapper#usage-without-binary-jar
-.mvn/wrapper/maven-wrapper.jar
+# 日志
+*.log
+logs/
 
-### JetBrains template
-# Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio, WebStorm and Rider
-# Reference: https://intellij-support.jetbrains.com/hc/en-us/articles/206544839
+# ============ Node / 前端（仓库内若引入 Node 工程时生效） ============
+node_modules/
+# 前端构建产物与 umi 运行时缓存（Ant Design Pro / Umi）
+**/dist/
+**/.umi/
+**/.umi-production/
 
-# User-specific stuff
-.idea/**/workspace.xml
-.idea/**/tasks.xml
-.idea/**/usage.statistics.xml
-.idea/**/dictionaries
-.idea/**/shelf
+.pnpm-store/
+.yarn/
+*.node
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# Generated files
-.idea/**/contentModel.xml
-
-# Sensitive or high-churn files
-.idea/**/dataSources/
-.idea/**/dataSources.ids
-.idea/**/dataSources.local.xml
-.idea/**/sqlDataSources.xml
-.idea/**/dynamic.xml
-.idea/**/uiDesigner.xml
-.idea/**/dbnavigator.xml
-
-# Gradle
-.idea/**/gradle.xml
-.idea/**/libraries
-
-# Gradle and Maven with auto-import
-# When using Gradle or Maven with auto-import, you should exclude module files,
-# since they will be recreated, and may cause churn.  Uncomment if using
-# auto-import.
-# .idea/artifacts
-# .idea/compiler.xml
-# .idea/jarRepositories.xml
-# .idea/modules.xml
-# .idea/*.iml
-# .idea/modules
-# *.iml
-# *.ipr
-
-# CMake
-cmake-build-*/
-
-# Mongo Explorer plugin
-.idea/**/mongoSettings.xml
-
-# File-based project format
+# ============ IDE ============
+# IntelliJ IDEA
+.idea/
+*.iml
 *.iws
-
-# IntelliJ
+*.ipr
 out/
-
-# mpeltonen/sbt-idea plugin
 .idea_modules/
 
-# JIRA plugin
-atlassian-ide-plugin.xml
+# Eclipse / STS
+.classpath
+.project
+.settings/
+.factorypath
+.apt_generated
+.sts4-cache
+.springBeans
 
-# Cursive Clojure plugin
-.idea/replstate.xml
+# VS Code / Cursor 等
+.vscode/
+*.code-workspace
 
-# Crashlytics plugin (for Android Studio and IntelliJ)
-com_crashlytics_export_strings.xml
-crashlytics.properties
-crashlytics-build.properties
-fabric.properties
+# NetBeans
+nbproject/private/
+nbbuild/
+nbdist/
+.nb-gradle/
 
-# Editor-based Rest Client
-.idea/httpRequests
+# ============ 操作系统 / 编辑器残留 ============
+# macOS
+.DS_Store
+.Spotlight-V100
+.Trashes
 
-# Android studio 3.1+ serialized cache file
-.idea/caches/build_file_checksums.ser
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
 
+# Linux
+.directory
+
+# 通用编辑器临时文件
+*~
+*.swp
+*.swo
+*.*~
+
+# ============ 本地配置（禁止提交，防止泄露） ============
+# Spring Boot 本地 profile（application-local.yml 等，属于“本机专属配置”）
+application-local.yml
+application-local.yaml
+application-local.properties
+application-*-local.yml
+application-*-local.yaml
+application-*-local.properties
+
+# 环境变量文件（.env 类一律忽略，仅保留 .env.example 模板）
+.env
+.env.*
+*.env.local
+.envrc
+!.env.example
+
+# ============ 密钥与证书（禁止提交） ============
+# 私钥 / 密钥对
+*.pem
+*.key
+*.ppk
+id_rsa
+id_dsa
+*.p8
+*.pkcs8
+
+# 密钥库（含私钥）
+*.p12
+*.pfx
+*.jks
+*.jceks
+*.keystore
+
+# 通用 secret 文件
+.secrets
+secrets.yml
+*.secret
+
+# ============ 运行数据目录 ============
+# 应用运行时产生的数据：本地文件存储、上传临时目录、缓存、索引等，一律不入库
+data/
+uploads/
+temp/
+.cache/

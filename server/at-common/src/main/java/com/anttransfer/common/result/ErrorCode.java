@@ -1,0 +1,156 @@
+/*
+ * Copyright (c) 2026 AntTransfer Community Contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.anttransfer.common.result;
+
+import lombok.Getter;
+
+/**
+ * 业务错误码枚举。
+ *
+ * <p>编码规约（分段的十进制错误码，便于按段快速定位问题域）：</p>
+ * <pre>
+ *   0    —— 成功
+ *   1xxx —— 认证授权（未登录 / Token 过期或无效 / 无权限 / 账号锁定与禁用 / 权限申请冲突与转审）
+ *   2xxx —— 参数校验（参数缺失 / 格式错误 / 类型错误 / 超范围）
+ *   4xxx —— 文件 / 传输（秒传与分片 / 完整性校验 / 外发分享 / 传输任务）
+ *   5xxx —— 系统异常（未知异常 / 数据库 / 远程调用）
+ * </pre>
+ *
+ * <p>每个错误码同时携带三层信息：</p>
+ * <ul>
+ *     <li>{@link #getCode()}：业务状态码，写入响应体 {@code Result.code}，前端以此为业务主判据；</li>
+ *     <li>{@link #getMessage()}：默认中文提示，写入 {@code Result.message}；</li>
+ *     <li>{@link #getHttpStatus()}：HTTP 语义状态码，由 at-gateway 的 {@code GlobalExceptionHandler}
+ *         映射到 HTTP 响应状态（400 / 401 / 403 / 404 / 409 / 413 / 415 / 429 / 500 …）。</li>
+ * </ul>
+ *
+ * <p>特殊说明：4001 秒传未命中、4002 分片缺失属于<b>流程分支码</b>——HTTP 仍为 200，
+ * 前端据 {@code code} 走“进入上传 / 按清单续传”分支，其余非 0 码均为失败。</p>
+ *
+ * <p>新增错误码规范：① 分段不允许交叉复用；② 同一语义只保留一个 code；
+ * ③ 修改 message 不影响已发布接口兼容性，如需彻底废弃请标注 {@code @Deprecated}；
+ * ④ 调整已发布 code 属于破坏性变更，须同步更新 {@code docs/api/error-codes.md} 并在 CHANGELOG 声明。</p>
+ *
+ * @author AntTransfer CE
+ */
+@Getter
+public enum ErrorCode {
+
+    /* ============================ 0：成功 ============================ */
+    /** 成功 */
+    SUCCESS(0, "成功", 200),
+
+    /* ======================== 1xxx：认证授权 ======================== */
+    /** 未登录或登录态已失效（需携带或重新获取 access token） */
+    NOT_LOGIN(1001, "未登录或登录已过期", 401),
+    /** Access Token 已过期：客户端应静默用 refresh token 换新后重放原请求 */
+    TOKEN_EXPIRED(1002, "登录态已过期，请重新登录", 401),
+    /** Token 非法（伪造 / 签名错误 / 已被吊销） */
+    TOKEN_INVALID(1003, "登录态无效，请重新登录", 401),
+    /** 已登录但对该资源/操作无权限 */
+    NO_AUTH(1004, "无操作权限", 403),
+    /** 账号被锁定（如多次输错密码被临时锁定） */
+    ACCOUNT_LOCKED(1005, "账号已锁定，请联系管理员", 403),
+    /** 账号被禁用 / 冻结 / 受限 */
+    ACCOUNT_DISABLED(1006, "账号已被禁用，请联系管理员", 403),
+    /** 账号或密码错误（登录鉴权失败，不区分账号不存在与密码错误） */
+    BAD_CREDENTIALS(1007, "账号或密码错误", 401),
+
+    /* ---------- 权限申请与授权（1008~1010） ---------- */
+    /** 冲突校验命中：同资源已有生效授权，无需重复申请（流程提示码，HTTP 200，data 附授权信息） */
+    GRANT_ALREADY_ACTIVE(1008, "你已拥有该资源的有效授权", 200),
+    /** 冲突校验命中：同资源已有进行中的申请，无需重复提交（流程提示码，HTTP 200，data 附在审申请单 ID） */
+    APPLICATION_DUPLICATE(1009, "您已有进行中的申请，请勿重复提交", 200),
+    /** 审批转审目标无效：目标审批人不存在或无权限审批该资源 */
+    REASSIGN_INVALID(1010, "转审目标审批人无效或无权审批该资源", 400),
+
+    /* ======================== 2xxx：参数校验 ======================== */
+    /** 通用参数错误（含 @Valid 请求体验证失败的兜底） */
+    PARAM_ERROR(2001, "参数错误", 400),
+    /** 缺少必填参数 */
+    PARAM_MISSING(2002, "缺少必要参数", 400),
+    /** 参数格式不正确（如邮箱 / 手机号 / 日期格式） */
+    PARAM_FORMAT_ERROR(2003, "参数格式不正确", 400),
+    /** 参数类型不匹配（路径参数类型错误 / 请求体 JSON 无法解析） */
+    PARAM_TYPE_ERROR(2004, "参数类型不匹配", 400),
+    /** 参数取值超出允许范围（枚举值、数值边界、长度上限等） */
+    PARAM_OUT_OF_RANGE(2005, "参数超出允许范围", 400),
+
+    /* ====================== 4xxx：文件 / 传输 ====================== */
+
+    /* ---------- 上传链路：秒传 / 分片 / 完整性（4001~4003） ---------- */
+    /** 秒传未命中：服务端不存在相同 SHA-256 的文件，需按分片上传（流程分支码，HTTP 200） */
+    INSTANT_UPLOAD_MISS(4001, "秒传未命中，请按分片上传", 200),
+    /** 分片缺失：续传/校验发现服务端缺少指定分片，响应体附缺失分片清单（流程分支码，HTTP 200） */
+    CHUNK_MISSING(4002, "分片缺失，请按服务端清单续传", 200),
+    /** 合并后完整性校验失败：重组文件 SHA-256 与客户端上报不一致 */
+    FILE_INTEGRITY_ERROR(4003, "文件完整性校验失败，请重新上传", 409),
+
+    /* ---------- 文件通用（4005~4009） ---------- */
+    /** 文件不存在 / 已被删除 / 逻辑删除 */
+    FILE_NOT_FOUND(4005, "文件不存在或已被删除", 404),
+    /** 文件大小超出限制 */
+    FILE_TOO_LARGE(4006, "文件大小超出限制", 413),
+    /** 文件类型不允许（扩展名 / MIME 黑名单） */
+    FILE_TYPE_NOT_ALLOWED(4007, "文件类型不允许", 415),
+    /** 文件上传失败（分片落盘 / 存储介质异常等） */
+    FILE_UPLOAD_FAIL(4008, "文件上传失败，请稍后重试", 400),
+    /** 文件下载失败（读取 / 流式输出异常） */
+    FILE_DOWNLOAD_FAIL(4009, "文件下载失败，请稍后重试", 400),
+
+    /* ---------- 外发分享（4004 / 4010~4012） ---------- */
+    /** 外发链接已过期或下载次数用尽 */
+    SHARE_EXPIRED_OR_LIMIT(4004, "外发链接已过期或下载次数用尽", 410),
+    /** 外发链接已被创建者撤销 */
+    SHARE_REVOKED(4012, "外发链接已被撤销", 410),
+    /** 提取码错误 */
+    SHARE_CODE_ERROR(4010, "提取码错误", 403),
+    /** 提取码连续错误次数过多，链接已临时锁定 */
+    SHARE_LOCKED(4011, "提取码错误次数过多，链接已临时锁定", 429),
+
+    /* ---------- 传输任务（410x） ---------- */
+    /** 传输任务不存在 */
+    TRANSFER_TASK_NOT_FOUND(4101, "传输任务不存在", 404),
+    /** 当前传输状态不允许该操作（如已完成的任务不可再次开始） */
+    TRANSFER_STATE_ERROR(4102, "当前传输状态不允许该操作", 409),
+    /** 传输速率 / 并发超过限制 */
+    TRANSFER_LIMIT_EXCEEDED(4103, "超出传输并发或流量限制", 429),
+
+    /* ======================== 5xxx：系统异常 ======================== */
+    /** 通用系统错误（全局异常兜底） */
+    SYSTEM_ERROR(5001, "系统繁忙，请稍后重试", 500),
+    /** 数据库访问异常 */
+    DB_ERROR(5002, "数据库访问异常", 500),
+    /** 远程服务调用异常（对象存储 / 第三方 API 等） */
+    REMOTE_CALL_ERROR(5003, "远程服务调用异常", 502),
+    /** 未知异常兜底 */
+    UNKNOWN_ERROR(5999, "未知异常", 500);
+
+    /** 业务状态码（写入 Result.code，前端业务主判据） */
+    private final int code;
+
+    /** 默认提示信息（写入 Result.message） */
+    private final String message;
+
+    /** HTTP 语义状态码（由网关 GlobalExceptionHandler 映射到 HTTP 响应状态） */
+    private final int httpStatus;
+
+    ErrorCode(int code, String message, int httpStatus) {
+        this.code = code;
+        this.message = message;
+        this.httpStatus = httpStatus;
+    }
+}

@@ -1,0 +1,30 @@
+# =====================================================================
+# AntTransfer CE — prod（生产环境）
+#
+# 生产部署清单（务必通过环境变量注入，禁止修改本文件硬编码）：
+#   SPRING_PROFILES_ACTIVE=prod
+#   SERVER_PORT
+#   DB_URL / DB_USERNAME / DB_PASSWORD
+#   FLYWAY_ENABLED=true（迁移脚本由构建期从根 sql/ 自动打包进 classpath:db/migration，见 at-bootstrap/pom.xml）
+#   REDIS_HOST / REDIS_PORT / REDIS_DATABASE / REDIS_PASSWORD
+# =====================================================================
+
+# Flyway 无需在 prod 重复配置：迁移默认开启 + baseline-on-migrate 已落在主配置
+# application.yml（FLYWAY_ENABLED=true）。如需临时关闭部署时置 FLYWAY_ENABLED=false。
+
+# 生产环境关闭接口文档暴露
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+mybatis-plus:
+  configuration:
+    # 生产关闭 SQL 控制台输出
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+logging:
+  level:
+    root: warn
+    com.anttransfer: info

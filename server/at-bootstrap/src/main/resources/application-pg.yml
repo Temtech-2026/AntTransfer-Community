@@ -1,0 +1,23 @@
+# =====================================================================
+# AntTransfer CE — PostgreSQL 数据源 profile（示例）
+#
+# 激活方式（profile 可叠加，如 dev,pg 或 prod,pg）：
+#   SPRING_PROFILES_ACTIVE=pg
+#   SPRING_PROFILES_ACTIVE=dev,pg
+#
+# 说明：
+#   · 仅切换数据源不足以在 PG 上运行——当前 sql/ 的 V1/V2 为 MySQL 8 方言
+#     （行内 COMMENT、ENGINE=InnoDB、on update CURRENT_TIMESTAMP、前缀索引等），
+#     启用本 profile 前须按 V1__schema.sql 文件头「PostgreSQL 差异点」改写脚本
+#     （类型映射 / COMMENT ON / on update 触发器 / 索引独立语句 / 前缀索引替代等）；
+#   · Flyway PG 支持已就绪：at-bootstrap/pom.xml 已引入
+#     org.flywaydb:flyway-database-postgresql 与 org.postgresql:postgresql（runtime）；
+#   · Flyway 迁移与 baseline 配置继承主配置（classpath:db/migration），无需重复；
+#   · PG 连接默认 anttransfer 库，端口 5432。
+# =====================================================================
+spring:
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: 'jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:anttransfer}'
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}

@@ -1,0 +1,16 @@
+# 构建产物（各模块 target）
+target/
+**/target/
+
+# 版本控制与 IDE 本地文件
+.git/
+.gitignore
+.idea/
+*.iml
+
+# 历史单体代码归档（不参与 AntTransfer 构建，控制上下文体积）
+archive/
+
+# 本地日志 / 临时文件
+*.log
+.DS_Store

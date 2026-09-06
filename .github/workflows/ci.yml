@@ -1,0 +1,37 @@
+# AntTransfer CE — 持续集成
+# 触发：push 到 master、任意 PR
+# 内容：JDK21 + Maven 全量 verify（含 Spotless 许可证头校验）
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (Maven verify)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Make Maven wrapper executable
+        run: chmod +x mvnw
+
+      - name: Build & verify
+        run: ./mvnw -B -ntp verify
+
+      - name: Upload coverage (待接入后启用)
+        if: false
+        run: echo "TODO: 接入 JaCoCo 后上传覆盖率报告"

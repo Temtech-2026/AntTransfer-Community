@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright (c) 2026 AntTransfer Community Contributors
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+<!--
+  =====================================================================
+  at-common — AntTransfer 共享内核模块
+
+  职责：
+    1. 统一返回体 Result<T>、错误码枚举 ErrorCode、业务异常 BusinessException；
+    2. 实体基类 BaseEntity（MyBatis-Plus 公共字段）；
+    3. 链路追踪工具 TraceUtils（traceId 贯穿日志）。
+
+  依赖规则：本模块为“公共内核”，只允许它被其他模块依赖；
+  禁止本模块依赖任何其他 at-* 模块（否则形成循环依赖）。
+  =====================================================================
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.anttransfer</groupId>
+        <artifactId>anttransfer-ce</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>at-common</artifactId>
+    <name>at-common</name>
+    <description>AntTransfer 共享内核：Result / ErrorCode / BaseEntity / BusinessException / TraceUtils</description>
+
+    <dependencies>
+        <!-- MyBatis-Plus 注解依赖：提供 @TableId/@TableField/@TableLogic 等（版本由父工程锁定） -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-annotation</artifactId>
+        </dependency>
+        <!-- SLF4J：TraceUtils 使用 MDC 传递 traceId（版本由 Spring Boot BOM 锁定） -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <!-- Lombok：编译期注解处理，optional 保证不传递到依赖方（版本由父工程锁定） -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+</project>

@@ -1,0 +1,67 @@
+# =====================================================================
+# AntTransfer CE — 本地开发依赖（MySQL 8.4 + Redis 7）
+#
+# 作用：只拉起后端本地开发所需的基础设施，后端本体通过
+#   ./mvnw -pl server/at-bootstrap -am spring-boot:run 或 IDE 在本机运行，
+#   直接连 localhost:3306 / localhost:6379（与 at-bootstrap application.yml
+#   数据源 / Redis 默认值一致；DB_PASSWORD 默认 123456）。
+#
+# 建表与初始化数据一律由后端 Flyway 承担（迁移默认开启
+#   spring.flyway.enabled=true；脚本见 sql/V1__schema.sql / V2__init_data.sql），
+#   应用首次连库即自动建 flyway_schema_history 并按序执行——因此本编排【不】把
+#   V*.sql 挂入 MySQL 的 /docker-entrypoint-initdb.d：首次初始化会先于 Flyway 灌库，
+#   随后 Flyway 启动重复执行 V2 的固定 ID 插入必然主键冲突。
+#   initdb.d 仅保留为「数据库层自定义脚本」入口（建测试账号 / 字符集调整等
+#   Flyway 不管理的内容），默认空目录，见 deploy/docker/mysql-initdb.d/。
+#
+# 用法：
+#   docker compose -f docker-compose.dev.yml up -d      # 启动依赖（首次等健康检查）
+#   docker compose -f docker-compose.dev.yml ps         # 查看状态（mysql/redis 均 healthy）
+#   docker compose -f docker-compose.dev.yml down       # 停止，保留数据卷
+#   docker compose -f docker-compose.dev.yml down -v    # 停止并清空数据卷（重来一次全新库）
+# =====================================================================
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: at-dev-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-123456}
+      MYSQL_DATABASE: anttransfer
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      # 数据卷：库文件持久化；down -v 删除后即全新实例（Flyway 会重建全部结构/数据）
+      - dev-mysql-data:/var/lib/mysql
+      # 数据库层自定义初始化入口：默认空目录，勿放 V*.sql（schema/seed 由 Flyway 负责）
+      - ./deploy/docker/mysql-initdb.d:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    container_name: at-dev-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      # 数据卷：RDB/AOF 落盘文件持久化（.env 中 REDIS_PASSWORD 为空，仅本机可访问）
+      - dev-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  dev-mysql-data:
+  dev-redis-data:

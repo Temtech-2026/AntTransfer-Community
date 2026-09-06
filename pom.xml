@@ -1,155 +1,246 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- @author <a href="https://github.com/liyupi">程序员鱼皮</a> -->
-<!-- @from <a href="https://yupi.icu">编程导航知识星球</a> -->
-<!-- @modified 2026-08-26 技术栈升级：Spring Boot 2.7.2 -> 3.5.14（LTS 稳定版）、JDK 1.8 -> 21，其余依赖同步升级至最新稳定版 -->
+<!--
+  ~ Copyright (c) 2026 AntTransfer Community Contributors
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+<!--
+  =====================================================================
+  AntTransfer CE（Community Edition）— Maven 多模块父工程（模块化单体）
+
+  架构与依赖铁律：
+    1. 业务模块（at-auth / at-transfer / at-permission / at-file / at-collaboration）
+       与接入层 at-gateway 之间【禁止互相依赖】，只允许依赖共享内核 at-common；
+    2. at-common 为纯公共模块，反向禁止依赖任何 at-* 业务模块；
+    3. at-bootstrap 为唯一可运行模块，聚合依赖全部模块，并独占 spring-boot-maven-plugin；
+    4. 版本统一在父工程 properties + dependencyManagement 中锁定。
+  =====================================================================
+-->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
-        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
+
+    <!-- 父工程：Spring Boot 3.x 官方 starter-parent，
+         其内置 dependencyManagement 统一锁定 Spring Boot 全家桶
+         （web / data-redis / validation / flyway / mysql-connector / lombok / slf4j / test 等） -->
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
         <version>3.5.14</version>
-        <relativePath/> <!-- lookup parent from repository -->
+        <relativePath/> <!-- 从 Maven 仓库解析 -->
     </parent>
-    <groupId>com.yupi</groupId>
-    <artifactId>springboot-init</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
-    <name>springboot-init</name>
-    <properties>
-        <!-- 编译与运行版本：JDK 21（LTS 长期支持版，Spring Boot 3.x 要求 JDK 17+） -->
-        <java.version>21</java.version>
-    </properties>
-    <dependencies>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-freemarker</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-aop</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.mybatis.spring.boot</groupId>
-            <artifactId>mybatis-spring-boot-starter</artifactId>
-            <version>3.0.5</version>
-        </dependency>
-        <!-- MyBatis Plus（Spring Boot 3 专用 starter，对应旧版 mybatis-plus-boot-starter；
-        v3.5.9+ 包结构调整：IService/ServiceImpl 在 mybatis-plus-spring 模块的 com.baomidou.mybatisplus.spring.service 包下） -->
-        <dependency>
-            <groupId>com.baomidou</groupId>
-            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
-            <version>3.5.17</version>
-        </dependency>
-        <!-- https://mvnrepository.com/artifact/com.baomidou/mybatis-plus-jsqlparser（v3.5.9+ 分页插件已拆分为独立模块，需单独引入） -->
-        <dependency>
-            <groupId>com.baomidou</groupId>
-            <artifactId>mybatis-plus-jsqlparser</artifactId>
-            <version>3.5.17</version>
-        </dependency>
-        <!-- redis -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-redis</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.session</groupId>
-            <artifactId>spring-session-data-redis</artifactId>
-        </dependency>
-        <!-- elasticsearch：Spring Data Elasticsearch 5.x（底层为官方客户端 elasticsearch-java 8.x，查询 DSL 使用 co.elastic.clients） -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-elasticsearch</artifactId>
-        </dependency>
-        <!-- https://mvnrepository.com/artifact/com.github.binarywang/wx-java-mp-spring-boot-starter -->
-        <dependency>
-            <groupId>com.github.binarywang</groupId>
-            <artifactId>wx-java-mp-spring-boot-starter</artifactId>
-            <version>4.8.0</version>
-        </dependency>
-        <!-- https://doc.xiaominfo.com/docs/quick-start#openapi3 -->
-        <dependency>
-            <groupId>com.github.xiaoymin</groupId>
-            <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
-            <version>4.5.0</version>
-        </dependency>
-        <!-- https://cloud.tencent.com/document/product/436/10199-->
-        <dependency>
-            <groupId>com.qcloud</groupId>
-            <artifactId>cos_api</artifactId>
-            <version>5.6.275</version>
-        </dependency>
-        <!-- https://mvnrepository.com/artifact/org.apache.commons/commons-lang3 -->
-        <dependency>
-            <groupId>org.apache.commons</groupId>
-            <artifactId>commons-lang3</artifactId>
-        </dependency>
-        <!-- https://github.com/alibaba/easyexcel -->
-        <dependency>
-            <groupId>com.alibaba</groupId>
-            <artifactId>easyexcel</artifactId>
-            <version>4.0.3</version>
-        </dependency>
-        <!-- https://hutool.cn/docs/index.html#/-->
-        <dependency>
-            <groupId>cn.hutool</groupId>
-            <artifactId>hutool-all</artifactId>
-            <version>5.8.41</version>
-        </dependency>
-        <!-- https://mvnrepository.com/artifact/org.jetbrains/annotations -->
-        <dependency>
-            <groupId>org.jetbrains</groupId>
-            <artifactId>annotations</artifactId>
-            <version>26.0.1</version>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-devtools</artifactId>
-            <scope>runtime</scope>
-            <optional>true</optional>
-        </dependency>
-        <!-- MySQL 驱动（新坐标 mysql-connector-j，旧坐标 mysql-connector-java 已废弃；版本由 Spring Boot 父工程管理） -->
-        <dependency>
-            <groupId>com.mysql</groupId>
-            <artifactId>mysql-connector-j</artifactId>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-configuration-processor</artifactId>
-            <optional>true</optional>
-        </dependency>
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <optional>true</optional>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
 
+    <groupId>com.anttransfer</groupId>
+    <artifactId>anttransfer-ce</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>anttransfer-ce</name>
+    <description>AntTransfer Community Edition：基于 Spring Boot 3 + Java 21 的开源模块化单体项目</description>
+
+    <!-- ===================== 模块清单（聚合构建顺序即声明顺序） ===================== -->
+    <modules>
+        <!-- 共享内核：统一返回体 Result / 错误码 / BaseEntity / 异常 / 链路 Trace（唯一被依赖模块） -->
+        <module>server/at-common</module>
+        <!-- 统一接入层：全局异常处理、链路追踪过滤器、CORS 等横切能力 -->
+        <module>server/at-gateway</module>
+        <!-- 业务域：认证鉴权（登录态 / Token / 用户身份） -->
+        <module>server/at-auth</module>
+        <!-- 业务域：传输任务核心（任务调度 / 断点续传 / 进度） -->
+        <module>server/at-transfer</module>
+        <!-- 业务域：权限控制（RBAC 权限点 / 角色） -->
+        <module>server/at-permission</module>
+        <!-- 业务域：文件存储（本地 / 对象存储） -->
+        <module>server/at-file</module>
+        <!-- 业务域：协作共享（多人协作空间 / 分享链接） -->
+        <module>server/at-collaboration</module>
+        <!-- 聚合启动模块：唯一可运行模块（含 spring-boot-maven-plugin 打包） -->
+        <module>server/at-bootstrap</module>
+    </modules>
+
+    <properties>
+        <!-- ===== 编译运行环境 ===== -->
+        <java.version>21</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <!-- ===== 第三方依赖版本统一锁定（供 dependencyManagement 引用） ===== -->
+        <!-- MyBatis-Plus（Spring Boot 3 专用 starter；v3.5.9+ 分页插件拆分为 mybatis-plus-jsqlparser） -->
+        <mybatis-plus.version>3.5.17</mybatis-plus.version>
+        <!-- JJWT：JWT 令牌（api/impl/jackson 三件套） -->
+        <jjwt.version>0.12.6</jjwt.version>
+        <!-- SpringDoc OpenAPI 3（Spring Boot 3 需 starter-webmvc-ui 系列） -->
+        <springdoc.version>2.8.9</springdoc.version>
+        <!-- MapStruct：对象映射（编译期生成实现） -->
+        <mapstruct.version>1.6.3</mapstruct.version>
+
+        <!-- 说明：Spring Boot / Redis / Flyway / Lombok / MySQL 等版本已由
+             spring-boot-starter-parent（3.5.14）BOM 统一锁定，业务模块无需重复指定版本；
+             使用 spring-boot-starter-* 时直接省略 <version> 即可。 -->
+    </properties>
+
+    <!-- ===================== 版本统一管理 =====================
+         Spring Boot BOM 之外的第三方库在此集中声明，子模块一律不带 <version>。 -->
+    <dependencyManagement>
+        <dependencies>
+            <!-- ===== 内部模块版本管理：版本统一继承 ${project.version}（1.0.0-SNAPSHOT），
+                     子模块引用时无需再写 <version> ===== -->
+            <dependency>
+                <groupId>com.anttransfer</groupId>
+                <artifactId>at-common</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.anttransfer</groupId>
+                <artifactId>at-gateway</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.anttransfer</groupId>
+                <artifactId>at-auth</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.anttransfer</groupId>
+                <artifactId>at-transfer</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.anttransfer</groupId>
+                <artifactId>at-permission</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.anttransfer</groupId>
+                <artifactId>at-file</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.anttransfer</groupId>
+                <artifactId>at-collaboration</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- MyBatis-Plus：Spring Boot 3 starter（自动装配 + MyBatis） -->
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+            <!-- MyBatis-Plus：仅注解（@TableName/@TableId/@TableField/@TableLogic 等），供 at-common 等轻量依赖 -->
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-annotation</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+            <!-- MyBatis-Plus：分页插件所需 jsqlparser（3.5.9+ 需单独引入） -->
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-jsqlparser</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+
+            <!-- JJWT：API（编译期） -->
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-api</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+            <!-- JJWT：实现（运行期） -->
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-impl</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+            <!-- JJWT：Jackson 序列化桥接（运行期） -->
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-jackson</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+
+            <!-- SpringDoc OpenAPI3 + Swagger UI（Boot 3 专用坐标） -->
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+                <version>${springdoc.version}</version>
+            </dependency>
+
+            <!-- MapStruct：对象映射（编译期注解处理器生成 Mapper 实现） -->
+            <dependency>
+                <groupId>org.mapstruct</groupId>
+                <artifactId>mapstruct</artifactId>
+                <version>${mapstruct.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.mapstruct</groupId>
+                <artifactId>mapstruct-processor</artifactId>
+                <version>${mapstruct.version}</version>
+            </dependency>
+
+            <!-- Lombok：与 Spring Boot BOM 锁定版本保持一致，此处显式声明便于查阅 -->
+            <dependency>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+                <version>${lombok.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <!-- ===================== 代码质量：Spotless 许可证头自动校验 =====================
+         仅校验 Apache-2.0 license header，不做代码风格格式化；
+         继承自父工程的各 at-* 子模块将在 verify 阶段自动执行 spotless:check。 -->
     <build>
         <plugins>
             <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>3.10.2</version>
                 <configuration>
-                    <excludes>
-                        <exclude>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                        </exclude>
-                    </excludes>
+                    <java>
+                        <includes>
+                            <include>src/main/java/**/*.java</include>
+                            <include>src/test/java/**/*.java</include>
+                        </includes>
+                        <licenseHeader>
+                            <content><![CDATA[/*
+ * Copyright (c) 2026 AntTransfer Community Contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */]]></content>
+                        </licenseHeader>
+                    </java>
                 </configuration>
+                <executions>
+                    <!-- spotless:check 默认绑定在 verify 阶段（mvn verify / package 时自动执行） -->
+                    <execution>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
-
 </project>

@@ -1,0 +1,11 @@
+# 代码归属（Code Owners）
+# 命中规则的变更将自动请求对应团队/成员 Review。
+# 说明：@anttransfer/community-maintainers 为占位团队，正式 GitHub 团队建立后替换。
+
+# 默认归属：核心维护团队
+* @anttransfer/community-maintainers
+
+# 按目录可进一步细化，例如：
+# /server/at-auth/        @anttransfer/auth-maintainers
+# /web/                   @anttransfer/frontend-maintainers
+# /docs/                  @anttransfer/docs-maintainers

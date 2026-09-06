@@ -1,0 +1,23 @@
+# =====================================================================
+# AntTransfer CE — dev（开发环境，默认 profile）
+#
+# 说明：连接信息已在 application.yml 中以环境变量占位 + 本地默认值给出，
+#       本文件仅做“调试体验”相关差异化配置（SQL 打印、接口文档、日志级别）。
+# =====================================================================
+
+# 接口文档：Swagger UI（Knife4j 风格可由 at-bootstrap 后续按需引入）
+springdoc:
+  swagger-ui:
+    # 文档入口：http://localhost:8080/api/swagger-ui/index.html
+    enabled: true
+
+mybatis-plus:
+  configuration:
+    # 开发期将 SQL 打印到控制台，便于排查；生产已在 prod profile 关闭
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+logging:
+  level:
+    # 开发期全量 DEBUG，含 SQL 参数日志
+    com.anttransfer: debug
+    org.springframework.web: info

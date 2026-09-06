@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright (c) 2026 AntTransfer Community Contributors
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+<!--
+  =====================================================================
+  at-file — 文件存储业务模块
+
+  职责：文件元数据 FileObject 与多后端存储抽象（本地磁盘 / 对象存储 OSS-COS-S3），
+  上传下载、分片、秒传（sha256）、内容类型嗅探等。
+
+  依赖规则：仅依赖 at-common，禁止依赖其他 at-* 业务模块。
+  =====================================================================
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.anttransfer</groupId>
+        <artifactId>anttransfer-ce</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>at-file</artifactId>
+    <name>at-file</name>
+    <description>AntTransfer 文件存储：元数据 / 本地与对象存储多后端</description>
+
+    <dependencies>
+        <!-- 共享内核：Result / ErrorCode / BaseEntity / BusinessException -->
+        <dependency>
+            <groupId>com.anttransfer</groupId>
+            <artifactId>at-common</artifactId>
+        </dependency>
+        <!-- Lombok：编译期注解（optional 不传递） -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+</project>

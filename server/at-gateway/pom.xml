@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright (c) 2026 AntTransfer Community Contributors
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+<!--
+  =====================================================================
+  at-gateway — 统一接入层 / 横切关注点模块
+
+  职责：
+    1. 全局异常处理器 GlobalExceptionHandler：统一转换为 Result 返回；
+    2. TraceIdFilter：请求入口生成 / 透传 traceId（贯穿日志与响应头）；
+    3. 全局 CORS、编码等 WebMvc 横切配置。
+
+  依赖规则：只允许依赖 at-common（本模块不持有任何业务逻辑；
+  业务模块间的调用在 at-bootstrap 聚合运行时完成）。
+  =====================================================================
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.anttransfer</groupId>
+        <artifactId>anttransfer-ce</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>at-gateway</artifactId>
+    <name>at-gateway</name>
+    <description>AntTransfer 统一接入层：全局异常 / 链路追踪 / CORS</description>
+
+    <dependencies>
+        <!-- 共享内核：Result / ErrorCode / TraceUtils 等 -->
+        <dependency>
+            <groupId>com.anttransfer</groupId>
+            <artifactId>at-common</artifactId>
+        </dependency>
+        <!-- Spring MVC Web：@RestControllerAdvice / Filter / WebMvcConfigurer 的编译与运行基础 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+    </dependencies>
+</project>

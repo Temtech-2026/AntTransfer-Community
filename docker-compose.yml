@@ -1,0 +1,84 @@
+# =====================================================================
+# AntTransfer CE — 完整环境编排（MySQL + Redis + 后端 server）
+#
+# 用法：
+#   docker compose up --build          # 前台启动
+#   docker compose up -d --build       # 后台启动
+#   docker compose down                # 停止（加 -v 会连数据卷一起删除）
+#
+# 变量（可选，均带默认值；可复制 .env.example 为 .env 覆盖）：
+#   DB_USERNAME / DB_PASSWORD / MYSQL_PORT / REDIS_PORT / SERVER_PORT
+#
+# 后端端口默认 8080；接口全局前缀 /api；Spring profile 自动使用 prod。
+# =====================================================================
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: at-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-123456}
+      MYSQL_DATABASE: anttransfer
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      # 数据卷：库文件持久化
+      - mysql-data:/var/lib/mysql
+      # 数据库层自定义初始化入口：默认空目录，勿放 V*.sql
+      # （建表与初始化数据由应用启动时的 Flyway 自动迁移承担，见 sql/README）
+      - ./deploy/docker/mysql-initdb.d:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    container_name: at-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: anttransfer/server:latest
+    container_name: at-server
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: 8080
+      DB_URL: jdbc:mysql://mysql:3306/anttransfer?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      DB_USERNAME: ${DB_USERNAME:-root}
+      DB_PASSWORD: ${DB_PASSWORD:-123456}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DATABASE: 0
+      REDIS_PASSWORD: ""
+      FLYWAY_ENABLED: "true"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  mysql-data:
+  redis-data:

@@ -1,0 +1,20 @@
+# =====================================================================
+# AntTransfer CE — MySQL 数据源 profile（示例 / 显式选择）
+#
+# 激活方式（profile 可叠加，如 dev,mysql 或 prod,mysql）：
+#   SPRING_PROFILES_ACTIVE=mysql
+#   SPRING_PROFILES_ACTIVE=dev,mysql
+#
+# 说明：
+#   · application.yml 主配置中的数据源默认即 MySQL（jdbc:mysql://localhost:3306/anttransfer）；
+#     本 profile 将连接信息拆分为 HOST/PORT/NAME 便于环境变量注入，作为“显式 MySQL”
+#     的推荐写法，二者等价，二选一即可，避免重复覆盖造成混淆；
+#   · Flyway 迁移与 baseline 配置继承主配置（classpath:db/migration），无需重复；
+#   · driver 依赖见 at-bootstrap/pom.xml（com.mysql:mysql-connector-j，runtime）。
+# =====================================================================
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: 'jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:anttransfer}?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true'
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456}

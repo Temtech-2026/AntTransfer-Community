@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright (c) 2026 AntTransfer Community Contributors
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+<!--
+  =====================================================================
+  at-permission — 权限控制业务模块
+
+  职责：RBAC 权限点定义（如 transfer:create / file:download）、角色权限判定、
+  权限注解 RequirePermission。权限校验通常消费 at-auth 的登录上下文。
+
+  依赖规则：仅依赖 at-common，禁止依赖其他 at-* 业务模块。
+  说明：与 at-auth 通过“接口契约”解耦（如预留 LoginUser），不在编译期互相引用。
+  =====================================================================
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.anttransfer</groupId>
+        <artifactId>anttransfer-ce</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>at-permission</artifactId>
+    <name>at-permission</name>
+    <description>AntTransfer 权限控制：RBAC 权限点 / 角色 / 权限校验注解</description>
+
+    <dependencies>
+        <!-- 共享内核：Result / ErrorCode / BusinessException / BaseEntity -->
+        <dependency>
+            <groupId>com.anttransfer</groupId>
+            <artifactId>at-common</artifactId>
+        </dependency>
+        <!-- Spring 基础（IoC/事件 ApplicationEventPublisher/@Scheduled 调度）：供 Service/Job 使用 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <!-- MyBatis-Plus：@Mapper 自动装配 + BaseMapper + Lambda 条件构造器（运行时由 at-bootstrap 聚合） -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+        </dependency>
+        <!-- Lombok：编译期注解（optional 不传递） -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+</project>
