@@ -143,3 +143,7 @@ data/
 uploads/
 temp/
 .cache/
+
+# 本地验证/评估用临时载体（Flyway 校验等一次性产物，禁止入库）
+.verify_tmp/
+.verify/
