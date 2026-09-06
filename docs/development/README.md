@@ -50,6 +50,13 @@ make web-dev    # 本地起前端
 | E2E | `tests/e2e` | Playwright（规划） | 空，见该目录 README |
 | 性能 | `tests/performance` | k6（规划） | 空，见该目录 README |
 
+## ⚠️ 技术债与待裁决差异（AT-DIFF）
+
+- 📋 索引页：[AT-DIFF-todos.md](./AT-DIFF-todos.md)（外部计划 vs 仓库契约的 5 处差异，
+  详细描述与方案嵌在代码内 `TODO[AT-DIFF-01~05]`）。
+- 🔍 审计命令：`grep -rn "TODO\[AT-DIFF-" server/`（应 5 处；发布前应为 0）。
+- 📌 涉及「错误码口径 / 接口命名 / 鉴权架构」的裁决项，改动前先在此登记。
+
 ## 🚀 提交与合入
 
 - 🤝 遵循 [CONTRIBUTING.md](../../CONTRIBUTING.md)：Conventional Commits、PR 到 `master`、CI 全绿。

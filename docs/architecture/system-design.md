@@ -315,7 +315,11 @@ Key 与 TTL 的**唯一权威常量**在 at-common `RedisKeyConstants`（各业�
 ## 8. 🔍 现状核对（As-Is）与实现顺序
 
 **已落地**：8 模块结构 + 依赖铁律；`Result/ErrorCode/BaseEntity/BusinessException/TraceUtils`；
-网关过滤器/全局异常/CORS；`RequireLogin` / `RequirePermission` 注解（**尚无 AOP/拦截器实现**）；
+网关过滤器/全局异常/CORS；`RequireLogin` / `RequirePermission` 注解；
+**RBAC 鉴权（2026-09-07）：`@RequiresPerm` + AOP 切面、`PermissionService`（at:perm 缓存 +
+多角色并集 + 显式 Deny 优先）、`AccessControlService`（归属 + 数据范围守卫，V-01 统一入口）、
+`AuthenticatedUser` 公共主体契约、`GET /api/v1/permission/my`**（前端映射见
+docs/development/frontend-permission-map.md）；
 `LoginUser`、业务实体（TransferRecord/FileObject/CollaborationSpace）；MyBatis-Plus 配置
 （雪花/逻辑删除/二级缓存关）；Flyway 统一（classpath 打包）；**`sql/V1__schema.sql` 二次重置为
 CE sys_ 前缀 16 表四族 + `V2__init_data.sql` 初始化数据**（2026-09-06，脚手架示例表移除、原 V3
@@ -326,8 +330,12 @@ Redis Key 规划定稿：at-common `RedisKeyConstants`（`at:` 前缀 Key/TTL �
 （Redis Key 规划表）同步（2026-09-06）。
 
 **待实现（按 P0 顺序建议，相关表已随 V1 就绪）**：
-1. 认证切面 + 双令牌 + Redis 会话（at-auth，含 Flyway V3 增列 `sys_user.token_epoch`，§2.1~2.3）→ 解锁后续全部鉴权；
-2. 访问判定 AccessControlService + 资源归属校验 + RBAC 读写实现（at-permission）；
+1. ~~认证切面 + 双令牌 + Redis 会话~~ **✅ 已实现（2026-09-07）**：Spring Security 过滤链 +
+   access JWT（`ver=token_epoch`）+ refresh Redis 白名单原子轮换 + 登录失败计数锁定；
+   Flyway V3 增列 `sys_user.token_epoch` 已落地；端点 `/api/v1/auth/{token, token/refresh, logout, me}`。
+2. ~~访问判定 + 资源归属校验~~ **✅ 守卫已就绪（2026-09-07）**：`@RequiresPerm` +
+   `AccessControlService` 可作为各业务模块 by-id 访问的统一入口；剩余：RBAC 写管理
+   （角色/授权界面与 `invalidate` 触发点）待业务模块实现期接入；
 3. 上传主线（sys_upload_task 状态机 + uploaded_indexes 分片索引 + merge 短事务 + 整件 SHA-256 校验）；
 4. 审批主线（冲突判重 1008/1009 + CAS + 到期回收定时任务）；
 5. 外发分享（下载三校验 + 次数原子扣减 + 审计）。

@@ -15,6 +15,7 @@
  */
 package com.anttransfer.auth.model;
 
+import com.anttransfer.common.security.AuthenticatedUser;
 import lombok.Data;
 
 import java.io.Serializable;
@@ -22,19 +23,19 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 当前登录用户上下文（骨架）。
+ * 当前登录用户上下文。
  *
- * <p>职责：承载一次请求中已认证用户的身份摘要信息。由 at-auth 模块
- * （登录校验切面 / 拦截器）在请求开始时解析 Token 填充，
- * 业务侧通过 ThreadLocal 或参数注入获取，避免层层透传 userId。</p>
+ * <p>职责：承载一次请求中已认证用户的身份摘要信息，由 {@code JwtAuthenticationFilter}
+ * 解析 Token 后作为 Spring SecurityContext 的 principal 注入；业务侧通过
+ * {@link AuthenticatedUser}（at-common 契约）或 at-auth 的 SecurityUtils 读取。</p>
  *
- * <p>注意：此处仅保存“身份摘要”，不承载用户详细信息（如密码等），
- * 详细信息由各自业务模块按需查询。</p>
+ * <p>注意：此处仅保存“身份摘要”，不承载密码等敏感信息；角色与权限标识不在 JWT
+ * 中固化，由 at-permission 按需实时解析（Redis 缓存，角色变更即时生效）。</p>
  *
  * @author AntTransfer CE
  */
 @Data
-public class LoginUser implements Serializable {
+public class LoginUser implements Serializable, AuthenticatedUser {
 
     private static final long serialVersionUID = 1L;
 

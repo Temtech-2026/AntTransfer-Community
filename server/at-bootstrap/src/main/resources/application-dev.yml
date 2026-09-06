@@ -11,6 +11,18 @@ springdoc:
     # 文档入口：http://localhost:8080/api/swagger-ui/index.html
     enabled: true
 
+anttransfer:
+  # 免登录白名单（dev）：放行 Swagger / OpenAPI，便于自测（prod 走 application-prod.yml 关闭文档）
+  auth:
+    permit-all:
+      - /v3/api-docs/**
+      - /swagger-ui/**
+      - /swagger-ui.html
+      - /favicon.ico
+  # RBAC 冒烟端点开关（仅 dev，生产勿开）
+  smoke:
+    enabled: true
+
 mybatis-plus:
   configuration:
     # 开发期将 SQL 打印到控制台，便于排查；生产已在 prod profile 关闭

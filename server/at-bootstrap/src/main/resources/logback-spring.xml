@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright (c) 2026 AntTransfer Community Contributors
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+<!--
+  =====================================================================
+  AntTransfer CE — 日志配置
+
+  唯一目的：让 at-gateway TraceIdFilter 写入 MDC 的 traceId 出现在每一行日志中，
+  实现「响应体 traceId ↔ 服务端日志」的双向可检索（PRD §7 可观测要求）。
+
+  实现方式：复用 Spring Boot 自带的 defaults.xml / console-appender.xml，
+  仅覆盖 CONSOLE_LOG_PATTERN 增加 %X{traceId} 片段，保持与官方默认格式一致。
+  无 traceId 时（如启动阶段）该片段输出空串，不影响可读性。
+  =====================================================================
+-->
+<configuration>
+
+    <!-- 引入 Spring Boot 默认变量（PID、LOG_LEVEL_PATTERN、异常转换词等），须先于自定义 property -->
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!-- 覆盖控制台输出格式：在级别后追加 [traceId] -->
+    <property name="CONSOLE_LOG_PATTERN"
+              value="%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}) %clr([%X{traceId:-}]){faint} %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}"/>
+
+    <!-- 控制台 Appender（使用上面覆盖后的 pattern） -->
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+</configuration>

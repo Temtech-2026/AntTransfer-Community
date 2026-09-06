@@ -1,268 +1,263 @@
+import { history } from '@umijs/max';
 import { message, notification } from 'antd';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { errorConfig } from './requestErrorConfig';
+
+import { errorConfig, presentError } from './requestErrorConfig';
+import { HandleStrategy, resolveStrategy } from './utils/result';
+import { tokenStore } from './utils/token';
 
 vi.mock('antd', () => ({
   message: {
-    warning: vi.fn(),
     error: vi.fn(),
+    warning: vi.fn(),
+    success: vi.fn(),
   },
   notification: {
+    error: vi.fn(),
     open: vi.fn(),
   },
 }));
 
 vi.mock('@umijs/max', () => ({
-  getIntl: vi.fn(() => ({
-    formatMessage: vi.fn(({ defaultMessage }) => defaultMessage),
-  })),
+  request: vi.fn(),
+  history: {
+    push: vi.fn(),
+  },
 }));
 
-describe('requestErrorConfig', () => {
-  // biome-ignore lint/style/noNonNullAssertion: config handlers are always defined
-  const errorThrower = errorConfig.errorConfig!.errorThrower!;
-  // biome-ignore lint/style/noNonNullAssertion: config handlers are always defined
-  const errorHandler = errorConfig.errorConfig!.errorHandler!;
+vi.mock('./utils/token', () => ({
+  tokenStore: {
+    getAccessToken: vi.fn(() => 'access-token'),
+    getRefreshToken: vi.fn(() => 'refresh-token'),
+    setTokens: vi.fn(),
+    clear: vi.fn(),
+    hasSession: vi.fn(() => true),
+  },
+}));
 
+// biome-ignore lint/style/noNonNullAssertion: 配置中的处理器必然存在
+const errorThrower = errorConfig.errorConfig!.errorThrower!;
+// biome-ignore lint/style/noNonNullAssertion: 配置中的处理器必然存在
+const errorHandler = errorConfig.errorConfig!.errorHandler!;
+const requestInterceptor = errorConfig.requestInterceptors?.[0] as (
+  config: any,
+) => any;
+
+/** 构造一个带统一响应体的 axios 错误 */
+function httpError(
+  code: number,
+  resultMessage = '提示文案',
+  status = 400,
+  traceId = 'trace-1',
+) {
+  const error: any = new Error(resultMessage);
+  error.response = {
+    status,
+    data: { code, message: resultMessage, data: null, traceId },
+  };
+  return error;
+}
+
+describe('resolveStrategy（错误码 → 处理策略）', () => {
+  it('A 类：成功码', () => {
+    expect(resolveStrategy(0)).toBe(HandleStrategy.SUCCESS);
+  });
+
+  it('B 类：流程分支码（HTTP 200 + code≠0）', () => {
+    expect(resolveStrategy(1008)).toBe(HandleStrategy.FLOW_BRANCH);
+    expect(resolveStrategy(1009)).toBe(HandleStrategy.FLOW_BRANCH);
+    expect(resolveStrategy(4001)).toBe(HandleStrategy.FLOW_BRANCH);
+    expect(resolveStrategy(4002)).toBe(HandleStrategy.FLOW_BRANCH);
+  });
+
+  it('C 类：凭证失效', () => {
+    expect(resolveStrategy(1001)).toBe(HandleStrategy.CREDENTIAL);
+    expect(resolveStrategy(1002)).toBe(HandleStrategy.CREDENTIAL);
+    expect(resolveStrategy(1003)).toBe(HandleStrategy.CREDENTIAL);
+    expect(resolveStrategy(1007)).toBe(HandleStrategy.CREDENTIAL);
+  });
+
+  it('D 类：拒绝且不跳登录', () => {
+    expect(resolveStrategy(1004)).toBe(HandleStrategy.DENY);
+    expect(resolveStrategy(1006)).toBe(HandleStrategy.DENY);
+    expect(resolveStrategy(4010)).toBe(HandleStrategy.DENY);
+  });
+
+  it('E/F/G/H 类：请求修正 / 状态冲突 / 限流 / 系统兜底', () => {
+    expect(resolveStrategy(2001)).toBe(HandleStrategy.BAD_REQUEST);
+    expect(resolveStrategy(4040)).toBe(HandleStrategy.BAD_REQUEST);
+    expect(resolveStrategy(4102)).toBe(HandleStrategy.STATE_CONFLICT);
+    expect(resolveStrategy(4011)).toBe(HandleStrategy.THROTTLE);
+    expect(resolveStrategy(5001)).toBe(HandleStrategy.SYSTEM);
+  });
+});
+
+describe('errorThrower', () => {
+  it('A 类不抛错', () => {
+    expect(() =>
+      errorThrower({ code: 0, message: '成功', data: { id: 1 }, traceId: 't' }),
+    ).not.toThrow();
+  });
+
+  it('B 类流程分支码不抛错（不得被当成失败）', () => {
+    expect(() =>
+      errorThrower({
+        code: 4001,
+        message: '秒传未命中，请按分片上传',
+        data: { uploadId: 'u1' },
+        traceId: 't',
+      }),
+    ).not.toThrow();
+  });
+
+  it('非 A/B 类抛出 BizError 并携带 code 与 traceId', () => {
+    expect.assertions(4);
+    try {
+      errorThrower({
+        code: 4006,
+        message: '文件大小超出限制',
+        data: null,
+        traceId: 'trace-9',
+      });
+    } catch (error: any) {
+      expect(error.name).toBe('BizError');
+      expect(error.info.code).toBe(4006);
+      expect(error.info.traceId).toBe('trace-9');
+      expect(error.info.strategy).toBe(HandleStrategy.BAD_REQUEST);
+    }
+  });
+});
+
+describe('errorHandler（按策略呈现）', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  describe('errorThrower', () => {
-    it('should throw error when success is false', () => {
-      const response = {
-        success: false,
-        data: null,
-        errorCode: 400,
-        errorMessage: 'Bad Request',
-        showType: 2,
-      };
+  it('skipErrorHandler 为真时直接抛出，由调用方自行处理', () => {
+    const error = httpError(4006);
+    expect(() => errorHandler(error, { skipErrorHandler: true })).toThrow();
+    expect(message.error).not.toHaveBeenCalled();
+  });
 
-      expect(() => {
-        errorThrower(response);
-      }).toThrow('Bad Request');
+  it('【关键】B 类分支码绝不弹错误提示', () => {
+    presentError({
+      code: 4001,
+      message: '秒传未命中，请按分片上传',
+      data: { uploadId: 'u1' },
+      traceId: 't',
+    });
+    presentError({
+      code: 1009,
+      message: '您已有进行中的申请',
+      data: { applicationId: 1 },
+      traceId: 't',
     });
 
-    it('should not throw error when success is true', () => {
-      const response = {
-        success: true,
-        data: { id: 1 },
-      };
+    expect(message.error).not.toHaveBeenCalled();
+    expect(message.warning).not.toHaveBeenCalled();
+    expect(notification.error).not.toHaveBeenCalled();
+  });
 
-      expect(() => {
-        errorThrower(response);
-      }).not.toThrow();
-    });
+  it('D 类（403）就地提示，且不跳登录', () => {
+    errorHandler(httpError(1004, '无操作权限', 403), {});
 
-    it('should throw BizError with correct info', () => {
-      const response = {
-        success: false,
-        data: { detail: 'more info' },
-        errorCode: 403,
-        errorMessage: 'Forbidden',
-        showType: 3,
-      };
+    expect(message.warning).toHaveBeenCalledWith('无操作权限');
+    expect(history.push).not.toHaveBeenCalled();
+  });
 
-      expect.assertions(5);
-      try {
-        errorThrower(response);
-      } catch (error: any) {
-        expect(error.name).toBe('BizError');
-        expect(error.info.errorCode).toBe(403);
-        expect(error.info.errorMessage).toBe('Forbidden');
-        expect(error.info.showType).toBe(3);
-        expect(error.info.data).toEqual({ detail: 'more info' });
-      }
+  it('E 类（400/404/413）提示具体原因', () => {
+    errorHandler(httpError(4006, '文件大小超出限制', 413), {});
+
+    expect(message.error).toHaveBeenCalledWith('文件大小超出限制');
+  });
+
+  it('G 类（429）提示退避重试', () => {
+    errorHandler(httpError(4103, '超出传输并发或流量限制', 429), {});
+
+    expect(message.warning).toHaveBeenCalledWith(
+      '超出传输并发或流量限制，请稍后重试',
+    );
+  });
+
+  it('H 类（500）用通知呈现并附 traceId 供上报', () => {
+    errorHandler(httpError(5001, '系统繁忙，请稍后重试', 500, 'trace-abc'), {});
+
+    expect(notification.error).toHaveBeenCalledWith({
+      message: '系统繁忙，请稍后重试',
+      description: 'traceId：trace-abc',
+      placement: 'topRight',
     });
   });
 
-  describe('errorHandler', () => {
-    it('should rethrow error when skipErrorHandler is true', () => {
-      const error = new Error('Test error');
-      const opts = { skipErrorHandler: true };
+  it('C 类：1007 账号密码错误只提示、不清除会话、不跳转', () => {
+    errorHandler(httpError(1007, '账号或密码错误', 401), {});
 
-      expect(() => {
-        errorHandler(error, opts);
-      }).toThrow('Test error');
+    expect(message.error).toHaveBeenCalledWith('账号或密码错误');
+    expect(tokenStore.clear).not.toHaveBeenCalled();
+    expect(history.push).not.toHaveBeenCalled();
+  });
+
+  it('C 类：1001/1003 清除会话并跳转登录', () => {
+    errorHandler(httpError(1001, '未登录或登录已过期', 401), {});
+    errorHandler(httpError(1003, '登录态无效，请重新登录', 401), {});
+
+    expect(tokenStore.clear).toHaveBeenCalledTimes(2);
+    expect(history.push).toHaveBeenCalledWith('/user/login');
+  });
+
+  it('无统一响应体时按 HTTP 状态兜底提示', () => {
+    const error: any = new Error('boom');
+    error.response = { status: 502, data: '<html>bad gateway</html>' };
+
+    errorHandler(error, {});
+
+    expect(message.error).toHaveBeenCalledWith(
+      '网络异常，请检查网络后重试（HTTP 502）',
+    );
+  });
+
+  it('离线时提示网络不可用', () => {
+    const error: any = new Error('Network Error');
+    error.request = {};
+    const originalOnLine = navigator.onLine;
+    Object.defineProperty(navigator, 'onLine', {
+      writable: true,
+      value: false,
     });
 
-    it('should handle SILENT showType', () => {
-      const error: any = new Error('Silent error');
-      error.name = 'BizError';
-      error.info = {
-        errorCode: 1001,
-        errorMessage: 'Silent error',
-        showType: 0,
-      };
-
+    try {
       errorHandler(error, {});
-
-      expect(message.warning).not.toHaveBeenCalled();
-      expect(message.error).not.toHaveBeenCalled();
-      expect(notification.open).not.toHaveBeenCalled();
-    });
-
-    it('should handle WARN_MESSAGE showType', () => {
-      const error: any = new Error('Warning');
-      error.name = 'BizError';
-      error.info = {
-        errorCode: 1002,
-        errorMessage: 'This is a warning',
-        showType: 1,
-      };
-
-      errorHandler(error, {});
-
-      expect(message.warning).toHaveBeenCalledWith('This is a warning');
-    });
-
-    it('should handle ERROR_MESSAGE showType', () => {
-      const error: any = new Error('Error message');
-      error.name = 'BizError';
-      error.info = {
-        errorCode: 1003,
-        errorMessage: 'This is an error',
-        showType: 2,
-      };
-
-      errorHandler(error, {});
-
-      expect(message.error).toHaveBeenCalledWith('This is an error');
-    });
-
-    it('should handle NOTIFICATION showType', () => {
-      const error: any = new Error('Notification');
-      error.name = 'BizError';
-      error.info = {
-        errorCode: 1004,
-        errorMessage: 'This is a notification',
-        showType: 3,
-      };
-
-      errorHandler(error, {});
-
-      expect(notification.open).toHaveBeenCalledWith({
-        title: 1004,
-        description: 'This is a notification',
-      });
-    });
-
-    it('should handle REDIRECT showType', () => {
-      const error: any = new Error('Redirect');
-      error.name = 'BizError';
-      error.info = {
-        errorCode: 401,
-        errorMessage: 'Unauthorized',
-        showType: 9,
-      };
-
-      errorHandler(error, {});
-
-      // REDIRECT 分支不应触发任何消息/通知提示
-      expect(message.warning).not.toHaveBeenCalled();
-      expect(message.error).not.toHaveBeenCalled();
-      expect(notification.open).not.toHaveBeenCalled();
-    });
-
-    it('should handle default case for unknown showType', () => {
-      const error: any = new Error('Unknown type');
-      error.name = 'BizError';
-      error.info = {
-        errorCode: 1005,
-        errorMessage: 'Unknown error type',
-        showType: 99,
-      };
-
-      errorHandler(error, {});
-
-      expect(message.error).toHaveBeenCalledWith('Unknown error type');
-    });
-
-    it('should handle axios response error', () => {
-      const error: any = new Error('Axios error');
-      error.response = {
-        status: 500,
-        data: {},
-      };
-
-      errorHandler(error, {});
-
-      expect(message.error).toHaveBeenCalledWith('Response status:500');
-    });
-
-    it('should handle offline error', () => {
-      const error: any = new Error('Network error');
-      error.request = {};
-
-      const originalOnLine = navigator.onLine;
+      expect(message.error).toHaveBeenCalledWith(
+        '网络不可用，请检查网络连接后重试',
+      );
+    } finally {
       Object.defineProperty(navigator, 'onLine', {
         writable: true,
-        value: false,
+        value: originalOnLine,
       });
+    }
+  });
+});
 
-      try {
-        errorHandler(error, {});
-
-        expect(message.error).toHaveBeenCalledWith(
-          'Network unavailable. Please check your connection and try again.',
-        );
-      } finally {
-        Object.defineProperty(navigator, 'onLine', {
-          writable: true,
-          value: originalOnLine,
-        });
-      }
-    });
-
-    it('should handle request error with no response', () => {
-      const error: any = new Error('Request error');
-      error.request = {};
-
-      errorHandler(error, {});
-
-      expect(message.error).toHaveBeenCalledWith(
-        'None response! Please retry.',
-      );
-    });
-
-    it('should handle generic error', () => {
-      const error: any = new Error('Generic error');
-
-      errorHandler(error, {});
-
-      expect(message.error).toHaveBeenCalledWith(
-        'Request error, please retry.',
-      );
-    });
+describe('requestInterceptors', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  describe('requestInterceptors', () => {
-    // The interceptor is registered as a plain function (not a tuple),
-    // so narrow the union type to a callable for the test.
-    const interceptor = errorConfig.requestInterceptors?.[0] as (config: {
-      url?: string;
-      method?: string;
-    }) => { url?: string };
+  it('存在 access token 时附加 Authorization 头', () => {
+    const config: any = { url: '/api/v1/files', method: 'GET', headers: {} };
 
-    it('should pass through config without modification', () => {
-      const config = {
-        url: 'https://api.example.com/users',
-        method: 'GET',
-      };
+    const result = requestInterceptor(config);
 
-      const result = interceptor(config);
+    expect(result.headers.Authorization).toBe('Bearer access-token');
+  });
 
-      // Token attachment is intentionally commented out in the source;
-      // interceptor currently returns config as-is
-      expect(result.url).toBe('https://api.example.com/users');
-    });
+  it('兼容 AxiosHeaders 形态', () => {
+    const set = vi.fn();
+    const config: any = { url: '/api/v1/files', headers: { set } };
 
-    it('should handle URL without config', () => {
-      const config = {};
+    requestInterceptor(config);
 
-      const result = interceptor(config);
-
-      expect(result.url).toBeUndefined();
-    });
+    expect(set).toHaveBeenCalledWith('Authorization', 'Bearer access-token');
   });
 });

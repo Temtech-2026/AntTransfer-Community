@@ -65,6 +65,10 @@
 
 列表接口统一使用 `current` / `pageSize` 查询参数，并返回 `PageResult<T>`：
 
+> 💻 代码实现：`server/at-common/.../result/PageResult.java`。
+> 📏 `pageSize` 上限 100 由 `MybatisPlusConfig` 的分页插件强制收敛（超限自动降为 100，不报错）；
+> 页码溢出返回空列表而非回退首页。
+
 | 请求参数 | 说明 |
 | --- | --- |
 | `current` | 页码，从 1 开始，默认 1 |
@@ -94,13 +98,21 @@
 
 ## 5️⃣ 鉴权（双令牌）
 
-- 🚪 除 `POST /api/v1/auth/token`（登录）、`POST /api/v1/auth/token/refresh`（刷新）、外发分享下载等白名单端点外，请求头携带：
+- 🚪 除**免登录白名单端点**外，请求头携带：
 
 ```
 Authorization: Bearer <accessToken>
 ```
 
-- 🔁 `accessToken` 过期（HTTP 401 + `code=1002`）时，前端**静默**调用 refresh 端点换取新令牌对并重放原请求一次；刷新失败（401 + `code=1003` 或 refresh 过期）跳转登录页。
+| 端点 | 说明 | 免登录 |
+| --- | --- | --- |
+| `POST /api/v1/auth/token` | 登录：body `{username, password}` → 双令牌 | ✅ |
+| `POST /api/v1/auth/token/refresh` | 刷新：body `{refreshToken}` → 新令牌对（**旧 refresh 单次有效**） | ✅ |
+| `POST /api/v1/auth/logout` | 登出：全端吊销（DB `token_epoch+1`，已签发 access/refresh 即刻失效） | ❌ |
+| `GET /api/v1/auth/me` | 当前用户摘要（含角色编码，角色变更即时生效） | ❌ |
+
+- 🔁 `accessToken` 过期（HTTP 401 + `code=1002`）时，前端**静默**调用 refresh 端点换取新令牌对并重放原请求一次；刷新失败（401 + `code=1003` / refresh 过期 / **旧 refresh 已被使用过**）跳转登录页。
+- 🚨 同一 refresh token 被使用两次（重复提交 / 泄露重放）时，服务端按疑似盗用处理：**吊销该用户全部会话**并返回 `code=1003`（PRD US-07）。
 - 🚫 无权限访问（HTTP 403 + `code=1004`）提示且不引导登录。
 
 ## 6️⃣ 错误处理策略
@@ -112,9 +124,15 @@ Authorization: Bearer <accessToken>
 
 ## 7️⃣ 前端对接约定
 
-- 📡 响应拦截器将响应归一为：`success = body.code === 0`；`body.code !== 0` 弹 `body.message`（SILENT 类型除外）。
-- 🔁 网络层行为：HTTP 401 → 尝试 refresh 后重放；refresh 失败跳 `/user/login`；HTTP 403 → 无权限提示；HTTP 429 → 限流提示并退避。
-- ⚠️ `web/src/requestErrorConfig.ts` 当前为 Ant Design Pro 模板结构（`success/errorCode/errorMessage`），首条业务接口联调前须按本契约改造归一化。
+- 📡 业务判据恒为 `body.code`；响应体保持 `Result` 完整结构（不做 `data` 拆包），以保证 B 类分支码能读到 `data` 走业务分支。
+- 🚫 **B 类流程分支码（1008 / 1009 / 4001 / 4002）禁止弹错误提示**：HTTP 200 + `code≠0` 属正常分支（已有生效授权 / 已有在审申请 / 秒传未命中 / 分片缺失），任何位置弹窗都会打断主流程。
+- 🔁 网络层行为：C 类的 `1002` 在响应拦截器内**静默 refresh（单飞）+ 重放原请求一次**，调用方无感知；刷新失败或 `1001 / 1003` → 清除令牌跳 `/user/login`；`1007` 仅提示「账号或密码错误」、不清会话不跳转；D 类（403）就地提示不引导登录；G 类（429）提示退避；H 类（5xx）用通知展示 `traceId` 供上报。
+- 🗂️ 更细的分流以 **[错误码表 §二 处理策略分类](./error-codes.md#二处理策略分类按具体情况具体分析)** 为准（A 成功 / B 流程分支 / C 凭证失效 / D 拒绝不跳登录 / E 请求需修正 / F 状态失效冲突 / G 限流退避 / H 系统兜底），拦截器应按策略而非 HTTP 状态硬编码行为。
+- 💻 已按本契约改造完成：`web/src/requestErrorConfig.ts`（拦截器与策略分流）、
+  `web/src/utils/result.ts`（`Result` / `PageResult` 类型 + A~H 策略表，镜像后端 `ErrorCode`）、
+  `web/src/utils/token.ts`（双令牌存储）；20 例单测覆盖策略分流与「B 类不弹窗」红线。
+  ⚠️ `web/src/services/ant-design-pro/**` 仍为 Ant Design Pro 模板示例（`/api/currentUser` 等），
+  接入首个真实业务接口时应删除并以 `/api/v1/**` 服务层替换。
 
 ## 8️⃣ 在线文档
 

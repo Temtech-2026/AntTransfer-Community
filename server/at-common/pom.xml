@@ -19,9 +19,12 @@
   at-common — AntTransfer 共享内核模块
 
   职责：
-    1. 统一返回体 Result<T>、错误码枚举 ErrorCode、业务异常 BusinessException；
+    1. 统一返回体 Result<T> / 分页响应体 PageResult<T>、错误码枚举 ErrorCode、业务异常 BusinessException、
+       认证授权异常 AuthException；
     2. 实体基类 BaseEntity（MyBatis-Plus 公共字段）；
-    3. 链路追踪工具 TraceUtils（traceId 贯穿日志）。
+    3. 链路追踪工具 TraceUtils（traceId 贯穿日志）；
+    4. MyBatis-Plus 扩展点：仅保留 CurrentUserProvider SPI（供 at-auth 实现，由 at-bootstrap
+       的填充器消费）；分页插件 / 自动填充 / 逻辑删除等 Spring 装配一律在 at-bootstrap。
 
   依赖规则：本模块为“公共内核”，只允许它被其他模块依赖；
   禁止本模块依赖任何其他 at-* 模块（否则形成循环依赖）。
@@ -44,10 +47,17 @@
     <description>AntTransfer 共享内核：Result / ErrorCode / BaseEntity / BusinessException / TraceUtils</description>
 
     <dependencies>
-        <!-- MyBatis-Plus 注解依赖：提供 @TableId/@TableField/@TableLogic 等（版本由父工程锁定） -->
+        <!-- MyBatis-Plus 内核：仅提供 @TableId/@TableField/@TableLogic 等注解与 IPage 分页类型。
+             注意：本模块刻意【不引入】mybatis-plus-spring-boot3-starter——Spring 装配
+             （分页插件 / 自动填充器）全部集中在 at-bootstrap，避免把 JDBC / Spring 传递依赖
+             强加给共享内核与全部业务模块（版本由父工程锁定）。 -->
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-annotation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-core</artifactId>
         </dependency>
         <!-- SLF4J：TraceUtils 使用 MDC 传递 traceId（版本由 Spring Boot BOM 锁定） -->
         <dependency>
@@ -59,6 +69,14 @@
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <optional>true</optional>
+        </dependency>
+
+        <!-- ============ 测试 ============ -->
+        <!-- 仅 test 作用域，不参与传递依赖：Result / PageResult / 自动填充器的契约单测 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 </project>

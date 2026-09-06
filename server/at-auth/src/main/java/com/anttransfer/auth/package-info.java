@@ -20,13 +20,14 @@
  * 当前登录用户上下文 {@link com.anttransfer.auth.model.LoginUser}、
  * 接口登录校验注解 {@link com.anttransfer.auth.annotation.RequireLogin}。</p>
  *
- * <p>建议子包规划（骨架阶段可按需逐步补齐，禁止跨模块引用其他业务包）：</p>
+ * <p>子包规划（已落地，禁止跨模块引用其他业务包）：</p>
  * <ul>
- *     <li>{@code controller}：登录 / 注册 / 登出 / 刷新 Token 接口（依赖 spring-web）；</li>
- *     <li>{@code service}：认证核心逻辑（jwt 签发、校验、会话管理）；</li>
- *     <li>{@code model}：LoginUser 等传输 / 身份模型；</li>
- *     <li>{@code annotation}：RequireLogin 等切面注解；</li>
- *     <li>{@code mapper / entity}：如需持久化账号数据时自行维护。</li>
+ *     <li>{@code controller}：登录 / 登出 / 刷新令牌 / 我的信息接口；</li>
+ *     <li>{@code service}：认证编排、令牌会话（Redis 白名单 + 纪元缓存）、登录失败计数；</li>
+ *     <li>{@code security}：JWT 签发验签、认证过滤器、401/403 统一 Result 输出、安全上下文工具；</li>
+ *     <li>{@code config}：SecurityConfig（过滤链与白名单）、AuthProperties（密钥与 TTL）；</li>
+ *     <li>{@code model}：LoginUser 身份模型；{@code dto}：请求 / 响应模型；</li>
+ *     <li>{@code entity / mapper}：sys_user 认证实体与数据访问。</li>
  * </ul>
  */
 package com.anttransfer.auth;

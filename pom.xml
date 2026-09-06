@@ -144,6 +144,13 @@
                 <artifactId>mybatis-plus-annotation</artifactId>
                 <version>${mybatis-plus.version}</version>
             </dependency>
+            <!-- MyBatis-Plus：内核（IPage 等分页类型，供 at-common PageResult 轻量引用；
+                 不含 Spring 装配，装配一律由 at-bootstrap 的 starter 承担） -->
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-core</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
             <!-- MyBatis-Plus：分页插件所需 jsqlparser（3.5.9+ 需单独引入） -->
             <dependency>
                 <groupId>com.baomidou</groupId>

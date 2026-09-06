@@ -22,21 +22,13 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * 权限校验注解（骨架）。
+ * 权限校验注解（骨架期遗留，已由 {@link RequiresPerm} 取代）。
  *
- * <p>职责：标注在 Controller 方法 / 类上，声明访问所需权限点（可多个）。
- * 由 at-permission 模块的 AOP 切面解析当前用户角色/权限集合完成判定；
- * 无权限时抛 {@link com.anttransfer.common.exception.BusinessException}
- * （对应 {@code ErrorCode.NO_AUTH}）。</p>
- *
- * <p>权限点命名约定：{@code 资源:操作}，例如：</p>
- * <pre>{@code
- *   @RequirePermission("transfer:create")   // 需“创建传输任务”权限
- *   @RequirePermission(value = {"file:download", "file:preview"}, message = "无文件访问权限")
- * }</pre>
- *
+ * @deprecated 请改用 {@link RequiresPerm}：携带精确 perm_code 语义（多角色并集 / Deny 优先），
+ * 由 {@code RequiresPermAspect} 统一执行并返回 1004 NO_AUTH。
  * @author AntTransfer CE
  */
+@Deprecated
 @Target({ElementType.METHOD, ElementType.TYPE})
 @Retention(RetentionPolicy.RUNTIME)
 @Documented

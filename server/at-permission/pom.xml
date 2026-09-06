@@ -52,6 +52,26 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter</artifactId>
         </dependency>
+        <!-- Spring Web MVC：权限控制器 / 接口注解生效 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <!-- Spring Security Core：读取 SecurityContext 中的已认证主体（无需再建过滤链） -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-core</artifactId>
+        </dependency>
+        <!-- AOP：@RequiresPerm 注解切面 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+        <!-- Redis：权限/角色解析缓存（at:perm:{userId}，授权变更主动失效，P-8） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
         <!-- MyBatis-Plus：@Mapper 自动装配 + BaseMapper + Lambda 条件构造器（运行时由 at-bootstrap 聚合） -->
         <dependency>
             <groupId>com.baomidou</groupId>
@@ -62,6 +82,13 @@
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <optional>true</optional>
+        </dependency>
+
+        <!-- ============ 测试 ============ -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 </project>

@@ -41,16 +41,68 @@
     <description>AntTransfer 认证鉴权：登录态 / 用户身份 / 登录校验注解</description>
 
     <dependencies>
-        <!-- 共享内核：Result / ErrorCode / BusinessException -->
+        <!-- 共享内核：Result / ErrorCode / BusinessException / RedisKeyConstants / BaseEntity -->
         <dependency>
             <groupId>com.anttransfer</groupId>
             <artifactId>at-common</artifactId>
+        </dependency>
+        <!-- Spring Web MVC：@RestController / Filter（Servlet）编译与运行基础 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <!-- Spring Security：SecurityFilterChain / JwtAuthenticationFilter / SecurityContext -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <!-- Jakarta Validation：登录/刷新请求体 @Valid 校验生效前提 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <!-- Redis：refresh 白名单 / 会话吊销纪元缓存 / 登录失败计数（StringRedisTemplate） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <!-- MyBatis-Plus：@Mapper 自动装配 + BaseMapper + Lambda 条件构造器（运行时由 at-bootstrap 聚合） -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+        </dependency>
+        <!-- JJWT：access token 签发与验签（api 编译期 / impl+jackson 运行期，版本由父工程锁定） -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <scope>runtime</scope>
         </dependency>
         <!-- Lombok：编译期注解（optional 不传递） -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <optional>true</optional>
+        </dependency>
+
+        <!-- ============ 测试 ============ -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 </project>
