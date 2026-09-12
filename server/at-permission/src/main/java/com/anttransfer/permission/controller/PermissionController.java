@@ -17,7 +17,7 @@ package com.anttransfer.permission.controller;
 
 import com.anttransfer.common.result.Result;
 import com.anttransfer.permission.model.PermissionModels.AccessSnapshot;
-import com.anttransfer.permission.model.PermissionModels.PermissionView;
+import com.anttransfer.permission.model.vo.PermissionView;
 import com.anttransfer.permission.service.PermissionService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;

@@ -15,9 +15,9 @@
  */
 package com.anttransfer.permission.job;
 
-import com.anttransfer.permission.entity.PermissionGrant;
+import com.anttransfer.permission.model.entity.PermissionGrant;
 import com.anttransfer.permission.event.PermissionExpiredEvent;
-import com.anttransfer.permission.mapper.PermissionGrantMapper;
+import com.anttransfer.permission.repository.PermissionGrantMapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

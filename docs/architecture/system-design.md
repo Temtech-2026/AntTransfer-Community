@@ -4,7 +4,7 @@
 | --- | --- |
 | 版本 / 状态 | v0.1-draft · 随红队评审（`red-team-review.md`）同步修订 |
 | 日期 | 2026-09-06 |
-| 产品口径 | [PRD](../PRD.md)（v0.1-draft） |
+| 产品口径 | [PRD](../prd/README.md)（v0.1-draft） |
 | 覆盖范围 | 模块化单体 `server/` 8 个 `at-*` 模块 + `web/`（React 19 / Ant Design Pro v6）；MySQL 8 / Redis 7 / Flyway |
 | 文档关系 | 本文件是**技术设计基线**（实现蓝图）；[架构 README](./README.md) 为总览；[use-case-flows](./use-case-flows.md) 为两条主线的时序口径；[API](../api/README.md) / [error-codes](../api/error-codes.md) 为接口契约。凡涉及“越权 / 并发 / 事务边界”的实现必须通过 [红队评审清单](./red-team-review.md) 的门禁项 |
 
@@ -342,7 +342,7 @@ Redis Key 规划定稿：at-common `RedisKeyConstants`（`at:` 前缀 Key/TTL �
 
 ## 9. 🔗 关联文档
 
-- 产品范围与验收：[PRD](../PRD.md)；时序基线：[use-case-flows](./use-case-flows.md)；
+- 产品范围与验收：[PRD](../prd/README.md)；时序基线：[use-case-flows](./use-case-flows.md)；
   接口契约：[API](../api/README.md)、[error-codes](../api/error-codes.md)；
   模块总览：[architecture/README](./README.md)；
   迁移脚本：[sql/README](../../sql/README.md)。

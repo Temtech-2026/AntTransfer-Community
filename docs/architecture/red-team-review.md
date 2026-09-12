@@ -5,7 +5,7 @@
 | 评审类型 | 设计期红队（Red Team）——对**已落地代码 + 设计基线 + DDL** 做对抗性审查 |
 | 评审主题 | 越权（对象级/垂直越权、鉴权漏洞面）· 并发（竞态、幂等、锁）· 事务边界（事务失效、长事务、一致性） |
 | 版本 / 日期 | v1.0 · 2026-09-06 |
-| 对象 | `server/` 8 模块（骨架代码）、`sql/`（V1__schema.sql + V2__init_data.sql；原 V3 已于 2026-09-06 并入 V1）、`docs/PRD.md`、`docs/architecture/*`、`docs/api/*`、`web/src`（模板） |
+| 对象 | `server/` 8 模块（骨架代码）、`sql/`（V1__schema.sql + V2__init_data.sql；原 V3 已于 2026-09-06 并入 V1）、`docs/prd/README.md`、`docs/architecture/*`、`docs/api/*`、`web/src`（模板） |
 | 配套 | 修复方向已同步进 [system-design.md](./system-design.md)；两文档编号互通 |
 
 > 评审方法说明：本系统处于“架构/设计基线已定稿、Controller-Service 尚未实现”的阶段，

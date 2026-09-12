@@ -29,10 +29,10 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * <p>架构说明：</p>
  * <ul>
  *     <li>启动时依赖 {@code at-bootstrap} 模块聚合的所有 at-* 依赖；</li>
- *     <li>各模块 Mapper 接口建议使用 MyBatis-Plus 的 {@code @Mapper} 注解，
- *         由 MyBatis-Plus 自动扫描装配（无需在此配置全局 {@code @MapperScan}）；
- *         如后续确有集中扫描诉求，可在本类追加：
- *         {@code @MapperScan("com.anttransfer.**.mapper")} 并配合接口过滤；</li>
+ *     <li>各模块数据访问接口统一放在 {@code repository} 包（数据访问层），
+ *         并使用 MyBatis-Plus 的 {@code @Mapper} 注解，由 MyBatis-Plus 自动扫描装配
+ *         （无需在此配置全局 {@code @MapperScan}）；如后续确有集中扫描诉求，可在本类追加：
+ *         {@code @MapperScan("com.anttransfer.**.repository")} 并配合接口过滤；</li>
  *     <li>配置按 profile（dev / prod）拆分，见 {@code src/main/resources/application*.yml}，
  *         数据库与缓存连接均使用环境变量占位，便于容器化部署。</li>
  * </ul>

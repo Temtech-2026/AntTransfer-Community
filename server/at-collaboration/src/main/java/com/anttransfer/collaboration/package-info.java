@@ -17,7 +17,7 @@
  * at-collaboration 协作共享模块。
  *
  * <p>模块职责：围绕“人 + 任务 + 文件”的协作能力——协作空间
- * {@link com.anttransfer.collaboration.entity.CollaborationSpace}、
+ * {@link com.anttransfer.collaboration.model.entity.CollaborationSpace}、
  * 成员与角色（协作者 / 管理员）、分享链接（有效期 / 访问码）、操作审计。</p>
  *
  * <p>设计约定：</p>
@@ -27,6 +27,8 @@
  *     <li>禁止依赖其他 at-* 业务模块。</li>
  * </ul>
  *
- * <p>建议子包规划：{@code entity}、{@code mapper}、{@code service}、{@code controller}。</p>
+ * <p>包结构（统一分层）：{@code controller}（接口层）、{@code service}（业务逻辑与事务边界）、
+ * {@code repository}（数据访问层）、{@code model/entity}（实体）、{@code model/dto}（入参）、
+ * {@code model/vo}（出参视图）、{@code event}（领域事件）、{@code config}（模块内配置）。</p>
  */
 package com.anttransfer.collaboration;

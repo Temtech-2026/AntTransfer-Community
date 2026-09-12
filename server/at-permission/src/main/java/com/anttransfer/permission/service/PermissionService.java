@@ -19,7 +19,7 @@ import com.anttransfer.common.constant.RedisKeyConstants;
 import com.anttransfer.common.exception.AuthException;
 import com.anttransfer.common.result.ErrorCode;
 import com.anttransfer.permission.config.PermissionProperties;
-import com.anttransfer.permission.mapper.RbacAccessMapper;
+import com.anttransfer.permission.repository.RbacAccessMapper;
 import com.anttransfer.permission.model.PermissionModels.AccessSnapshot;
 import com.anttransfer.permission.model.PermissionModels.RoleGrant;
 import com.anttransfer.permission.security.AuthzContext;

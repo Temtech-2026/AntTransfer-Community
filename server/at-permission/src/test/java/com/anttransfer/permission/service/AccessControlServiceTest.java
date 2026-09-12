@@ -16,7 +16,7 @@
 package com.anttransfer.permission.service;
 
 import com.anttransfer.common.exception.AuthException;
-import com.anttransfer.permission.mapper.RbacAccessMapper;
+import com.anttransfer.permission.repository.RbacAccessMapper;
 import com.anttransfer.permission.model.PermissionModels.AccessSnapshot;
 import org.junit.jupiter.api.Test;
 

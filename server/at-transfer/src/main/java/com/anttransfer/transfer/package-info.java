@@ -18,7 +18,7 @@
  *
  * <p>模块职责：AntTransfer 的核心领域——“传输任务”。覆盖任务创建、
  * 排队调度、分片/断点续传、进度实时上报、暂停 / 恢复 / 取消、失败重试与
- * 任务审计等能力。领域实体见 {@link com.anttransfer.transfer.entity.TransferRecord}。</p>
+ * 任务审计等能力。领域实体见 {@link com.anttransfer.transfer.model.entity.TransferRecord}。</p>
  *
  * <p>设计约定：</p>
  * <ul>
@@ -27,7 +27,8 @@
  *     <li>禁止依赖其他 at-* 业务模块（跨模块能力通过 at-bootstrap 侧组合）。</li>
  * </ul>
  *
- * <p>建议子包规划：{@code entity}（实体）、{@code mapper}（持久化）、
- * {@code service}（调度与状态机）、{@code controller}（任务 API）、{@code job}（定时兜底）。</p>
+ * <p>包结构（统一分层）：{@code controller}（接口层）、{@code service}（调度与状态机，业务逻辑与事务边界）、
+ * {@code repository}（数据访问层）、{@code model/entity}（实体）、{@code model/dto}（入参）、
+ * {@code model/vo}（出参视图）、{@code event}（领域事件）、{@code config}（模块内配置）。</p>
  */
 package com.anttransfer.transfer;

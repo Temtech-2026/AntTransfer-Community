@@ -41,8 +41,4 @@ public final class PermissionModels {
     public record AccessSnapshot(Long userId, List<String> roles, List<String> permCodes,
                                  List<String> deniedPermCodes, int dataScope) {
     }
-
-    /** 接口输出视图（GET /v1/permission/my，Phase 5 前端权限引导用） */
-    public record PermissionView(List<String> roles, List<String> permCodes, int dataScope) {
-    }
 }

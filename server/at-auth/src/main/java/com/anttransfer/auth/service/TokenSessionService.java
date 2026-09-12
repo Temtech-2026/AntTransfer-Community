@@ -16,8 +16,8 @@
 package com.anttransfer.auth.service;
 
 import com.anttransfer.auth.config.AuthProperties;
-import com.anttransfer.auth.entity.SysUser;
-import com.anttransfer.auth.mapper.UserMapper;
+import com.anttransfer.auth.model.entity.SysUser;
+import com.anttransfer.auth.repository.UserMapper;
 import com.anttransfer.common.constant.RedisKeyConstants;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;

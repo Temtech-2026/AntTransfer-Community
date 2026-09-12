@@ -1,7 +1,7 @@
 # ⚙️ 核心用例时序（Use-Case Flows）
 
 > 🎯 两条核心闭环——**上传主线**（传输引擎）与**权限审批主线**（RBAC 标准流程）——的系统级时序。
-> 🔗 关联：[PRD §5](../PRD.md#5-主用例时序描述文字版)、[API 规范](../api/README.md)、[错误码](../api/error-codes.md)、[架构](./README.md)。
+> 🔗 关联：[PRD §5](../prd/README.md#5-主用例时序描述文字版)、[API 规范](../api/README.md)、[错误码](../api/error-codes.md)、[架构](./README.md)。
 > 🚧 状态：设计基线（draft）。骨架期仅具备实体与注解（见「现状核对」），Controller/Service 落地时以本文件为口径。
 
 ## 0️⃣ 📌 阅读约定
@@ -118,6 +118,6 @@
 
 ## 3️⃣ 🔗 关联文档
 
-- 📋 产品口径与验收：`docs/PRD.md`（§3 US-01/02/05、§5 用例 A/B、§6 关键产品规则）
+- 📋 产品口径与验收：`docs/prd/README.md`（§3 US-01/02/05、§5 用例 A/B、§6 关键产品规则）
 - 🔌 HTTP 契约与错误码：`docs/api/README.md`、`docs/api/error-codes.md`
 - 🏗️ 模块边界与铁律：`docs/architecture/README.md`

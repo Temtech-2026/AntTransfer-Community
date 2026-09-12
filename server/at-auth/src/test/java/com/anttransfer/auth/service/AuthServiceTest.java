@@ -16,9 +16,9 @@
 package com.anttransfer.auth.service;
 
 import com.anttransfer.auth.config.AuthProperties;
-import com.anttransfer.auth.dto.AuthDtos.TokenResponse;
-import com.anttransfer.auth.entity.SysUser;
-import com.anttransfer.auth.mapper.UserMapper;
+import com.anttransfer.auth.model.vo.AuthVos.TokenResponse;
+import com.anttransfer.auth.model.entity.SysUser;
+import com.anttransfer.auth.repository.UserMapper;
 import com.anttransfer.auth.security.JwtTokenProvider;
 import com.anttransfer.common.exception.AuthException;
 import org.junit.jupiter.api.BeforeEach;

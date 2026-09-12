@@ -26,8 +26,10 @@
  *     <li>{@code service}：认证编排、令牌会话（Redis 白名单 + 纪元缓存）、登录失败计数；</li>
  *     <li>{@code security}：JWT 签发验签、认证过滤器、401/403 统一 Result 输出、安全上下文工具；</li>
  *     <li>{@code config}：SecurityConfig（过滤链与白名单）、AuthProperties（密钥与 TTL）；</li>
- *     <li>{@code model}：LoginUser 身份模型；{@code dto}：请求 / 响应模型；</li>
- *     <li>{@code entity / mapper}：sys_user 认证实体与数据访问。</li>
+ *     <li>{@code model/entity}：sys_user 认证实体；{@code model/dto}：入参请求模型；
+ *         {@code model/vo}：出参视图模型；{@code model}：LoginUser 身份模型；</li>
+ *     <li>{@code repository}：数据访问层（MyBatis-Plus Mapper）；</li>
+ *     <li>{@code event}：领域事件（跨模块解耦）。</li>
  * </ul>
  */
 package com.anttransfer.auth;

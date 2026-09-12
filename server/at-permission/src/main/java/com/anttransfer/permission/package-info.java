@@ -24,7 +24,10 @@
  * 用户身份信息由 at-auth 提供。为避免模块间编译期耦合，
  * at-permission 应通过自有的“当前用户抽象”（如从上下文读取角色码集合）进行判定。</p>
  *
- * <p>建议子包规划：{@code annotation}（注解）、{@code service}（权限判定）、
- * {@code entity / mapper}（角色权限表持久化）。</p>
+ * <p>包结构（统一分层）：{@code controller}（接口层）、{@code service}（权限判定，业务逻辑与事务边界）、
+ * {@code repository}（数据访问层 MyBatis-Plus Mapper）、{@code model/entity}（权限表持久化实体）、
+ * {@code model/dto}（入参）、{@code model/vo}（出参视图）、{@code event}（领域事件，如 PermissionExpiredEvent）、
+ * {@code config}（模块内配置）；另有 {@code annotation}（权限注解）、{@code aspect}（校验切面）、
+ * {@code security}（鉴权上下文）、{@code job}（到期回收定时任务）。</p>
  */
 package com.anttransfer.permission;

@@ -15,10 +15,10 @@
  */
 package com.anttransfer.auth.controller;
 
-import com.anttransfer.auth.dto.AuthDtos.LoginRequest;
-import com.anttransfer.auth.dto.AuthDtos.RefreshTokenRequest;
-import com.anttransfer.auth.dto.AuthDtos.TokenResponse;
-import com.anttransfer.auth.dto.AuthDtos.UserSummary;
+import com.anttransfer.auth.model.dto.AuthDtos.LoginRequest;
+import com.anttransfer.auth.model.dto.AuthDtos.RefreshTokenRequest;
+import com.anttransfer.auth.model.vo.AuthVos.TokenResponse;
+import com.anttransfer.auth.model.vo.AuthVos.UserSummary;
 import com.anttransfer.auth.service.AuthService;
 import com.anttransfer.common.result.Result;
 import jakarta.validation.Valid;
