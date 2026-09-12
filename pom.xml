@@ -85,9 +85,38 @@
         <!-- MapStruct：对象映射（编译期生成实现） -->
         <mapstruct.version>1.6.3</mapstruct.version>
 
-        <!-- 说明：Spring Boot / Redis / Flyway / Lombok / MySQL 等版本已由
-             spring-boot-starter-parent（3.5.14）BOM 统一锁定，业务模块无需重复指定版本；
-             使用 spring-boot-starter-* 时直接省略 <version> 即可。 -->
+        <!-- ===== Redis：Spring Data Redis + Lettuce 客户端 =====
+             下列属性名与 Spring Boot BOM（spring-boot-dependencies）的官方命名保持一致，
+             故在父工程覆盖即可统一约束【直接依赖 + 传递依赖】的版本；
+             覆盖值等于 Boot 3.5.14 BOM 的原生锁定值，不产生任何解析差异，仅让版本号字面可见。
+             升级 Spring Boot 时须同步核对本组版本（对照 spring-data-bom 与 lettuce.version）。 -->
+        <!-- Spring Data 系列 BOM（spring-data-redis 由它管理），对应 Spring Data 2025.0.11 -->
+        <spring-data-bom.version>2025.0.11</spring-data-bom.version>
+        <!-- Spring Data Redis：RedisTemplate / RedisConnectionFactory 等 API 所在（父 BOM 中为 3.5.11） -->
+        <spring-data-redis.version>3.5.11</spring-data-redis.version>
+        <!-- Lettuce：spring-boot-starter-data-redis 的默认 Redis 客户端 -->
+        <lettuce.version>6.6.0.RELEASE</lettuce.version>
+
+        <!-- ===== Flyway：数据库版本化迁移 =====
+             沿用 Boot BOM 官方属性名，覆盖后 flyway-core 与各数据库方言包版本始终一致。
+             覆盖值等于 Boot 3.5.14 BOM 的原生锁定值。 -->
+        <flyway.version>11.7.2</flyway.version>
+
+        <!-- ===== 数据库驱动：MySQL / PostgreSQL =====
+             属性名沿用 Boot BOM 官方命名，覆盖值等于 Boot 3.5.14 的原生锁定值。 -->
+        <!-- MySQL：默认数据源驱动（mysql-connector-j） -->
+        <mysql.version>9.7.0</mysql.version>
+        <!-- PostgreSQL：pg profile 数据源驱动 -->
+        <postgresql.version>42.7.10</postgresql.version>
+
+        <!-- ===== Testcontainers：集成测试容器 =====
+             Boot BOM 以 testcontainers-bom（import scope）管理整族 artifact，故此处仅需
+             覆盖版本属性即可统一约束 junit-jupiter / mysql / core 等全部模块，无需逐个声明条目。 -->
+        <testcontainers.version>1.21.4</testcontainers.version>
+
+        <!-- 说明：Spring Boot 自身（3.5.14）与 spring-boot-starter-* 全家桶仍由
+             spring-boot-starter-parent BOM 统一锁定，业务模块无需重复指定版本；
+             其余被直接依赖的第三方 artifact 均已在 properties + dependencyManagement 中字面收敛。 -->
     </properties>
 
     <!-- ===================== 版本统一管理 =====================
@@ -202,6 +231,63 @@
                 <artifactId>lombok</artifactId>
                 <version>${lombok.version}</version>
             </dependency>
+
+            <!-- ===== Redis：Spring Data Redis + Lettuce 客户端 =====
+                 说明：spring-boot-starter-data-redis 的版本天然跟随 Spring Boot（3.5.14），
+                 但其底层实现 artifact 在此显式收敛，确保「字面可见 + 全树唯一」。
+                 条目版本与 Boot BOM 原生值一致，声明后不改变任何解析结果。 -->
+            <!-- Spring Data Redis：RedisTemplate / RedisConnectionFactory / 序列化器等 API -->
+            <dependency>
+                <groupId>org.springframework.data</groupId>
+                <artifactId>spring-data-redis</artifactId>
+                <version>${spring-data-redis.version}</version>
+            </dependency>
+            <!-- Lettuce：Redis 客户端实现（starter 默认选用，亦可作独立依赖直接引用） -->
+            <dependency>
+                <groupId>io.lettuce</groupId>
+                <artifactId>lettuce-core</artifactId>
+                <version>${lettuce.version}</version>
+            </dependency>
+
+            <!-- ===== Flyway：数据库版本化迁移 =====
+                 通用引擎 flyway-core 与各数据库方言包共用 ${flyway.version}，
+                 升级时只需改动 properties 一处，杜绝 core 与 dialect 版本漂移。
+                 当前方言：mysql（默认库）/ database-postgresql（pg profile）。 -->
+            <dependency>
+                <groupId>org.flywaydb</groupId>
+                <artifactId>flyway-core</artifactId>
+                <version>${flyway.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.flywaydb</groupId>
+                <artifactId>flyway-mysql</artifactId>
+                <version>${flyway.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.flywaydb</groupId>
+                <artifactId>flyway-database-postgresql</artifactId>
+                <version>${flyway.version}</version>
+            </dependency>
+
+            <!-- ===== 数据库驱动：MySQL / PostgreSQL =====
+                 与 Flyway 同构：条目版本与 Boot BOM 原生值一致，声明后不改变解析结果，
+                 仅让「字面可见 + 全树唯一」，杜绝驱动版本随 BOM 静默漂移。 -->
+            <!-- MySQL：默认数据源驱动（runtime scope 由使用方声明） -->
+            <dependency>
+                <groupId>com.mysql</groupId>
+                <artifactId>mysql-connector-j</artifactId>
+                <version>${mysql.version}</version>
+            </dependency>
+            <!-- PostgreSQL：pg profile 数据源驱动（runtime scope 由使用方声明） -->
+            <dependency>
+                <groupId>org.postgresql</groupId>
+                <artifactId>postgresql</artifactId>
+                <version>${postgresql.version}</version>
+            </dependency>
+
+            <!-- ===== Testcontainers：集成测试容器 =====
+                 由 ${testcontainers.version} 覆盖 Boot BOM 中 import 的 testcontainers-bom，
+                 统一约束 junit-jupiter / mysql / core 整族模块，故此处无独立 artifact 条目。 -->
         </dependencies>
     </dependencyManagement>
 
