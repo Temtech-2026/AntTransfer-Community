@@ -22,7 +22,7 @@
 - 📦 **统一返回体与错误码**：`Result<T>`（code / message / data / traceId），分段业务错误码（`0 / 1xxx / 2xxx / 4xxx / 5xxx`）；
 - 🛤️ **全链路追踪**：`X-Trace-Id` 透传 + MDC 日志关联，全局异常兜底；
 - 🔑 **领域骨架**：认证鉴权（`at-auth`）、RBAC 权限点（`at-permission`）、传输任务与断点续传模型（`at-transfer`）、文件元数据/秒传（`at-file`）、协作空间与分享（`at-collaboration`）；
-- 🗄️ **数据库版本化**：Flyway 迁移（脚本仓库 `sql/`），`dev` 默认关闭、`prod` 默认开启并支持存量库基线；
+- 🗄️ **数据库版本化**：Flyway 迁移（脚本仓库 `sql/`），`dev` / `prod` 默认均自动迁移（`FLYWAY_ENABLED` 默认 `true`），并支持存量库基线；
 - 📖 **接口文档**：SpringDoc OpenAPI 3（Swagger UI），生产默认关闭；
 - 🖥️ **前端工程**：`web/` 基于 Ant Design Pro v6（Umi Max + React 19 + TypeScript），已配置 `/api` 代理到后端；
 - 🛠️ **工程化**：Makefile 统一入口、Docker 多阶段镜像、`docker compose` 一键编排、GitHub Actions CI、Spotless 许可证校验。
@@ -91,7 +91,7 @@ cd web && npm install && npm run dev
 | `SERVER_PORT` | `8080` | 服务端口 |
 | `DB_URL` / `DB_USERNAME` / `DB_PASSWORD` | 本地 `anttransfer` 库 | MySQL 连接（生产必须覆盖） |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | 本地 Redis | Redis 连接 |
-| `FLYWAY_ENABLED` | dev `false` / prod `true` | 是否执行 Flyway 迁移 |
+| `FLYWAY_ENABLED` | `true` | 是否执行 Flyway 迁移（`dev` / `prod` 默认均开启，置 `false` 可临时关闭） |
 
 ## 📚 文档 / Documentation
 

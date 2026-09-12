@@ -50,7 +50,7 @@ AntTransfer CE（Community Edition）采用 **模块化单体（Modular Monolith
 - 📦 **统一返回体**：`{ code, message, data, traceId }`，由 at-common 的 `Result` 静态工厂（`Result.ok(...)` / `Result.fail(...)`，见 `Result.java` Javadoc）构造，全局异常处理器兜底。
 - 🛤️ **链路追踪**：`TraceUtils` 基于 MDC 生成并透传 `traceId`，贯穿入口过滤器与日志。
 - 🗄️ **数据访问**：MyBatis-Plus，逻辑删除字段 `deleted` 统一在 `BaseEntity`，主键雪花算法。
-- 🔄 **数据库版本化**：Flyway（脚本仓库在 `sql/`），生产 profile 默认开启并支持 `baseline-on-migrate`。
+- 🔄 **数据库版本化**：Flyway（脚本仓库在 `sql/`），`dev` / `prod` 默认均开启（`FLYWAY_ENABLED` 默认 `true`）并支持 `baseline-on-migrate`。
 
 ## ☁️ 部署形态
 

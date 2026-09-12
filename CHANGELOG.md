@@ -156,3 +156,14 @@
 ## [1.0.0-SNAPSHOT] 🚧 - 开发中
 
 首个功能快照，尚未正式发布。
+
+### 🔄 Changed（变更）
+
+- 📖 校正 Flyway 迁移开关的文档口径为「**`dev` / `prod` 统一默认开启**」（配置侧为准：
+  `application.yml` 的 `spring.flyway.enabled=${FLYWAY_ENABLED:true}`，`application-dev.yml`
+  未覆盖该项，`application-prod.yml` 亦注明无需重复配置——**配置无误，属文档单侧写反**）：
+  修正 `README.md`（特性表 + 环境变量表）、`docs/getting-started/README.md`（快速开始 + 常见问题）、
+  `docs/deployment/README.md`、`docs/architecture/README.md` 共 6 处；
+  并将「手工执行 `sql/V1__schema.sql` 建表」更正为准确口径——`V1` 全表 `create table if not exists`
+  可安全重入，配合 `baseline-on-migrate` 自动打基线，建表无需手工；仅手工重复执行
+  `sql/V2__init_data.sql` 会因固定 ID 插入与 Flyway 冲突。

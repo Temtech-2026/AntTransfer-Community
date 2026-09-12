@@ -22,8 +22,11 @@ docker compose -f docker-compose.dev.yml up -d
 # 方式 B：本机已装有 MySQL/Redis，直接复用（库表见 sql/README.md）
 ```
 
-> 💡 本地无 Docker 时，请自行准备 MySQL（库 `anttransfer`）与 Redis，并执行
-> `sql/V1__schema.sql` 建表（或用 Flyway：`FLYWAY_ENABLED=true` 启动后端自动迁移）。
+> 💡 本地无 Docker 时，请自行准备 MySQL（库 `anttransfer`）与 Redis，**建表无需手工执行**：
+> Flyway 迁移默认开启（`FLYWAY_ENABLED` 默认 `true`），启动后端即自动执行 `sql/V1__schema.sql`
+> （建表）与 `sql/V2__init_data.sql`（初始化数据）。若为已有存量库或已手工建过表，无需改配置——
+> `baseline-on-migrate` 会自动打基线后继续，且 V1 为 `create table if not exists` 可安全重入
+> （仅勿手工重复执行 V2，其固定 ID 插入会与 Flyway 冲突）。
 
 ## 2️⃣ 第二步：启动后端
 
@@ -54,6 +57,6 @@ npm run dev
 - 🐛 **编译报“不支持发行版本 21”**：确认 `JAVA_HOME` 指向 JDK 21（项目根 `mvnw -v` 可查看当前 JVM）。
 - 🔌 **连接数据库失败**：检查 `DB_URL / DB_USERNAME / DB_PASSWORD` 环境变量或
   `server/at-bootstrap/src/main/resources/application*.yml` 默认值。
-- 🗄️ **Flyway 行为**：开发默认关闭（`FLYWAY_ENABLED=false`），生产默认开启，脚本位于 `sql/`。
+- 🗄️ **Flyway 行为**：开发与生产**默认均自动迁移**（`FLYWAY_ENABLED` 默认 `true`），脚本位于 `sql/`；如需跳过迁移（例如已手工建表），启动时置 `FLYWAY_ENABLED=false`。
 
 > 📚 更多细节：[开发指南](../development/README.md)、[架构说明](../architecture/README.md)。

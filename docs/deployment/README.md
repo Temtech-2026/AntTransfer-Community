@@ -23,7 +23,7 @@
 | `DB_USERNAME` / `DB_PASSWORD` | 是 | `root` / `123456` | 数据库账号密码 |
 | `REDIS_HOST` / `REDIS_PORT` | 是 | `localhost:6379` | Redis 地址 |
 | `REDIS_DATABASE` / `REDIS_PASSWORD` | 否 | `0` / 空 | Redis 库号与密码 |
-| `FLYWAY_ENABLED` | 否 | prod 默认 `true` | 是否执行 Flyway 迁移 |
+| `FLYWAY_ENABLED` | 否 | `true` | 是否执行 Flyway 迁移（`prod` 默认开启，置 `false` 可临时关闭） |
 
 ## 🚀 三、部署方式
 
