@@ -2,7 +2,8 @@
 # AntTransfer CE — 本地开发依赖（MySQL 8.4 + Redis 7）
 #
 # 作用：只拉起后端本地开发所需的基础设施，后端本体通过
-#   ./mvnw -pl server/at-bootstrap -am spring-boot:run 或 IDE 在本机运行，
+#   ./mvnw -DskipTests -pl server/at-bootstrap -am install（首次一次）
+#   随后 ./mvnw -pl server/at-bootstrap spring-boot:run（启动段勿加 -am）或 IDE 在本机运行，
 #   直接连 localhost:3306 / localhost:6379（与 at-bootstrap application.yml
 #   数据源 / Redis 默认值一致；DB_PASSWORD 默认 123456）。
 #

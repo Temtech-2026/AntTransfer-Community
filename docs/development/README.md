@@ -19,18 +19,23 @@
 
 ```bash
 make build      # 后端打包（-DskipTests）
+./mvnw clean compile -DskipTests   # 仅全模块编译校验（仓库根执行；server/ 下无 mvnw）
 make test       # 后端测试
 make run        # 本地起后端（at-bootstrap, 端口 8080）
 make dev-up     # Docker 拉起本地 MySQL/Redis
 make web-dev    # 本地起前端
 ```
 
+> ⚠️ **构建入口在仓库根**：`server/` 下既无 `mvnw` 也无 `pom.xml`（聚合 POM 是根 `pom.xml`，
+> 以 `<modules>` 聚合 `server/at-*`），因此 `cd server && ./mvnw ...` 一律不成立。
+> `make run` 亦为两步（先 `install` 依赖模块，再单独 `spring-boot:run`），原因见 Makefile 内注释。
+
 等价原始命令见 [快速开始](../getting-started/README.md) 与 `Makefile`。
 
 ## ☕ 后端开发规约
 
 1. **🧭 依赖方向**：遵守架构铁律（业务/接入层 → `at-common`；`at-common` 不反向依赖），新依赖版本一律放父 pom 的 `dependencyManagement`。
-2. **📜 许可证头**：Java 文件头部必须有 Apache-2.0 头，CI 中 `spotless:check` 强制校验；本地可 `./mvnw spotless:apply` 自动补。
+2. **📜 许可证头**：Java 文件头部必须有 Apache-2.0 头，CI 中 `spotless:check` 强制校验；本地可 `./mvnw spotless:apply` 自动补。完整写法（`LICENSE` 文件规范、文件头模板、各语言注释对照）见 [许可证与版权声明规范](./license-header.md)。
 3. **📦 统一返回体**：Controller 返回 `Result<T>`（at-common 的 `Result` 静态工厂 `Result.ok(...)` / `Result.fail(...)`），业务异常抛 `BusinessException`，由全局处理器转换。
 4. **🛤️ 链路追踪**：需要透传请求链路时使用 `at-common` 的 `TraceUtils`。
 5. **🧬 实体基类**：继承 `BaseEntity`（`createBy/createTime/updateBy/updateTime/deleted` 公共字段，删除走逻辑删除）；主键默认雪花算法。
@@ -56,6 +61,9 @@ make web-dev    # 本地起前端
   详细描述与方案嵌在代码内 `TODO[AT-DIFF-01~05]`）。
 - 🔍 审计命令：`grep -rn "TODO\[AT-DIFF-" server/`（应 5 处；发布前应为 0）。
 - 📌 涉及「错误码口径 / 接口命名 / 鉴权架构」的裁决项，改动前先在此登记。
+- 🔗 **前端待联调**（非 AT-DIFF，前端自身挂账项）：`/api` 开发代理链路配置已核对一致、
+  尚未实测——详见 [web/README.md](../../web/README.md) 的「待联调：`/api` 开发代理链路」；
+  联调时 `POST /api/v1/auth/token` 返回 200 即可关闭本项。
 
 ## 🚀 提交与合入
 

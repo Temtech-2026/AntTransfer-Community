@@ -17,13 +17,17 @@
 
 ## 🛠️ 本地开发
 
-**前置要求**：JDK 21、Maven 3.9+、Node.js 20+（前端）、MySQL 8.x、Redis 7.x。
+**前置要求**：JDK 21（本机默认的 JDK 17 会报「不支持发行版本 21」）、Maven 3.9+（可用 `./mvnw`）、Node.js 22+（前端 `engines` 强制；Node 18 会被 utoopack 拒绝）、MySQL 8.x、Redis 7.x。
 
 推荐使用 Makefile（见 `make help`）；不使用 Make 时直接执行等价命令：
 
 ```bash
-# 后端：启动 at-bootstrap（-am 连带构建依赖模块）
-./mvnw -pl server/at-bootstrap -am spring-boot:run
+# 后端：启动 at-bootstrap（两步；等价：make run）
+# ① 先装依赖模块到本地仓库  ② 再单独启动
+# 注意：② 不要加 -am —— spring-boot:run 是 CLI goal，带 -am 会作用到根聚合 POM
+# （packaging=pom，无 main class）并报 "Unable to find a suitable main class"。
+./mvnw -DskipTests -pl server/at-bootstrap -am install
+./mvnw -pl server/at-bootstrap spring-boot:run
 
 # 前端
 cd web && npm install && npm run dev
@@ -36,7 +40,7 @@ docker compose -f docker-compose.dev.yml up -d
 
 ## ✅ 代码规范
 
-- 📜 所有 `src/main|test` 下的 Java 文件必须携带 Apache-2.0 许可证文件头；`spotless:check` 已绑定 `verify` 阶段自动校验：
+- 📜 所有 `src/main|test` 下的 Java 文件必须携带 Apache-2.0 许可证文件头（`LICENSE` 文件与文件头的标准写法见 [许可证与版权声明规范](docs/development/license-header.md)）；`spotless:check` 已绑定 `verify` 阶段自动校验：
 
   ```bash
   ./mvnw spotless:apply   # 自动补齐文件头（apply 才生效，check 只校验）

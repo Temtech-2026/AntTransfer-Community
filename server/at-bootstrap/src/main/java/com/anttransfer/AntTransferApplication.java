@@ -37,8 +37,11 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  *         数据库与缓存连接均使用环境变量占位，便于容器化部署。</li>
  * </ul>
  *
- * <p>启动命令：{@code mvn -pl at-bootstrap -am spring-boot:run} 或
- * {@code java -jar at-bootstrap/target/at-bootstrap-1.0.0-SNAPSHOT.jar}</p>
+ * <p>启动命令：先在仓库根执行 {@code ./mvnw -DskipTests -pl server/at-bootstrap -am install}
+ * （装依赖模块到本地仓库），再执行 {@code ./mvnw -pl server/at-bootstrap spring-boot:run}。
+ * 启动段禁止加 {@code -am}：spring-boot:run 属 CLI goal，会作用到根聚合 POM
+ * （无 main class）导致构建失败；等价入口为 {@code make run}。或直接
+ * {@code java -jar server/at-bootstrap/target/at-bootstrap-1.0.0-SNAPSHOT.jar}</p>
  *
  * @author AntTransfer CE
  */

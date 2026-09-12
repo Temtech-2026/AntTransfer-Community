@@ -27,6 +27,24 @@
 - 🖥️ **前端工程**：`web/` 基于 Ant Design Pro v6（Umi Max + React 19 + TypeScript），已配置 `/api` 代理到后端；
 - 🛠️ **工程化**：Makefile 统一入口、Docker 多阶段镜像、`docker compose` 一键编排、GitHub Actions CI、Spotless 许可证校验。
 
+## 🖼️ 界面预览 / Screenshots
+
+> 📸 **截图位（待补充）**：首个可用版本发布前替换为真实界面截图，建议存放于 `docs/images/` 并以相对路径引用。
+
+| 登录 / Sign in | 传输任务 / Transfers |
+| :---: | :---: |
+| _截图待补充_ | _截图待补充_ |
+
+| 文件管理 / Files | 协作空间 / Collaboration |
+| :---: | :---: |
+| _截图待补充_ | _截图待补充_ |
+
+<!-- 替换示例：删除上方占位表格，取消注释并按真实文件名修改
+| ![登录](docs/images/screenshot-login.png) | ![传输任务](docs/images/screenshot-transfers.png) |
+| --- | --- |
+| ![文件管理](docs/images/screenshot-files.png) | ![协作空间](docs/images/screenshot-collaboration.png) |
+-->
+
 ## 📁 项目结构 / Project Layout
 
 ```text
@@ -71,7 +89,10 @@ docker compose up -d --build
 
 # —— 或 —— 仅启动本地依赖（MySQL/Redis），后端用 IDE/命令行跑：
 docker compose -f docker-compose.dev.yml up -d
-./mvnw -pl server/at-bootstrap -am spring-boot:run
+# 后端分两步（等价：make run）：先装依赖模块到本地仓库，再单独启动 at-bootstrap。
+# 启动命令不要加 -am，否则 CLI goal 会作用到根聚合 POM 并因找不到 main class 而失败。
+./mvnw -DskipTests -pl server/at-bootstrap -am install
+./mvnw -pl server/at-bootstrap spring-boot:run
 
 # 2️⃣ 前端（默认 http://localhost:8000，/api 已代理到后端）
 cd web && npm install && npm run dev
@@ -107,7 +128,7 @@ cd web && npm install && npm run dev
 
 ## 🛡️ 安全漏洞披露 / Security Policy
 
-请勿在公开 Issue 中暴露安全漏洞细节，报告方式与支持范围见 [SECURITY.md](SECURITY.md)。
+请勿在公开 Issue 中暴露安全漏洞细节。优先使用 GitHub Security Advisory（仓库 → `Security` → `Report a vulnerability`）；备用联系方式：`temtech2026@163.com`。完整报告方式与支持范围见 [SECURITY.md](SECURITY.md)。
 
 ## 📄 许可证 / License
 

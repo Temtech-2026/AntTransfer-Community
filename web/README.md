@@ -19,6 +19,28 @@ npm run dev
 > 🔗 前后端联调：`config/proxy.ts` 已把 `/api/` 代理到 `http://localhost:8080`
 > （后端 `at-bootstrap`），请先启动后端再访问页面。
 
+### ⚠️ 待联调：`/api` 开发代理链路（未验证，联调时处理）
+
+开发态所有 `/api/**` 请求都依赖 dev server 代理，该链路**尚未在前后端齐备的环境下实测**，先挂账留待联调处理。
+
+配置侧已核对一致，**不是配置缺陷**：
+
+| 环节 | 位置 | 事实 |
+| --- | --- | --- |
+| 代理取值 | `config/config.ts:84` | `proxy[UMI_ENV]`；`npm run dev`（`cross-env UMI_ENV=dev MOCK=none`）→ `proxy.dev` |
+| 代理目标 | `config/proxy.ts:14-20` | `/api/` → `http://localhost:8080`，**刻意不配 `pathRewrite`** |
+| 路径拼接 | `at-bootstrap/application.yml:17` | `server.servlet.context-path: /api` + 控制器 `/v1/...` = `/api/v1/...` |
+| 前端请求 | `src/requestErrorConfig.ts:37` | `REFRESH_URL = '/api/v1/auth/token/refresh'`，已带 `/api` 前缀 |
+
+即 `/api/v1/...` 转发后恰好落在后端 `/api` context-path 下，**前缀不可再加也不可删**。
+
+联调时需注意两点：
+
+1. `npm run dev` 带 **`MOCK=none`**，mock 已关闭；后端不在 8080 时 `/api` 必然失败——需先 `make dev-up`（MySQL/Redis）再 `make run`（后端 8080）。
+2. 代理**只对 dev server 生效**：`npm run preview` / `build` 产物不走 `proxy.ts`，此时 `src/app.tsx:193` 的 `baseURL` 会切到官方 demo 域名，属预期行为，勿误判为代理故障。
+
+**待办**：联调时实测 `POST /api/v1/auth/token` 返回 200 即关闭本项；若失败，按 CORS（`anttransfer.cors.allowed-origin-patterns`）→ 路径拼接 → 后端白名单顺序排查。
+
 ## ⚙️ 常用脚本
 
 | 命令 | 说明 |

@@ -6,9 +6,9 @@
 
 | 依赖 | 版本 | 用途 |
 | --- | --- | --- |
-| ☕ JDK | 21 | 后端编译运行 |
-| 📦 Maven | 3.9+ | 后端构建（也可直接用 `./mvnw`） |
-| 🟢 Node.js | 20+ | 前端（`web/`） |
+| ☕ JDK | 21 | 后端编译运行（JDK 17 会报「不支持发行版本 21」） |
+| 📦 Maven | 3.9+ | 后端构建（也可直接用 `./mvnw`；**构建入口在仓库根，`server/` 下没有 `mvnw`**） |
+| 🟢 Node.js | 22+ | 前端（`web/`）；`engines` 强制 ≥ 22，Node 18 会被 utoopack 拒绝 |
 | 🗄️ MySQL | 8.x | 主库（默认库名 `anttransfer`） |
 | ⚡ Redis | 7.x | 缓存 / 登录态 |
 | 🐳 Docker | 24+ | 可选，一键拉起 MySQL / Redis |
@@ -31,9 +31,20 @@ docker compose -f docker-compose.dev.yml up -d
 ## 2️⃣ 第二步：启动后端
 
 ```bash
-./mvnw -pl server/at-bootstrap -am spring-boot:run
-# 等价：make run
+# ① 先把依赖模块装进本地仓库（首次或依赖有改动时执行一次）
+./mvnw -DskipTests -pl server/at-bootstrap -am install
+
+# ② 再单独启动 at-bootstrap
+#    ⚠️ 不要加 -am：spring-boot:run 是 CLI goal，带 -am 时会作用到根聚合 POM
+#    （packaging=pom，无 main class）并报 "Unable to find a suitable main class"，
+#    而 at-bootstrap 反被 SKIPPED。
+./mvnw -pl server/at-bootstrap spring-boot:run
+
+# 等价：make run（已按上述两步实现）
 ```
+
+> 🧱 仅需编译校验时（不启动、不打包），在**仓库根**执行：
+> `./mvnw clean compile -DskipTests`（`server/` 下无 `mvnw` 与 `pom.xml`，聚合 POM 在仓库根）。
 
 启动成功后：
 
@@ -57,6 +68,10 @@ npm run dev
 - 🐛 **编译报“不支持发行版本 21”**：确认 `JAVA_HOME` 指向 JDK 21（项目根 `mvnw -v` 可查看当前 JVM）。
 - 🔌 **连接数据库失败**：检查 `DB_URL / DB_USERNAME / DB_PASSWORD` 环境变量或
   `server/at-bootstrap/src/main/resources/application*.yml` 默认值。
+  默认连接 `localhost:3306/anttransfer`、账号 `root` / 密码 `123456`；**本机 MySQL 凭据不同时**
+  须用 `DB_PASSWORD`（或 `DB_USERNAME` / `DB_URL`）覆盖，否则启动时 Flyway 会报
+  `1045 Access denied for user 'root'@'localhost'`。端口冲突可改用其他实例：
+  `DB_URL=jdbc:mysql://localhost:3307/anttransfer?...`。
 - 🗄️ **Flyway 行为**：开发与生产**默认均自动迁移**（`FLYWAY_ENABLED` 默认 `true`），脚本位于 `sql/`；如需跳过迁移（例如已手工建表），启动时置 `FLYWAY_ENABLED=false`。
 
 > 📚 更多细节：[开发指南](../development/README.md)、[架构说明](../architecture/README.md)。

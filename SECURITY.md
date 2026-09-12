@@ -18,7 +18,7 @@ AntTransfer Community 重视安全问题，感谢你负责任地披露漏洞 �
 推荐途径（二选一）：
 
 1. **GitHub Security Advisory（推荐）**：仓库 → `Security` → `Report a vulnerability`，按模板填写，可附复现步骤与受影响版本；
-2. **邮件联系维护者**：维护者公开邮箱见仓库主页（尚未配置专用邮箱前，暂以方式 1 为准）。
+2. **邮件联系维护者**：`temtech2026@163.com`。
 
 收到报告后我们会：
 
