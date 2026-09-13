@@ -50,8 +50,8 @@ at-gateway  at-auth  at-transfer  at-file  at-permission  at-collaboration
 | `at-auth` | 认证域 | 登录 / 登出 / 刷新令牌、双令牌签发验签、`sys_user` 身份、`LoginUser` 上下文、登录失败计数 | `sys_user` / `sys_dept` / `sys_group` / `sys_login_log` | `/api/v1/auth/**`、`/api/v1/users/**` |
 | `at-permission` | 权限域 | RBAC（角色-权限点-数据范围）、`@RequiresPerm` AOP、`AccessControlService` 行级守卫、申请-审批-授权闭环、到期回收 | `sys_role` / `sys_permission` / `sys_user_role` / `sys_role_permission` / `sys_approval_request` / `sys_approval_node` / `sys_user_file_permission` | `/api/v1/roles/**`、`/api/v1/permission-points/**`、`/api/v1/permission/**` |
 | `at-transfer` | 传输域 | 传输任务状态机、分片并发上传、断点续传、合并编排、进度累加、限并发 | `sys_upload_task` | `/api/v1/transfers/**` |
-| `at-file` | 文件域 | 文件元数据（`sys_file`）、秒传去重、SHA-256 校验、存储抽象（本地 / 对象存储）、孤儿清理 | `sys_file` | `/api/v1/files/**` |
-| `at-collaboration` | 协作域 | 共享空间与成员、外发链接（有效期 / 提取码 / 次数）、站内通知域 | `collaboration_space` / `space_member`（待建）、`sys_share_link` / `sys_notify_message` | `/api/v1/spaces/**`、`/api/v1/shares/**` |
+| `at-file` | 文件域 | 文件元数据（`sys_file`）、秒传去重、SHA-256 校验、存储抽象（本地 / 对象存储）、孤儿清理、**外发分享（有效期 / 提取码 / 次数 / 内容扫描 / 取件审计，[AT-DIFF-06](../development/AT-DIFF-todos.md#at-diff-06-外发分享模块归属)）** | `sys_file`、`sys_share_link`、`sys_operation_log`（写入方） | `/api/v1/files/**`、`/api/v1/shares/**` |
+| `at-collaboration` | 协作域 | 共享空间与成员、**站内通知与 IM 长连接**（通知域独占实现：落库先于推送、离线补拉、三口径未读 inbox/todo/chat、Redis Pub/Sub 多实例广播、WebSocket 握手鉴权与心跳清理）；外发链接**原规划**属本模块，CE 已改落 `at-file`（[AT-DIFF-06](../development/AT-DIFF-todos.md#at-diff-06-外发分享模块归属)） | `sys_notify_message`（含会话消息维度，V5 增量）、`sys_space` / `sys_group_member`（结构已随 V4 落地） | `/api/v1/notifications/**`、`/api/v1/todos/**`、`/api/v1/chat/**`；**WebSocket** `GET /api/ws/notify`（握手 `?token=`，帧协议见 [api/README.md §7](../api/README.md)）；`/api/v1/spaces/**`（规划） |
 | `at-bootstrap` | 启动装配 | 聚合全部模块、MyBatis-Plus / Flyway / OpenAPI 配置、`@SpringBootApplication`、集成测试宿主 | — | 无 HTTP 契约 |
 
 #### 1.2.2 依赖铁律（编译期强制）
@@ -109,7 +109,7 @@ at-gateway  at-auth  at-transfer  at-file  at-permission  at-collaboration
 | `FileMetadataPort` | `at-file` | `at-transfer`（合并落库编排） | 建/查 `sys_file` 元数据，供上传合并在同一事务内调用 |
 | `PermissionCheckPort` | `at-permission` | `at-auth`（过滤器可选加载权限，[AT-DIFF-02](../development/AT-DIFF-todos.md) 方案 B） | 按 userId 取权限点/数据范围 |
 | `CurrentUserProvider` | `at-auth`（已有 `SecurityCurrentUserProvider`） | `at-permission` 及业务模块 | 取当前登录用户身份（**已落地**） |
-| `NotifyPort` | `at-collaboration`（通知域） | `at-permission` / `at-transfer` | 写站内通知（`sys_notify_message`） |
+| `NotificationPort` | `at-collaboration`（通知域，**已落地**） | `at-permission` / `at-transfer` | 写站内通知（`sys_notify_message`）；配套 `NotificationCommand`（收发件人 / 类型 / 业务锚点）与 `NotifyType` 编码表。**渠道开关与落库实现统一收敛于此域**——原先 `at-permission` 自带的站内信 / 邮件实现与开关已删除，避免两套口径分歧 |
 
 > ✅ 已落地样板：`at-common` 的 `com.anttransfer.common.mybatis.CurrentUserProvider` + `com.anttransfer.common.security.AuthenticatedUser`，由 `at-auth` 的 `SecurityCurrentUserProvider` 实现。新增 SPI 请照此办理。
 
@@ -245,8 +245,8 @@ server/at-<module>/src/main/java/com/anttransfer/<module>/
 | # | 接口 | 承载能力（Won't 项） | 归属模块 | 接口位置 | CE 默认实现 | EE 计划实现 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 | `IdentityProvider` | SSO / OIDC / LDAP / SAML | `at-auth` | `at-common` SPI | `LocalIdentityProvider`（账号密码 + BCrypt） | `OidcIdentityProvider` / `LdapIdentityProvider` |
-| 2 | `ContentScanInterceptor` | AI DLP（内容扫描 / 敏感词 / 涉密识别） | `at-file` | `at-common` SPI | `NoopContentScanInterceptor`（PASS） | `DlpContentScanInterceptor` |
-| 3 | `WatermarkProvider` | 盲水印 / DRM | `at-transfer`（下载）、`at-collaboration`（分享下载） | `at-common` SPI | `NoopWatermarkProvider`（原样输出流） | `BlindWatermarkProvider` / `DrmWatermarkProvider` |
+| 2 | `ContentScanInterceptor` | AI DLP（内容扫描 / 敏感词 / 涉密识别） | `at-file` | `at-common` SPI（**CE 暂落 `at-file` 模块内**，见 [AT-DIFF-09](../development/AT-DIFF-todos.md#at-diff-09-contentscaninterceptor-落点)） | **`SuffixAndKeywordScanInterceptor`**（后缀黑名单 + 文件名敏感词，命中即 4007 并审计） | `DlpContentScanInterceptor` |
+| 3 | `WatermarkProvider` | 盲水印 / DRM | `at-transfer`（下载）、`at-file`（分享下载；原规划 at-collaboration，见 [AT-DIFF-06](../development/AT-DIFF-todos.md#at-diff-06-外发分享模块归属)） | `at-common` SPI | `NoopWatermarkProvider`（原样输出流） | `BlindWatermarkProvider` / `DrmWatermarkProvider` |
 | 4 | `CryptoCodec` | KMS 存储加密（信封加密） | `at-file`（存储层） | `at-common` SPI | `PlainCryptoCodec`（明文直通） | `KmsEnvelopeCodec` |
 | 5 | `VirusScanner` | 杀毒 / 木马扫描 | `at-file` | `at-common` SPI | `NoopVirusScanner`（PASS） | `ClamAvVirusScanner` |
 | 6 | `ApprovalNodeResolver` | 动态多级审批 / 会签 | `at-permission` | `at-common` SPI | `SingleNodeApprovalResolver`（CE 固定 `node_seq=1`） | `MultiNodeApprovalResolver`（读 `sys_approval_node`） |
@@ -401,6 +401,13 @@ public interface FileStore {
 > - ⚠️ **接缝类**：**A-6 / D-2** 的 7 个 SPI 接口当前**代码尚未建立**（`at-file` / `at-transfer` / `at-collaboration` 仍为空壳），按 §2.3「不晚于首个功能落地」执行。
 > - ✅ **已收口**：**D-8**（`at:share:lock` TTL 裁定 **30 min**）——2026-09-13 当场裁决，项目内本已一致，**无需回改**。
 > - 🏗️ **结构已落地 / 实现待补**：**D-9**（菜单路由列 + 菜单接口）、**D-10**（审计归档任务）、**D-11**（成员 / 空间两表 + at-collaboration 消费）、**D-12**（`user_type` 列 + 协作者口径）——DDL 已随 `sql/V4__menu_route_user_type_and_collaboration.sql` 落地，Java 侧实现与契约补全按各自触发时机执行；其中 **D-9 的接口契约随 D-5 前置**，**D-12 的 CE 口径已定**（维持 PRD，列仅作 EE 预留，不阻塞）。
+
+> **📌 配套清单（2026-09-14）**：以 `server/` 实际代码复核 `docs/prd/README.md` §4.1 后端现状时，
+> 另识别出 **8 项实现缺口**（上传上限未配置、停用未联动吊销会话、无自助改密、健康检查与优雅启停缺失、
+> 角色互斥无校验、敏感级别无变更审计、全文索引未建、轻 IM 缺 @ 提及与保留期），已登记在
+> [`docs/development/AT-DIFF-todos.md`](../development/AT-DIFF-todos.md) § 🧱 后端功能缺口登记（GAP-01 ~ GAP-08），
+> 与本节 **D-x 同批关闭**（时机：三条主线跑通后的加固期；其中「上传上限」建议提前至分片落地前）。
+> 共享空间 / 审批端点 / 分片上传三项已由 **D-11 / D-5** 覆盖，未重复登记。
 
 ### 🎯 本阶段 DoD 现状对照（2026-09-13 核对）
 

@@ -246,25 +246,36 @@ DB 事务内执行 `token_epoch = token_epoch + 1`，并主动失效两个 Redis
 3. 访问判定与回收“无空档”仅在同库同事务前提下成立——判定条件
    `status=1 AND expire_at>now` 单条查询即为原子。
 
-### 5.3 外发下载主线（at-collaboration）
+### 5.3 外发下载主线（原规划 at-collaboration，CE 实际落地 at-file，见 [AT-DIFF-06](../development/AT-DIFF-todos.md#at-diff-06-外发分享模块归属)）
 
 创建（校验创建者对源文件的访问权限，[V-07]）→ 生成高熵不透明 token → 下载校验
 （未撤销 + 未过期 + 提取码对）→ **次数扣减（DB 原子裁决，Redis 前置闸加速）** → 审计下载。
 
 **次数扣减：DB 为唯一放行裁决，Redis 仅前置配额闸与计数镜像（[C-08] / P-8）**：
 
-1. **DB 权威裁决（防超卖唯一判据）**：`UPDATE sys_share_link SET downloaded_count=downloaded_count+1
-   WHERE token=? AND status=0 AND expire_at > now() AND downloaded_count < download_limit`，
-   影响行数 = 1 才放行发流（并发第 N/N+1 次不超卖）；0 行 ⇒ `4004`（已过期 / 次数用尽），
-   并按需幂等置 `status=2`（CAS）供界面收敛；
+1. **DB 权威裁决（防超卖唯一判据）**：`UPDATE sys_share_link SET status=CASE WHEN downloaded_count >=
+   download_limit-1 THEN 2 ELSE status END, revoke_at=..., downloaded_count=downloaded_count+1
+   WHERE id=? AND status=0 AND expire_at > now() AND downloaded_count < download_limit`，
+   影响行数 = 1 才放行发流（并发第 N/N+1 次不超卖）；0 行 ⇒ `4004`（已过期 / 次数用尽）。
+   **「用尽最后一次」的 `status=2`（终态）在同一语句内原子收敛**（免额外回读、无悬空态）；
+   注意 `status` / `revoke_at` 的赋值必须写在 `downloaded_count` 之前——CASE 中引用的必须是**自增前**的旧值，
+   这是正确性的一部分（`ShareLinkMapper#consumeDownloadQuota` 有完整说明）；
 2. **Redis 前置配额闸（可选加速）**：创建链接时 `SET at:share:count:{token} <剩余配额> EX <链接剩余有效秒>`；
-   下载判定前 `DECR`，返回值 < 0 直接快速拒绝并 `INCR` 归还（已用尽链接不再打 DB）；键不存在
-   （Redis 丢失 / 重启）⇒ 跳过前置闸直接走 DB 裁决，DB 放行后重建镜像 `download_limit -
+   核销判定前 `DECR`，返回值 < 0 直接快速拒绝并 `INCR` 归还（已用尽链接不再打 DB）；键不存在
+   （Redis 丢失 / 重启）⇒ 跳过前置闸直接走 DB 裁决，DB 拒绝后重建镜像 `download_limit -
    downloaded_count`（自愈）。Redis 计数永远以 DB 为准，偏差只影响拒绝效率，**不产生超卖**；
-3. **提取码错误锁定**：Redis `INCR at:share:lock:{token}`（首次写入 `EXPIRE 30min`），连续错
-   5 次 ⇒ `4011` 临时锁（429）；提取码正确即 DEL 该键；锁定属防爆破加速态，Redis 丢失仅放宽
+   ⚠️ 前置闸判定为「已用尽」时**只拒绝、不改链接状态**——镜像归零意味着「最后一次额度刚被并发放行」，
+   此刻置终态会连带拒掉仍在途的成功 UPDATE（该最后一条 SQL 自己会收敛终态）；
+3. **提取码错误锁定**：Redis `INCR at:share:lock:{token}`，连续错 5 次 ⇒ `4011` 临时锁（429/30min）；
+   TTL 在**触发锁定那一刻**刷新为完整时长（而非仅首次错误时设置）——否则「第 5 次错误发生在第 25 分钟」
+   就只剩 5 分钟锁定，窗口被侵蚀；判定是否锁定须**比值 ≥ 阈值**，不能只看键存在（计数与锁定同键，
+   `hasKey` 会把第 1 次错误误判为锁定）；提取码正确即 DEL 该键；锁定属防爆破加速态，Redis 丢失仅放宽
    尝试窗口，无正确性风险；
-4. 白名单端点：分享下载允许**无登录**，但校验严格限定在分享通道内，不泄露原存储路径（[V-07]）。
+4. 白名单端点：分享下载允许**无登录**，但校验严格限定在分享通道内，不泄露原存储路径（[V-07]）；
+5. **两步式取件（一次性票据，CE 实现新增）**：换票 `POST /v1/shares/{token}/verify` 走完上述校验后仅签发
+   一次性票据（Redis `at:share:ticket:{ticket}`，TTL 5 min，`GETDEL` 取用即焚、**不落库**），
+   **不在换票时扣次数**（避免「换票后未取件」白吃额度）；核销 `POST /v1/shares/redeem` 才做
+   前置闸 + DB 原子扣减 + 写审计，并**二次校验链接状态**，使撤销 / 过期对已签发票据即时生效。
 
 ## 6. 🚧 一致性、并发与事务设计基线（红线，实现必守）
 
@@ -305,13 +316,15 @@ Key 与 TTL 的**唯一权威常量**在 at-common `RedisKeyConstants`（各业�
 | `at:login:fail:{username}` | String = 登录失败计数（INCR） | 15 min | 滑动窗口计数，达阈值账号临时锁定（[D-03]） |
 | `at:upload:{uploadId}` | Hash = 上传任务进度 / 状态镜像 | 24 h | 分片索引持久于 `sys_upload_task.uploaded_indexes`，丢失可重建（P-8）；任务完成清理 |
 | `at:share:count:{token}` | String = 剩余配额镜像（DECR 前置闸，DB 裁决） | 随链接剩余有效期 | 链接失效 / 撤销清理；丢失回源 DB 重建（§5.3） |
-| `at:share:lock:{token}` | String = 提取码错误计数（INCR） | 30 min | 错 5 次临时锁（`4011`），提取码正确 DEL |
+| `at:share:lock:{token}` | String = 提取码错误计数（INCR，计数与锁定同键） | 30 min（**触发锁定时刷新为完整时长**） | 错 5 次临时锁（`4011`，判定须比值 ≥ 阈值，禁 `hasKey`）；提取码正确 DEL |
+| `at:share:ticket:{ticket}` | String = 一次性取件票据载荷（JSON：shareId/fileId/accessType） | 5 min | `GETDEL` 取用即焚；丢失即失效、需重新换票（CE 两步式取件，§5.3-5） |
 | `at:perm:{userId}` | 用户可达权限点聚合（角色静态 ∪ 授权动态快照） | 30 min | 授权 / 角色变更、账号停用主动 DEL；丢失由 RBAC 判定重算（P-8） |
 | `at:rl:{类}#{方法}[:业务key]:{维度}` | String = 固定窗口限流计数（Lua `INCR` + 首增 `EXPIRE` 原子） | = `@RateLimit.windowSeconds`（窗口即 TTL，动态） | 超限 `4290`（HTTP 429）；Redis 异常降级放行（防御态，P-8） |
 | `at:ws:channel` | Pub/Sub 频道名 | 常驻 | 集群 WebSocket 广播通道 |
 
-> 语义红线：本表中仅 `at:token:refresh:{userId}` 与“分享链接临时锁”属 Redis 单写（写丢失
-> 会放宽安全窗口但不会破坏数据正确性）；其余各键全部遵循 P-8（DB 为主、Redis 丢失可自愈）。
+> 语义红线：本表中仅 `at:token:refresh:{userId}`、「分享链接临时锁」与「`at:share:ticket`」属 Redis 单写
+> （写丢失会放宽安全窗口 / 使票据失效需重换，但**不破坏数据正确性**——频次与配额仍以 DB 为准）；
+> 其余各键全部遵循 P-8（DB 为主、Redis 丢失可自愈）。
 
 ## 8. 🔍 现状核对（As-Is）与实现顺序
 
@@ -340,7 +353,11 @@ Redis Key 规划定稿：at-common `RedisKeyConstants`（`at:` 前缀 Key/TTL �
    （角色/授权界面与 `invalidate` 触发点）待业务模块实现期接入；
 3. 上传主线（sys_upload_task 状态机 + uploaded_indexes 分片索引 + merge 短事务 + 整件 SHA-256 校验）；
 4. 审批主线（冲突判重 1008/1009 + CAS + 到期回收定时任务）；
-5. 外发分享（下载三校验 + 次数原子扣减 + 审计）。
+5. ~~外发分享（下载三校验 + 次数原子扣减 + 审计）~~ **✅ 已实现（2026-09-13）**：落地于 `at-file`
+   （**非**本文档原规划的 at-collaboration，差异见 [AT-DIFF-06](../development/AT-DIFF-todos.md#at-diff-06-外发分享模块归属)）；
+   创建者侧 `ShareController` + 访客侧免登录 `ShareAccessController`，含一次性票据（Redis `GETDEL`）、
+   Redis 前置闸 + DB 原子扣减、提取码连错锁定、`ContentScanInterceptor` 后缀 / 敏感词拦截与取件审计；
+   并发集成测试 `ShareQuotaConcurrencyIntegrationTest` 已验证「额度 3 / 并发 12 恰好 3 成功」不超发。
 
 ## 9. 🔗 关联文档
 

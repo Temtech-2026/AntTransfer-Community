@@ -54,9 +54,282 @@
 - 🐳 `docker-compose.dev.yml` 的 MySQL / Redis 宿主端口改为**可覆盖**（`${MYSQL_PORT:-3306}` / `${REDIS_PORT:-6379}`），
   与 `docker-compose.yml`、`.env.example` 口径对齐；宿主机 3306 已被本机 MySQL 服务占用时，
   复制 `.env.example` 为 `.env` 设 `MYSQL_PORT=3307` 即可，**无需停掉本机服务**（默认值不变，向后兼容）。
+- ⬆️ **前端大文件分片上传模块（web/src/services/upload + workers + hooks + components/ChunkUpload）**：
+  - `utils/sha256.ts` + `workers/hash.worker.ts`：纯 TS 增量 SHA-256（FIPS 180-4 向量校验），在 Worker 内**一趟读取**同时产出全文件摘要与逐片摘要，
+    有 `crypto.subtle` 时自动走原生实现；主线程不参与计算，10 GiB 文件也不会卡 UI；
+  - 上传主流程（`ChunkUploadController`，与 React 解耦的纯 TS 引擎）：**哈希 → 秒传预检 → 查询服务端已收分片 → 只补缺失片 → 合并**；
+    服务端是切片口径与已收分片的**唯一权威**，其 `chunkSize` 变化会触发本地重算，票据过期（4101）自动作废重走预检；
+  - 并发与容错：单文件并发分片数 1~5（默认 3，超上限会被服务端 4103 拒绝）、失败**指数退避重试 3 次**（含 ±20% 抖动，封顶 30 s）、
+    不可重试错误（如 4003 完整性失败）**立即失败**不做无谓重试；暂停 / 继续 / 取消 / 重试 / 移除全链路可用；
+  - 断点续传：进度与已收分片落 localStorage（按「名称 + 大小 + 修改时间」匹配），刷新后提示「检测到未完成的上传」，**重新选择同一文件即续传**
+    （浏览器不允许持久化 `File` 对象）；若同名同大小但摘要已变，则作废旧票据重传，避免合并出损坏文件；
+  - UI（`components/ChunkUpload`）：AntD 拖拽上传 + **整体进度**（字节加权）+ 单文件进度 / 速率 / 重试次数，分片大小与并发数可调；
+  - 单测 24 例（`sha256.test.ts` / `uploadCore.test.ts` / `ChunkUploadController.test.ts`）：标准向量、padding 边界、分片边界、
+    退避曲线、存储与恢复、秒传、并发上限、重试、暂停续传、取消、票据失效等路径全覆盖。
+- 🖥️ 新增分片上传示例页（前端路由 `/upload`）：`web/src/pages/upload/index.tsx` 用步骤条讲清上传链路，
+  上传完成后实时列出文件（名称 / 大小 / 是否秒传 / `fileId`），并给出组件与 Hook 的接入示例；
+  配套 `_mock.ts` 以**内存**模拟服务端（票据、已收分片、秒传索引均存活于 dev server 进程），
+  因此 `npm run start`（开启 mock）可在**无后端**时完整走通分片上传、秒传与「刷新后重选文件续传」；
+  路由与中英文菜单文案（`menu.upload`）同步登记。
+- 🔐 **权限申请审批闭环（at-permission）**：打通「无权限 → 申请 → 审批 → 授权 → 到期回收」全链路，
+  写侧一律 CAS + 行数校验（红线 P-1），事件与缓存副作用统一在**事务提交后**发布：
+  - **申请**（`PermissionApplicationService.create` + `ApplicationCreateDTO`）：按 `applyType` / `resourceType` /
+    `resourceId` / `purpose` / `desiredExpireAt` 落单为 `PENDING`；落单前三重校验——显式 **Deny 冲突命中即拒**
+    （`1003`）、已有生效授权 `1008`、同人同资源存在进行中申请 `1009`（防重复）；按敏感等级
+    `LOW/MEDIUM/HIGH` 解析审批人与 SLA（`24h/12h/4h`，`ApprovalProperties`），**未解析出审批人不静默放行**，
+    落库待认领并由超时任务升级。
+  - **审批三件套**：通过（`approve`）允许审批人**缩小授权范围 / 缩短有效期**（`resolveFinalGrantType` 拒绝放大、
+    `resolveExpireAt` 取更早者），同事务写 `sys_user_file_permission`（最终 `expire_time`、来源 `APPROVAL`）并在
+    提交后发 `PermissionGrantEvent` + 失效 `at:perm:{userId}`；驳回（`reject`）理由必填并通知申请人；转审
+    （`transfer`）经 `PENDING → TRANSFERRED → PENDING` 两段 CAS 改指审批人，`sys_approval_node` 留痕并通知新审批人。
+    `ApprovalStateMachine` 覆盖全分支，非法流转抛 `1011`。
+  - **通知抽象**（`Notifier` / `PermissionNotifier` + `PermissionNotification`）：站内信 `InboxNotifier`（P0，
+    落 `sys_notify_message`）与邮件 `EmailNotifier`（P1，开关控制）可插拔，业务侧只依赖抽象。
+  - **定时任务**：`PermissionGrantExpireScheduler` 每小时 CAS 回收过期授权并发 `PermissionExpiredEvent`；
+    `ApprovalEscalationScheduler` 每 10 分钟扫描超时未审批单并升级提醒上一级；`EmergencyApprovalScheduler`
+    紧急通道（强提醒、1h、仅中敏感及以下）**标记为 P1 开关**。
+  - **实时判定与重评估**：`PermissionGrantService.hasActiveGrant/assertActiveGrant` 每次**实时回源**判断
+    `expire_time`（不依赖定时任务，过期即判无权限 `1003`）；对外提供 `revokeApprovalGrants(userId)` 作
+    「调岗 / 离职」重评估入口——逐条 CAS 回收该用户来源 `APPROVAL` 的授权、发 `PermissionExpiredEvent` 并失效缓存
+    （供 4.6 用户管理调用），CAS 抢单失败不重复发事件。
+  - **审批人视图**：`PermissionQueryService` + `PermissionApplicationController` 提供「待我审批 / 我发起」分页
+    与申请人**权限地图**（权限点 + 来源：角色继承 / 审批获得）。
+  - **CE/EE 扩展点**：`ApprovalNodeResolver` + `ApprovalNodeResolverChain`（CE 为 `SingleNodeApprovalResolver`
+    单节点，EE 可动态解析多级节点）；ABAC 时间 / IP 规则只留解析扩展点 `AccessRuleResolver` +
+    `AccessRuleResolverChain`（Deny 优先、无解析器 `ABSTAIN`，P1）。
+  - 🧪 新增单测 70 例（`ApprovalStateMachineTest` / `PermissionApplicationServiceTest` / `PermissionGrantServiceTest` /
+    `ApprovalPropertiesTest` / `AccessRuleResolverChainTest`）：状态机全分支、防重复、Deny 冲突、审批三件套与
+    CAS 并发抢单、**过期实时判断**、调岗 / 离职重评估全覆盖；纯单测下显式初始化 MyBatis-Plus `TableInfo` 缓存
+    （`MybatisPlusTestSupport`），既保留 Lambda 条件构造器（防列名硬编码）又无需启动 Spring 容器。
+- 🔗 **外发分享主线（落地于 `at-file`，见 [AT-DIFF-06](docs/development/AT-DIFF-todos.md#at-diff-06-外发分享模块归属)）**：
+  创建 / 撤销 / 查询 + 访客**免登录**换票取件。
+  - **创建者侧** `ShareController`（`POST /api/v1/shares`、`DELETE|GET /api/v1/shares/{token}`、`GET /api/v1/shares/mine`）
+    统一 `@RequiresPerm("file:share")`；`shareToken` = `SecureRandom` + Base64URL（256 bit，不可猜），提取码
+    **BCrypt 加盐**落库，`ShareLinkVO` 不含该字段（**绝不回显**）；详情 / 列表仅创建者本人可见（行级归属校验）。
+  - **访客侧** `ShareAccessController`（**免登录白名单** `/v1/shares/{token}/verify`、`/v1/shares/redeem`，均带 `@RateLimit`
+    防刷）执行严格校验链：令牌存在 → 未撤销 / 未过期 → 提取码 → 次数未耗尽 → 签发一次性票据。票据存 Redis
+    （`at:share:ticket:{ticket}`，TTL 5 min，**`GETDEL` 取用即焚**、不落库），核销时**二次校验链接状态**，
+    使撤销 / 过期对**已签发**票据即时生效。
+  - **次数不超发（[C-08] / P-8）**：核销时先过 Redis `DECR` 前置闸（Lua；键缺失 / Redis 异常一律降级为「仅 DB 裁决」），
+    再以 `UPDATE ... WHERE ... AND downloaded_count < download_limit` 的**单条原子 SQL** 作唯一权威裁决，影响行数 = 1 才放行；
+    同一条 SQL 用 `CASE` 在「用尽最后一次」时原子收敛 `status=2`（**赋值顺序即正确性**，见 `ShareLinkMapper` 注释）；
+    DB 拒绝时回写镜像 `download_limit - downloaded_count`，与 `sys_share_link` 最终一致。
+  - **提取码防爆破**：`INCR at:share:lock:{token}` 连错 5 次锁 **30 min**（D-8 口径，可配）；TTL 刷新点设在
+    **触发锁定那一刻**而非首次错误，避免「第 5 次错误发生在第 25 分钟 → 只剩 5 分钟锁定」的窗口缩水；
+    锁定期内即便提取码正确也拒绝（4011）。
+  - **内容扫描扩展点**：`ContentScanInterceptor` + `ContentScanChain`（**Deny 优先** + **fail-closed**：扫描器抛异常按
+    拦截处理，绝不因 DLP 故障放行）；CE 实现 `SuffixAndKeywordScanInterceptor` 读**配置化**后缀黑名单
+    （默认 `exe/sh/bat/msi/com/scr`）与文件名敏感词，命中即 4007 拦截并写 `SHARE_BLOCKED` 审计；EE 可挂 AI DLP。
+  - **审计**：取件成功写 `SHARE_DOWNLOAD` / `SHARE_PREVIEW`（匿名操作人 + IP + UA + 时间 + 剩余次数，UA 落 detail），
+    锁定写 `SHARE_CODE_LOCKED`，创建 / 撤销写 `SHARE_CREATE` / `SHARE_REVOKE`；**审计失败只告警不阻断业务**。
+  - 🧪 **测试**：`ContentScanChainTest`（6 例：黑名单 / 敏感词 / Deny 短路 / fail-closed / 应急开关）；
+    `ShareQuotaConcurrencyIntegrationTest`（Testcontainers MySQL 8.4 + Redis 7，**额度 3 / 并发 12 →
+    恰好 3 成功、9 个 4004**，`downloaded_count` 恒为 3、链接收敛 `status=2`、Redis 镜像归零；提取码连错 5 次锁定 4011）。
+    ⚠️ 该集成测试在开发中**真实捕获**「锁定键与错误计数键共用同一 Redis Key → 仅用 `hasKey` 判定导致第 1 次错误即
+    被误判锁定」的缺陷，已改为 **比值（`>= maxCodeErrors`）** 判定修复，并保留用例为回归防线。
+- 💬 **站内通知与 IM 长连接（`at-collaboration`，US-08）**：
+  - **通知域统一收敛**：删除 `at-permission` 自带的站内信 / 邮件实现与渠道开关（`notify` 包、`PermissionNotifier`、
+    `PermissionNotification`、本地 `NotifyMessage` 实体与 Mapper），统一为 `at-common` 的
+    `NotificationPort` / `NotificationCommand` / `NotifyType` SPI，由 `at-collaboration` 独占实现——
+    否则「两套渠道开关 + 两处落库」必然出现口径分歧；跨模块事件（`PermissionGrantEvent` /
+    `PermissionExpiredEvent` 等）一并收归 `at-common`，消除模块间反向依赖。
+  - **WebSocket 通道**：原生 `TextWebSocketHandler` + JSON 信封，**不引入 STOMP**——本场景所有下行都是
+    「按用户点对点推送」，没有广播主题，STOMP 只会多一层目的地解析却仍要自建会话注册表 / 心跳 / 跨实例广播
+    （`SimpleBroker` 不支持集群）；协议面更小、可测、跨语言客户端直接可用。
+    握手复用 JWT 鉴权（浏览器 WebSocket 构造器无法设头，令牌走 `?token=`），30s 心跳探测 + 90s 超时清理僵尸连接，
+    多实例经 Redis Pub/Sub `at:ws:channel` 广播且**只推给本机已连接用户**。
+  - **可靠性口径**：消息**先落库（`sys_notify_message`）再推送**，WebSocket 仅作加速通道——离线用户走
+    `GET /api/v1/notifications/offline` 补拉并清红点，故推送丢失**无需补偿重发、客户端无需 ACK**；
+    校验通过后立即下发 `CONNECTED`（携带未读快照），突发重连不产生「红点闪回」。
+    ⚠️ 已知边界：鉴权只在握手做一次，令牌过期 / 登出不会断开**已建立**的连接（`WebSocketConfig` 类注释已登记）。
+  - **数据模型（`sql/V5__collaboration_im_notify.sql`）**：`sys_notify_message` 补会话维度列
+    （`sender_user_id` / `message_type` / `chat_scope` / `chat_target_id` / `client_msg_id`，全可空，向后兼容）
+    与 `idx_session`、`uk_sender_recipient_client` 索引；采用**写扩散落库**（单聊 2 行 / 群聊 N 行），
+    查询恒为单表按 `(recipient_user_id, chat_scope, chat_target_id)` 走索引。
+    唯一键**必须含 `recipient_user_id`**：群聊共享同一 `clientMsgId`，若只按 `(sender, clientMsgId)` 约束，
+    第 2 个成员的消息会因幂等键冲突写不进去。
+  - **三口径未读分离**：inbox（导航栏红点）/ todo（待办角标）/ chat（会话角标）各自成板；
+    离线补拉只清 inbox，**待办已读必须由处置动作驱动**，不会被补拉顺带清掉。
+  - **端点**：`GET /api/v1/notifications`（收件箱分页）、`GET /unread`、`GET /offline`、
+    `POST /{id}/read`、`POST /read-all`；`GET /api/v1/todos`、`GET /api/v1/todos/count`；
+    `POST|GET /api/v1/chat/messages`、`POST /api/v1/chat/read`。
+    所有接口 **userId 一律取自登录态**，不提供任何以入参指定用户的口子（越权入口）。
+    单条已读失败抛 `BusinessException(RESOURCE_NOT_FOUND)` 而非返回 `Result.fail`，
+    避免「HTTP 200 + 业务错误码」与其余接口的错误语义不一致。
+  - 🐛 **修复 afterCommit 静默丢数据**：审批事件在 `afterCommit` 回调中到达时，外层事务已提交但连接仍绑定线程、
+    事务同步仍 `active`，此时 `REQUIRED` 传播会「加入」一个已完成的事务，导致 INSERT **既不提交也不回滚**
+    （无异常、无日志，数据静默消失）。改为 `TransactionTemplate` + `PROPAGATION_REQUIRES_NEW`
+    挂起旧事务另开新事务写入。
+  - 🧪 受影响的 `at-permission` 单测（`PermissionApplicationServiceTest` / `PermissionGrantServiceTest` /
+    `ApprovalPropertiesTest`）同步改用 `NotificationPort` / `NotificationCommand` mock 与断言。
+- 🗂️ **文件域（at-file）目录树 / 分页列表 / 物理去重落地**（`FolderService` / `FileNodeService` /
+  `FileContentService` / `FileCleanupScheduler` / `FolderController` / `FileController`）：
+  - **目录树（物化路径）**：`sys_folder.path` 以「父路径 + 自身 ID」拼接，前缀查询即可取整棵子树，移动目录时
+    一次性重写子孙 `path` / `depth`；移动前用**路径前缀**判成环（目标是自身或子孙），改名不影响子孙路径。
+    `GET /api/v1/folders/tree` 一次返回整树（`children` 空数组而非 `null`），另有 `POST /api/v1/folders`、
+    `PATCH /{id}/rename`、`PATCH /{id}/move`、`DELETE /{id}`。
+  - **删除目录 ≠ 销毁文件**：目录删除只把目录及其子孙目录下的文件**移入回收站**并逻辑删除目录，
+    `ref_count` 不变、文件仍可还原；只有「彻底销毁 / 清空回收站 / 回收站到期清理」才递减引用计数。
+  - **物理去重（内容寻址 + 引用计数）**：`sys_file` 以 `uk_sha256_size` 唯一键保证同内容仅一份物理字节；
+    首次入库 `ref_count=1`，秒传命中 / 复制 `+1`；递减走带 `ref_count > 0` 守卫的原子 SQL，
+    **归零且引用表实际行数为 0**（双计数交叉校验，防计数漂移误删）才回收物理文件。
+  - **物理回收放到事务提交之后**（`AfterCommitUtils`）：删字节不可回滚，若在事务内删盘又回滚会留下
+    「库里有行、盘上无字节」的坏数据；故提交后先删元数据行、再删字节，回调执行前再复核一次计数，
+    期间被并发秒传把引用加回去则放弃回收。
+  - **IO 与事务分离**（`FileContentService` vs `FileNodeService`）：磁盘探测 / 落盘在事务外完成，短事务只写元数据；
+    `sha256` 由服务端流式计算，不信任客户端上报值。
+  - **分页列表多条件筛选 + 排序**：`folderId` / `keyword` / `ext` / `level` / `uploadUserId` /
+    `minSize|maxSize` / `startTime|endTime` / `tagId`（空集合 = 无结果，不退化为忽略条件）；排序为
+    **白名单字段映射物理列**（杜绝注入）并恒定追加主键，避免排序键相同时翻页重复 / 漏行；
+    `pageSize` 收敛到 100，与分页插件上界口径一致。
+  - **秒传幂等**：同用户已有同内容正常态条目时直接复用、不重复建行也不重复计数，重复秒传不会灌大 `ref_count`。
+  - **权限四档**：`file:preview` / `file:upload` / `file:edit` / `file:destroy`，`file:destroy` 只给到
+    「彻底销毁 / 清空回收站」；`level=3` 高敏感文件的销毁在审批联动能力到位前 **fail-closed** 一律拒绝。
+  - 回收站到期清理（`FileCleanupScheduler`，cron 默认 `0 30 3 * * ?`，可配）分批循环、每批一个独立事务，
+    避免长事务与磁盘 IO 尖峰。
+- ⬇️ **文件域（at-file）下载票据 / Range 流式下载 / 缩略图 / 预览落地**
+  （`FileDownloadTicketService` / `FileDownloadService` / `FilePreviewService` / `FileTypePolicy`）：
+  - **下载票据（短时 + 绑定用户与文件）**：`POST /api/v1/files/{id}/ticket` 在登录态下校验
+    `file:download` 与条目归属后签发，TTL 默认 5min（可配）。票据绑定 `userId + nodeId + 取件范围`，
+    核销时逐项比对，任一不符即 `4018`。**只校验不销毁**——同一用户重试 / 断点续传 / 多线程分段拉取
+    都会重复取件，一次即焚会把正常行为判成失效（与分享域访客票据的「一次即焚」刻意相反）。
+  - **`/content`、`/thumbnail` 必须放行匿名**：`<a href>` 原生下载、`<img src>`、播放器与下载工具
+    **都无法携带 Authorization 头**，凭证只能走查询串。故权限判定被前移到换票阶段，
+    取件端点在服务层复核「票据绑定 + 当次重新读库的条目归属」（不信票据里的归属快照），
+    并各自挂 `@RateLimit` 抗票据爆破。
+  - **票据 scope 防权限降级**：预览票（`file:preview` 签发）只能取缩略图与「可安全内联」类型，
+    **强制 inline 且不可改判为 attachment**；否则 `file:preview` 等价于 `file:download`，权限点形同虚设。
+  - **Range 断点续传**：单段 `bytes=a-b` / `bytes=a-` / 后缀式 `bytes=-N` 均支持，
+    206 + `Content-Range` + `Accept-Ranges`；起点越界回 **416 + `bytes */total`**（正常协议协商，不记失败审计）；
+    多段 Range 按整份下发（多段响应需 `multipart/byteranges`，收益与复杂度不成正比）。
+  - **任务级可选限速 + 全局兜底**：`speedLimit`（字节/秒，**未传取 `defaultSpeedLimit`，显式传 0 表示不限速**，
+    两者语义不同）；每条下载流一个独立漏桶（任务粒度 = 一次传输），叠加全局桶即天然取更严者，
+    顺序先任务后全局以免全局桶等待被单任务长等待挤占。**超限表现为背压等待而非掐断**——
+    响应头早已发出，掐断只会让用户拿到半截文件且无法续传。
+  - **补上 `BandwidthLimiter.evictIdle` 的调用方**：此前该方法零调用，而每条下载流都会建桶，
+    等于一条稳定的内存泄漏（桶极小、增长慢，最容易被忽略到 OOM 才暴露）。
+    现由 `FileCleanupScheduler` 每小时回收 1h 无活动的桶，与回收站清理错峰。
+  - **图片缩略图**：等比缩放到最长边 256（默认），**小图不放大**；带 alpha 转 PNG、否则 JPEG。
+    **防解压炸弹**：先只读图片头取尺寸做准入（`thumbnailMaxSourcePixels`，默认 4000 万像素）再决定是否解码，
+    否则一个几 MB 的 PNG 可解出几万 × 几万的位图直接打爆堆；解码器初始化即关闭 `ImageIO` 磁盘缓存。
+  - **PDF / 文本预览，Office 仅下载**：策略由服务端判定并随 `PreviewVO` 下发
+    （`text` / `pdf` / `image` / `download-only` / `none`），前端只分发不判断，避免两端策略漂移。
+    文本读前 2 MiB 后以 **JSON 字符串**返回（而非内联 `text/plain`，让 `.txt` 里的 HTML 无从执行）；
+    编码判定为「严格 UTF-8 → 严格 GBK → ISO-8859-1 兜底」，并处理 UTF-8/UTF-16 BOM 与
+    **末尾被截断的多字节字符**（逐字节退避重试，把「内容被截断」与「编码不对」区分开）。
+    Office 系一律 `download-only`（服务端转码需 LibreOffice / POI 全量依赖，CE 不做）。
+  - **内联渲染仅限 PDF 与光栅图**：内联时 MIME 按白名单**反查**给出，绝不回显客户端自报的
+    `contentType`（否则等于让上传者指定浏览器用什么引擎渲染，存储型 XSS）；全链路带
+    `X-Content-Type-Options: nosniff`。下载（attachment）才回显原 `contentType`，有 attachment + nosniff 兜底。
+  - **下载文件名兼容老客户端**：同时给 ASCII 回退名与 RFC 5987 `filename*=UTF-8''` 编码名，
+    并剔除控制字符 / 引号 / 反斜杠，避免头结构被破坏。
+- 🧨 **文件域（at-file）文件管理四项能力落地**（`TagService` / `FileVersionService` / `PackService` +
+  `TagController` / `FileVersionController` / `PackController`；数据层见 `sql/V6` / `V7` / `V8`）：
+  - **彻底销毁（`file:destroy`）**：**绕过回收站**直接逻辑删除条目并 `ref_count - 1`，归零后物理回收。
+    两条准入为**与**关系——① RBAC 的 `file:destroy`（`V8` 已从 DEPT_ADMIN 回收，等价「仅 SUPER_ADMIN」）；
+    ② `level>=3` 高敏感文件必须关联一张「已通过」的高敏感审批单，经 `at-common` 的
+    `SensitiveDestroyApprovalPort` SPI 校验（**不跨模块直读 at-permission**，守模块边界铁律），
+    不满足统一 `4017`（策略 D，就地提示不跳登录）。此前的「审批联动到位前 fail-closed」口径就此收口。
+  - **物理回收统一三道闸**（`FileNodeService#registerPurgeIfOrphaned`，公开供版本服务复用）：
+    `sys_file.ref_count` / `sys_file_node` 存活行数 / **`sys_file_version` 存活版本数**任一非零即不回收。
+    历史版本刻意不占 `ref_count`，第三道闸专治「版本列表已看不到某版、字节却永远留在盘上」的静默泄漏。
+  - **标签与多标签搜索**：标签 CRUD + 文件打/取消标签（全量覆盖，空数组即清空；**先断关联再删标签**，
+    避免出现「筛一个不存在的标签却有结果」）；列表页标签批量回显；搜索复用 `GET /files?tagId=` 或
+    `tagIds=`，多标签为 **AND**（`having count(distinct tag_id)=N` 与单标签结果取交集）。
+    越权口径与文件条目一致：别人的标签按「不存在」处理，不泄露 ID 空间。
+  - **历史版本（P1，`versionKeepCount` 默认近 10 版）**：新版本上传走与主链路同一套
+    `acquireContentReference`（同一去重与计数口径，避免两份实现漂移）；**回滚不是拨指针**，
+    而是把目标版本内容复制成一条更高的 `versionNo`，使「谁在何时回滚到哪一版」永久可查；
+    超限裁剪先逻辑删版本行**再**复核孤儿内容（顺序反了会把当前版算进引用、永远回收不掉）。
+  - **批量打包下载（P1）**：**异步任务 + 磁盘产物**而非请求内边压边发——产物是普通 zip，`Range` 直接作用其上
+    （可续传），文件数 / 合计大小 / 每用户并发全部在**创建入口**判掉（`4019` / `4103`），产物到期定时清理；
+    打包线程池为独立有界池 + 中止策略（拒绝即判失败，不静默排队），提交挂在 `AfterCommitUtils` 上；
+    zip 条目名做 **zip-slip 剥离 + 长度截断 + 同名去重**（`a/报告.pdf` 与 `b/报告.pdf` 不会互相覆盖）；
+    僵尸任务（线程池拒绝 / 进程重启）由定时任务按超时收口，防止每用户并发名额泄漏成永久故障。
+  - 📇 新增错误码 `4013`~`4023`（目录 / 回收站 / 票据 / 打包 / 标签 / 版本）已登记
+    [error-codes.md](docs/api/error-codes.md)，接口前缀与语义已同步 [api/README.md](docs/api/README.md) §1。
+
+- 👥 **系统管理面（用户 / 角色 / 权限点）落地于 `at-permission`，不新建 `at-system` 模块**：
+  - 🧭 **落点裁决**：`sys_user` 的表主是 `at-auth`，故用户主数据的写入经 at-common 新增的
+    `UserAdminPort` SPI 委托给 `at-auth`（`UserAdminPortAdapter`），与既有 `UserLookupPort` /
+    `SensitiveDestroyApprovalPort` / `NotificationPort` 同构——**读写分道**：at-permission 只做
+    「谁能管、能管到谁」的授权判定，用户行本身仍由表主单事务落库，跨模块边界不出现对方表名。
+  - 🗂️ `sql/V9__system_admin_permission_points.sql`：新增 `system:user:*` / `system:role:*` 权限点，
+    **仅授予 SUPER_ADMIN**；AUDITOR 一个 `system:*` 都不给。
+  - 🔐 **四条不可绕过的红线**（数据层 + 服务层双保险，服务层判定见 `RoleAdminService` / `UserAdminService`）：
+    ① **内置角色不可删不可改数据范围**（`SUPER_ADMIN` / `AUDITOR` / `DEPT_ADMIN` / `USER`）；
+    ② **AUDITOR 权限集锁定只读**，任何变更请求一律 `1021`（改「审计员能不能看审计」= 让被审计者改考卷）；
+    ③ **防提权**：数据范围非「全部」的操作者不能把角色范围改到超过自身、不能授予自身不具备的权限点、
+    不能分配自己不持有的角色；
+    ④ **防自锁**：`SUPER_ADMIN` 的必需管理能力（`assign-perm` / `user:list` / `user:assign-role`）不可削空、
+    系统内最后一个可用超管不可停用 / 删除 / 摘角色，`admin` 受保护账号必须始终持有超管角色。
+  - 🚫 **不得对自己操作**：停用 / 删除 / 重置口令 / 改角色四类动作对自己调用一律 `1023`
+    （应走个人中心），杜绝「自查自升」与「一键自锁」两条最短路径。
+  - 🔁 **调岗 / 离职触发权限重评估**：部门变更、停用（离职）、删除均调用 4.2 的
+    `PermissionGrantService#revokeApprovalGrants` 回收其审批类授权，并 `invalidate` 权限缓存；
+    部门未变化时不触发，避免无谓回收。**该副作用无返回值、漏调不报错**，故用 verify 钉死在单测里。
+  - 🧾 **唯一性口径**：`uk_username` 是纯 username 唯一键、逻辑删除行仍占名，故建号查重走
+    `countUsernameAnyState`（含删除行），撞名返回 `1016` 业务错误而非数据库异常 500。
+  - 🔑 重置口令 / 停用 / 删除同步 **`token_epoch + 1`** 吊销在途会话，改密后旧 token 立即失效。
+  - 📇 新增错误码 `1015`~`1028`（用户 / 角色 / 内置角色保护 / 防提权 / 防自锁）已登记
+    [error-codes.md](docs/api/error-codes.md)；接口前缀 `/v1/system/users`、`/v1/roles`、
+    `/v1/permission-points` 与逐端点权限点已同步 [api/README.md](docs/api/README.md) §1 与
+    [frontend-permission-map.md](docs/development/frontend-permission-map.md)。
+  - 🧪 新增单测 36 例（`RoleAdminServiceTest` 17 例 / `UserAdminServiceTest` 19 例）：
+    四条红线逐条断言「抛的是哪一条」而非「抛了异常」、授权替换的「复活 / 停用 / 新增」三分类、
+    缓存按角色持有者广播失效、数据范围收敛与分页上界。
+
+- 🧾 **审计日志域（§4.6 审计与合规 · US-06）**：共享内核 + 权限/审批域全量埋点 + 检索导出接口「三件套」落地：
+  - **共享内核下沉**：`sys_operation_log` 的实体与 Mapper 由 `at-file` 迁至 `at-common`
+    （`com.anttransfer.common.audit.{OperationLog, repository.OperationLogMapper}`），落实 V1 表注释
+    「审计族归口 at-common / at-permission」，使跨域（FILE / PERMISSION / AUTH）只写各自 logger 而不再「谁写审计就依赖谁」；
+    动作字典（`FILE_*` / `SHARE_*` / `USER_*` / `ROLE_*` / `APPLY` / `APPROVE` / `REVOKE`…）与域 / 对象 / 结果常量集中一处，查表即知全集。
+    `at-file` 侧 10 个 service 与两个审计器（`FileAuditLogger` / `ShareAuditLogger`）**仅切 import，行为零变化**；
+  - **写侧埋点**（口径沿用 `FileAuditLogger`：**成功记录入调用方业务事务、失败记录走 `REQUIRES_NEW` 独立事务先提交**，保证「业务回滚不留成功假象」且「越权 / 被拒事件不会被回滚吞掉」）：
+    `PermissionAuditLogger` + 用户管理 6 处（建号 / 编辑含调岗 / 重置口令 / 启停 / 删除 / 改角色）、
+    角色管理 4 处（建 / 改含数据范围前后 / 删 / 授权整集替换含新增与移除差量）、
+    审批 4 处（提交 / 通过（另记一条 `GRANT` 授权落地 + 有效期）/ 驳回（记理由）/ 转审（记 from→to））、
+    授权回收 1 处（记回收原因、命中与回收条数、grantId 集）；**口令类只记「谁重置了谁」，绝不落口令明文 / 哈希**；
+  - **读侧接口**（`AuditLogController`，前缀 `/api/v1/audit`，**独立于 `/v1/system` 管理面**，与四只读权限点受众 AUDITOR 对齐）：
+    `GET /api/v1/audit/logs` 分页检索（过滤维度一一对齐 `idx_user_time` / `idx_target` / `idx_module_action` / `idx_log_time` 四个索引，
+    固定 `log_time DESC, id DESC`，不接受任意字段排序以免走不了索引的全表排序）与
+    `GET /api/v1/audit/logs/export` 导出 CSV（与列表**同一套过滤**，UTF-8 BOM 供 Excel 识别中文 + RFC 4180 转义使含逗号/引号的
+    JSON `detail` 不错列；**单次 10000 行硬上界**——导出走 `selectList` 不受分页插件 100 上限约束，故必须自设上界防整表入内存）；
+    两端点**共用** `audit:log:read`（仅 SUPER_ADMIN / AUDITOR，二者 data_scope 均为「全部」，审计的全量可追溯性不可按部门切分）。
+    操作人展示名经 `UserLookupPort.findContacts` **批量**反查（N+1 → 1，`sys_user` 属 at-auth 表族不直连），查不到回落为空、不阻断；
+  - **只读承诺**：服务层仅 `selectPage / selectList`，全链**不提供任何 update / delete / 清除端点**——
+    与「审计不可被任何角色修改或删除、仅可归档导出」「`audit:log:clear` CE 从不签发（超管亦无）」两条红线一致；
+  - 🧪 新增单测 11 例：`AuditLogQueryServiceTest` 7 例（展示名批量反查 / 系统动作不反查 / 缺联系人回落 / 分页与页码收敛 /
+    时间倒挂早失败且不打库 / 导出强制 `LIMIT` 上界 / 导出与列表同过滤）+ `AuditLogCsvTest` 4 例（BOM / 空结果仅表头 /
+    逗号引号换行转义与结果语义化 / null 渲染为空串）；同步 4 个既有 Service 单测的构造依赖（注入 `PermissionAuditLogger`）。
 
 ### 🔄 Changed（变更）
 
+- ⚠️ **授权收敛（破坏性）**：`sql/V8__restrict_file_destroy_to_super_admin.sql` 从 DEPT_ADMIN 回收
+  `file:destroy` 授权行。部门管理员不再能执行彻底销毁，须由超管操作；前端须同步隐藏 / 禁用销毁入口
+  （[frontend-permission-map.md](docs/development/frontend-permission-map.md) 已回写）。
+  「谁有资格发起」（权限点）与「高敏感文件需二次背书」（审批单）是相互独立的与关系。
+
+- 🧾 **审计耐久性：失败记录不再被业务回滚吞掉**（`FileAuditLogger`）。失败审计的典型调用形态是
+  「记一条 fail，紧接着 `throw`」（如销毁高敏感文件缺审批单 → `4017`），该 INSERT 原先跟随业务事务，
+  那声 `throw` 触发的回滚会把它一并抹掉——于是**最需要留痕的「越权 / 缺审批被拒」事件恰恰查不到**，
+  审计只在一切顺利时可信。现改为**失败记录走 `REQUIRES_NEW` 独立事务先提交**；
+  **成功记录仍加入调用方业务事务**，使「业务回滚了、库里却留着一条成功」不可能发生。
+  「审计写失败永不抛异常」的口径不变（审计不得反向让业务失败）。属
+  [red-team T-05](docs/architecture/red-team-review.md) 的部分收敛，其余（AFTER_COMMIT 异步 + 补偿队列、
+  审计表 DB 账号只 insert/select、归档物理删除）仍开放。
+- 🗑️ **删除无归属过滤的批量读 API `TagService#tagsByNodeIds(List<Long>)`**：该签名只吃 `nodeIds`、
+  不吃 `ownerUserId`，无论怎么实现都在诱导调用方「先查后校验」，某个列表接口一旦漏做归属过滤，
+  它就成了按 ID 批量拖走他人标签的**静默越权通道**（且该方法是死代码：列表页回显实际由
+  `FileNodeService#loadTags` 在「已按 `owner_user_id` 过滤完的分页结果」之上完成）。
+  现以一条注释钉死该设计口径，杜绝日后重新引入。
+
+- 🧹 `web/biome.json` 忽略范围由 `**/src/services`（整个服务层）收窄为 `**/src/services/ant-design-pro`：
+  原规则本意是跳过脚手架生成的服务代码，但一并跳过了**手写**服务层——`src/services/upload/**` 自此纳入 lint 与格式化。
+- 🔧 修复页脚（`web/src/components/Footer`）遗留的 4 条类型报错：`web/package.json` 补 `repository` 字段
+  （原缺失导致 `tsc --noEmit` 报 TS2339）；同时把仓库地址推导从「写死 github.com」改为**只做规范化**
+  （去 `git+` 前缀、`git@host:path` 转 https、去 `.git` 后缀），使 Gitee / GitLab 等非 GitHub 仓库也能正确成链
+  —— 否则会静默退回 Ant Design Pro 模板地址，把用户引到别人家的仓库；页脚文案随之改为显示实际托管域名。
 - ⚠️ **本地开发默认数据库端口 `3306` → `3307`（杜绝误连本机 MySQL）**：原 `DB_URL` 默认
   `localhost:3306`，容器没起来时会静默连上开发者本机自装 MySQL 并把 Flyway 跑完，形成
   「迁移成功、数据却进了本机库」的假象。现确立口径：**宿主机 `3307` = 本项目容器 MySQL，
@@ -140,7 +413,7 @@
   ② 新增 `web/src/utils/token.ts` —— 双令牌存储，SSR/隐私模式下降级为内存；
   ③ 重写 `web/src/requestErrorConfig.ts` —— 业务判据改为 `body.code`、响应体不拆包；
   **B 类流程分支码（1008/1009/4001/4002）绝不弹错误提示**；
-  `1002` 在响应拦截器内静默 refresh（单飞）+ 重放原请求一次，`1001/1003` 清会话跳登录、
+  `1002` 在响应拦截器内静默 refresh（单飞）+ 重放原请求一次，`1001/1006` 清会话跳登录、
   `1007` 仅提示；G 类退避提示、H 类通知展示 traceId；请求拦截器注入 `Authorization`；
   ④ 单测 20 例（前端全量 31 例通过），覆盖策略分流与「B 类不弹窗」红线。
 - 🧾 at-gateway 增加 `spring-boot-starter-validation`：Boot 2.3+ 起 `@Valid`/`@Validated`
@@ -150,9 +423,9 @@
   ① 登录校验（BCrypt cost=10 与 V2 admin 密文一致）+ Spring Security 过滤链；
   ② 双令牌：access JWT（HS256，30min，claims 含 `sub/ver=token_epoch`，无角色避免陈旧）
      + refresh 随机不透明串（7d，Redis 白名单只存 SHA-256 指纹）；
-  ③ `JwtAuthenticationFilter`：Header 解析 → 验签/过期（1002/1003）→ Redis 纪元缓存比对
+  ③ `JwtAuthenticationFilter`：Header 解析 → 验签/过期（1002/1006）→ Redis 纪元缓存比对
      （miss 回源 DB 自愈 P-8）→ 构建 `Authentication` 入 SecurityContext，未认证统一
-     `Result` 输出（1001/1002/1003/1004，默认拒绝 V-06）；
+     `Result` 输出（1001/1002/1006，默认拒绝 V-06）；
   ④ 登出/全端吊销：DB `token_epoch+1`（REQUIRES_NEW 提交）+ 提交后清理 Redis 键；
   ⑤ 登录失败 Redis 计数：5 次锁 15 min（`at:login:fail:{username}`），成功清零；
   ⑥ refresh 原子轮换（Lua）+ 复用打击（指纹不匹配 ⇒ epoch+1 全端吊销）；账号不存在与
@@ -167,7 +440,7 @@
   ① `AuthenticatedUser` 公共主体验约（at-common），跨模块读 SecurityContext 不破坏依赖铁律；
   ② `@RequiresPerm("file:download")` 注解 + AOP 切面：多角色权限点取**并集**（`sys_role_permission`
      distinct 查询）、**显式 Deny 优先**（`anttransfer.permission.role-deny` 角色黑名单，命中即
-     deny 即使他角色已授予）、`any=true` 满足其一；不满足统一 403（1004）；
+     deny 即使他角色已授予）、`any=true` 满足其一；不满足统一 403（1003）；
   ③ `PermissionService`：解析结果缓存 `at:perm:{userId}`（30min，RedisKeyConstants），
      miss 回源 DB 自愈（P-8），授权/角色变更 `invalidate` 主动失效（PRD US-04 即时生效）；
   ④ `AccessControlService`：对象级/数据级守卫——Owner 即本人放行；数据范围 3 全部放行；
@@ -192,7 +465,15 @@
      超限抛新错误码 **4290 RATE_LIMITED**（HTTP 429，策略 G，前端已登记）；Redis 异常降级放行
      仅告警；
   ④ CORS 白名单属性化：`anttransfer.cors.allowed-origin-patterns`（at-gateway 与 at-auth
-     同键消费），dev 默认 `*`、生产以 `ANTTRANSFER_CORS_ALLOWED_ORIGINS` 收紧。
+     同键消费），dev 默认 `*`、生产以 `ANTTRANSFER_CORS_ALLOWED_ORIGINS` 收紧；
+  ⑤ 容器级错误页统一为 `Result` JSON（新增 `com.anttransfer.gateway.error` 包）：
+     `HttpStatusErrorMapper`（HTTP 状态 → 已登记错误码兜底映射，**绝不新建错误码**）+
+     `ApiErrorController`（实现 `ErrorController` 接管 `/error`，Boot `BasicErrorController` 因
+     `@ConditionalOnMissingBean` 自动退让）+ `JsonErrorReportValve`（继承 Tomcat `ErrorReportValve`，
+     覆盖**绕过 Spring MVC 异常链的连接器级拒绝**：非法 URI(400)、超限请求头/请求行(400)，
+     此前一律返回 Tomcat HTML(`HTTP Status 400 – Bad Request`)）+ `TomcatJsonErrorReportConfig`
+     （监听 `WebServerInitializedEvent`，仅对 Tomcat 生效，移除 Boot 注入的 `ErrorReportValve`
+     并装载本阀门）。响应体只含错误码默认文案 + traceId，真实堆栈仅落服务端日志。
 
 - 📋 新增差异点索引页 `docs/development/AT-DIFF-todos.md`：汇总外部计划与仓库契约的 5 处差异
   （AccessDenied 1003/1004、Filter 权限加载、部门范围拦截器、HTTP JUnit5 测试、接口命名），
@@ -205,9 +486,54 @@
   登出后旧 token 失效 401/1001、refresh 复用打击 401/1006、错误密码 401/1007）；
   AT-DIFF-04 已办结。
 
+- 📊 **PRD §4.1 实现现状核查「后端」复核（`docs/prd/README.md`）**：原表仍是「审批 / 用户管理 /
+  角色管理 / 审计 / 通知 / IM / 待办 / 打包 / 限速 / 秒传 / 外发链接全部未落地」的早期快照，
+  与代码严重脱节。本次以 `server/` 实际实现为准重核 P0 全表（**10 → 18 行，补齐 §4 有 P0 而
+  原表漏报的 8 项**）+ P1 段 + 横切地基：
+  - **状态修正**：秒传 + SHA-256 校验、外发链接、站内通知 由 ⬜ → ✅；
+    分级权限申请审批闭环由「闭环全缺」→ 🟡（提交 / 通过 / 驳回 / 转审 / 待我审批 / 我的申请 /
+    权限地图七端点已落地，仍缺「申请人主动撤销」端点，以及「每级别自动放行 / 一级审批」的可配规则）；
+    三权分立保持 🟡，但补记已实现的内置角色保护与防自锁两条锚点，缺口收敛为
+    「角色互斥无数据层约束 / 服务层校验」（`mutex` 全文零命中）；
+    分片上传 / 断点续传仍为 ⬜（`at-transfer` 未落地，无 precheck / parts / merge，未消费 `sys_upload_task`）；
+  - **新增行**：审计与合规（✅，共享内核 + 三域写入器 + 检索导出 + 只读承诺）；本地账号登录 / 注销 / 改密
+    （🟡，缺用户自助改密端点，改密目前仅管理面重置且已带全端吊销）；账号停用 / 启用（🟡，
+    **不满足「停用 2 分钟内会话失效」**——`changeStatus` 未联动吊销、Filter 不校验 `status`，旧 access 最长 30 min）；
+    敏感级别与审批规则配置（🟡，字段与 SLA 已在，缺「单级自动放行 / 一级审批」可配规则与级别变更审计）；
+    上传 / 下载流式接口（🟡，下载 Range 与上传流式 sha256 已在，缺「暂停 / 恢复」所需的分片清单）；
+    文件管理（✅，目录 / 移动 / 复制 / 软删 / 回收站 / 恢复 / 销毁 / 清空全链）；共享空间（⬜，
+    `sys_space` 仅骨架实体、无 Controller / Service / 成员角色端点）；配置管理 / 健康检查 / 优雅启停（🟡，
+    **发现上传上限完全未配置**——无 `multipart.max-file-size` 亦无 `MultipartConfigElement`，沿用 Spring 默认 1 MB；
+    无 actuator 健康端点、未开 `server.shutdown=graceful`、compose 中 server 无探针）；
+  - **P1 段**：补两处精确缺口——`keyword` 为 LIKE 匹配、**未建全文索引**（§4「全文搜索」未满足）；
+    轻 IM 缺 **@ 提及**与「消息保留 ≥ 30 天」策略；
+  - **新增盘点**：后端 20 个测试类逐类用例数、Flyway `V1~V9` 用途，以及开放裁决项刷新
+    （AT-DIFF-01 已裁决，02 / 03 / 05 待裁决，06~10 已登记未阻塞）；
+  - **路径约定**：§4.1 端点统一**省略全局前缀 `/api`**（`server.servlet.context-path=/api`），
+    消除同一小节内 `/v1/...` 与 `/api/v1/...` 混用导致的歧义。
+
+- 🧱 **后端功能缺口登记（GAP-01 ~ GAP-08，留待项目完工后回头改进）**：§4.1 复核发现的
+  「已落地部分中的缺口」（**非口径差异**，故不落 `TODO[AT-DIFF-]` 标记、AT-DIFF grep 计数仍为 3 处）
+  已在 `docs/development/AT-DIFF-todos.md` 新增独立小节登记，并在 `docs/architecture/architecture.md` §4
+  延期登记处加交叉引用，**与 D-x 同批关闭**（三条主线跑通后的加固期）：
+  ① 上传大小上限未配置（Spring 默认单文件 **1 MB**，`multipart` 段与 `MultipartConfigElement` 全仓零命中，**建议提前**）；
+  ② 账号停用未联动吊销会话（不满足「停用 2 分钟内会话失效」：`revokeAll` 未被 `changeStatus` 调用、Filter 不校验 `status`）；
+  ③ 无用户自助改密端点（仅管理面 `reset-password`，自助入口与首登强制改密无法闭环）；
+  ④ 健康检查端点 / 优雅启停 / compose 中 server 探针三项缺失；
+  ⑤ 三权分立缺角色互斥校验（`mutex` 全仓零命中，无数据层约束与服务层校验）；
+  ⑥ 敏感级别缺变更端点与变更审计、缺「提级需审批」强制联动；
+  ⑦ 全文搜索未建索引（`keyword` 走 LIKE，数据量增长后无法走索引）；
+  ⑧ 轻 IM 缺 @ 提及与「消息保留 ≥ 30 天」策略（无归档 / 清理任务）。
+  共享空间 / 审批端点 / 分片上传三项已由 **D-11 / D-5** 覆盖，**未重复登记**。
+
 ### 🔒 Security（安全）
 
 - 🚫 生产 profile 默认关闭 Swagger / OpenAPI 文档暴露。
+- 🔐 JWT 签名算法**固化 HS256**（`JwtTokenProvider`）：原用 jjwt `signWith(SecretKey)` 单参重载，
+  会按密钥字节长度**静默选择 HS256/384/512**——算法随密钥长度漂移，与 system-design 定稿口径不符，
+  且难过安全评审。现改为显式 `signWith(key, Jwts.SIG.HS256)`，验签后额外校验 JWA 算法头与预期一致
+  （不一致即 `1006 TOKEN_INVALID`）；密钥统一经 `buildSigningKey` 校验 **≥ 32 字节** 后以
+  `SecretKeySpec("HmacSHA256")` 构造。
 
 ## [1.0.0-SNAPSHOT] 🚧 - 开发中
 

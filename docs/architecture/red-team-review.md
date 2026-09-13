@@ -94,7 +94,7 @@
 | `[D-03]` 登录防爆破 / 账号锁定 / 限流只有错误码，无机制 | **高** | 密码喷洒、密码暴力破解、提取码枚举 | 登录/refresh 做 IP + 账号维度 Redis 计数（如 5 次/分钟临时禁 + 阈值后账号锁定）；与 [C-08]/[C-10] 共用同一 Redis 原子计数限流工具 |
 | `[D-04]` 初始凭据与散列策略未定：`root/123456` 默认值 | **低** | 复制默认配置直接上线 | 密码一律 BCrypt（cost≥10）；提供 `.env.example` 强制占位并在 prod 文档置顶「修改默认口令」；外网部署强制反代 TLS |
 | `[D-05]` 文档勘误：`ResultUtils` 不存在、时序文档待修订 | **低** | 开发者按文档引用不存在的工具类 | 随 [T-02] 修订一并更新 `architecture/README` 与 `development/README` 引用 |
-| `[D-06]` 文档勘误（v1.1 新增）：`AT-DIFF-todos.md` AT-DIFF-04 验收行错误码陈旧 | **低** | 按该行做回归验收时，`403(1004)` / `401(1003)` 与 2026-09-13 的 1xxx 重编号后实际返回不符，导致误判 | 将该行更新为「AUDITOR 无权限 `403(1003)`」「refresh 复用打击 `401(1006)`」；并核对 `docs/api/error-codes.md` 附录 B 迁移表 |
+| `[D-06]` 文档勘误（v1.1 新增）：`AT-DIFF-todos.md` AT-DIFF-04 验收行错误码陈旧 | **低** | 按该行做回归验收时，`403(1004)` / `401(1003)` 与 2026-09-13 的 1xxx 重编号后实际返回不符，导致误判 | 将该行更新为「AUDITOR 无权限 `403(1003)`」「refresh 复用打击 `401(1006)`」；并核对 `docs/api/error-codes.md` 附录 B 迁移表 —— ✅ **2026-09-13 已修复**：AT-DIFF-04 验收行已更新；全仓扫描另修正 `CHANGELOG.md` 4 处与 `AuthFlowIntegrationTest` 注释 1 处陈旧字面量（附录 B 第一张表为骨架期历史记录，保留不动，由紧随其后的「第二次调整」表覆盖） |
 
 ### 速览 E · 空指针与边界值（`N-*` / `B-*`，v1.1 新增）
 
@@ -404,6 +404,12 @@
   补偿队列）；审计表对应用服务只暴露 insert/select；归档任务=导出（对象存储/CSV）+ 物理删除，
   审计日志只增（append-only），物理删除仅限归档组件使用受限账号执行；`AuditSink` 作为 SPI 预留 ES。
 
+> **CE 收敛进展（2026-09-14，部分）**：at-file 的 `FileAuditLogger` 已把审计行按「失败记录不可丢、成功记录不可假」
+> 拆成两种事务语义——**失败审计**走 `REQUIRES_NEW` 独立事务（`FileNodeService#destroy` 的「记一条 fail 紧接 throw」
+> 若与业务同事务，回滚会把「越权 / 缺审批被拒」这类最需要留痕的事件一并抹掉）；**成功审计**仍加入调用方业务事务，
+> 使「业务回滚了、库里却留着一条成功」不可能发生。「永不抛异常」已消解本项①的可用性风险（审计写失败不回滚业务）。
+> **仍开放**：AFTER_COMMIT 异步 + 落库失败重试/告警（补偿队列）、审计表 DB 账号只 insert/select、归档导出 + 物理删除。
+
 ### [T-06] S2 — AFTER_COMMIT 事件投递无可靠性保障：通知“必达类”会丢
 
 - **位置**：use-case-flows §2.1 领域事件；PRD US-08（审批待办为必达类型）
@@ -494,6 +500,16 @@
   而其对应集成测试 Javadoc 已更新。按该行做回归验收会**误判失败**，或反向诱导代码改回旧码。
 - **建议**：将该行更新为「AUDITOR 无权限 `403(1003)`」「refresh 复用打击 `401(1006)`」，
   并全仓扫描一次重编号前的 1xxx 字面量（`1004` 出现在「无权限」语境处一律为陈旧值）。
+- ✅ **2026-09-13 已修复（D-06 关闭）**：
+  - `AT-DIFF-todos.md` AT-DIFF-04 验收行 → `403(1003)` ×2 / `401(1006)`；
+  - 全仓扫描共修正 **5 处陈旧字面量**：`CHANGELOG.md` 4 处（跳登录 `1001/1003` → `1001/1006`；
+    Filter 验签/过期 `1002/1003` → `1002/1006`；未认证输出 `1001/1002/1003/1004` → `1001/1002/1006`；
+    RBAC `403（1004）` → `403（1003）`）与 `AuthFlowIntegrationTest` 重放断言注释（`1003` → `1006`）；
+  - 复查结论：后端 `ErrorCode` 枚举、at-auth EntryPoint/DeniedHandler、`JwtAuthenticationFilter`、
+    at-permission 注解与切面、at-gateway 全局异常、前端 `result.ts` / `requestErrorConfig`（含单测）
+    **均为新口径、无残留**；
+  - `docs/api/error-codes.md` 附录 B **第一张表**为骨架期历史记录（其「新编号」列是当时快照），
+    由紧随其后的「第二次调整（2026-09-13）」表覆盖，**保留不动**以维持迁移审计链。
 
 ---
 
@@ -631,7 +647,7 @@
 | `docs/architecture/system-design.md` | §1.3「模块内包规约」：四层包结构定稿，持久层 `mapper` → **`repository`**（与实测包结构及 8 模块 `package-info.java` 一致） | [architecture.md §1.4](./architecture.md) |
 | `docs/architecture/architecture.md` | **v1.1 新建**：模块职责/依赖方向、四层包结构、处理链路、CE/EE 扩展点、部署拓扑 | 本次落地 |
 | `docs/architecture/README.md` | 增补指向 `architecture.md` 的入口链接（原文仅有职责表与铁律，无四层/链路/扩展点/拓扑） | 本次落地 |
-| `docs/development/AT-DIFF-todos.md` | AT-DIFF-04 验收行错误码更新为 `403(1003)` / `401(1006)`；全仓扫描重编号前的 1xxx 陈旧字面量 | D-06 |
+| `docs/development/AT-DIFF-todos.md` | AT-DIFF-04 验收行错误码更新为 `403(1003)` / `401(1006)`；全仓扫描重编号前的 1xxx 陈旧字面量（✅ 2026-09-13 已完成） | D-06 |
 | `docs/prd/README.md` | §8 扩展点命名对齐附录 C（`IdentityProvider` 等 7 接口）+ 建立「接口尚未建立」的 SPI 接缝；US-05 授权写表表述按 [T-02] 修订 | PRD-02 / PRD-08 |
 | `docs/api/README.md` | 补：写接口幂等键、分页上界、免登录端点集中化与分享下载防刷、秒传预检返回语义（`4001` → 200+data 或前端策略表归入成功分支） | API-01~API-04 |
 | `docs/api/error-codes.md` · `web/src/utils/result.ts` | 确立「后端 `ErrorCode` 为单一权威源」；前端策略表断言覆盖全部码，重编号后回归 | API-05 / D-06 |

@@ -212,43 +212,56 @@ AntTransfer CE 面向**开发者与中小团队**，解决三类日常痛点：
 | | 健康检查 / 优雅启停 | P0 | 就绪探针供 Compose 使用 |
 | **工作台（web 首页）** | 数据总览（待办 / 最近活动 / 我的资源 / 外发链接状态） | P0 | 满足 US-11；按数据范围过滤，首屏 P95 < 1 s，可下钻 |
 
-### 4.1 📊 实现现状核查（As-Is，2026-09-13）
+### 4.1 📊 实现现状核查（As-Is，2026-09-14 · 后端复核）
 
 > 口径：以仓库当前代码为准（`server/` 8 模块 + `web/` + `sql/`），对照 §1.1 范围逐项核对。
+> **本次修订范围：`server/` 后端**——`at-permission` 的「用户管理 / 角色管理 / 权限申请审批 / 审计日志」四条线本轮落地后重核；
+> `web/` 前端现状未变，仍沿用 2026-09-13 结论。
 > 图例：✅ 已落地（有实现 + 测试/验收证据）｜🟡 部分落地｜⬜ 未落地（仅表 / 实体 / 错误码等前置物）。
+> 路径约定：本节端点一律**省略全局前缀 `/api`**（`server.servlet.context-path=/api`），故 `POST /v1/files` 的完整地址为 `/api/v1/files`；完整契约见 [API 约定](../api/README.md)。
 
 #### P0（1.0 门槛）
 
 | 能力 | 现状 | 证据与缺口 |
 | --- | --- | --- |
 | JWT 双令牌 | ✅ | `at-auth`：`POST /v1/auth/token`、`/token/refresh`、`/logout`、`GET /me`；access 30 min（HS256，`ver=token_epoch`）+ refresh 7 d 随机串原子轮换（Lua）+ 复用打击全端吊销 + 登录失败 5 次锁 15 min；`V3__add_user_token_epoch.sql` 落地；`AuthFlowIntegrationTest` 8 例全绿 |
-| RBAC（角色-权限点-数据范围） | ✅ | `at-permission`：`@RequiresPerm` AOP（多角色并集 + 显式 Deny 优先）、`PermissionService`（`at:perm:{userId}` 缓存 30 min、变更 `invalidate` 即时生效）、`AccessControlService`（归属 + 数据范围 1/2/3 行级守卫）、`GET /v1/permission/my`；单测 11 例 |
-| 三权分立 | 🟡 | 实际内置 4 角色 `SUPER_ADMIN / DEPT_ADMIN / AUDITOR / USER`（`V2__init_data.sql`）：**原 system_admin / security_admin 职能已并入 SUPER_ADMIN**，仅审计独立（AUDITOR 仅 `audit:log:read`、写操作天然 403）。角色互斥目前**仅有设计口径**（system-design §3.2），数据层互斥约束与服务层校验均未实现 |
-| 分级权限申请审批闭环 | 🟡 | 已落地：`sys_approval_request` / `sys_approval_node` / `sys_user_file_permission` 三表（含 `level`、`grant_source`、`expire_at`）、错误码 `1008/1009/1010`、`PermissionGrant` 实体、到期自动回收调度器 `PermissionGrantExpireScheduler` + `PermissionExpiredEvent`（每小时 CAS 回收）。**缺口：申请提交 / 审批（通过 · 驳回 · 转审）/ 撤销 / 审批规则配置的 Controller 与 Service 全部缺失**（`PermissionController` 仅 `GET /my`）；三档敏感级别与「自动放行 / 一级审批」配置无落点 |
-| 分片上传 / 断点续传 | ⬜ | `at-transfer` 仅 `package-info.java` + `TransferRecord` 实体；`sys_upload_task.uploaded_indexes`、`sys_file` 表已就绪；接口契约（precheck / parts / merge、状态机含 `6 合并中`）见 use-case-flows §1 |
-| 秒传 + SHA-256 校验 | ⬜ | `at-file` 仅 `package-info.java` + `FileObject`（含 `sha256` 字段）；错误码 `4001/4002/4003` 已定义，无任何实现 |
-| 外发链接 | ⬜ | `at-collaboration` 仅 `CollaborationSpace` 实体 + `package-info.java`；`sys_share_link` 表就绪；错误码 `4004/4010/4011/4012` 已定义；设计口径（DB 原子扣减 + Redis 前置闸）见 system-design §5.3 |
-| 站内通知 | ⬜ | `sys_notify_message` 表已就绪；无通知 Service / Controller / 未读角标接口 |
-| 工作台数据总览 | ⬜ | 前端仅 ADP 模板页（`Welcome` / `user/*` / `exception/*`），无工作台页面与统计接口 |
-| Docker Compose 部署 | 🟡 | `docker-compose.yml`（MySQL 8.4 + Redis 7 + server）+ 多阶段 `Dockerfile` + `docker-compose.dev.yml` 已就绪，`SPRING_PROFILES_ACTIVE=prod` 与 healthcheck 齐备。**缺口：前端 `web/` 未纳入编排**（§4 表述为「可选前端」），「一键拉起全栈」目前仅覆盖后端 + 中间件 |
+| 本地账号登录 / 注销 / 改密 | 🟡 | 登录 / 注销已在 `AuthController` 闭环（端点与锁定、全端吊销明细见上行 JWT 行）。**缺口：无用户自助「改密」端点**——改密当前仅管理面 `POST /v1/system/users/{id}/reset-password`（`UserAdminPortAdapter#resetPassword` 在 SQL 内联 `token_epoch + 1`，故「改密后全端令牌吊销」语义已满足），但 §4 要求的「用户自助改密（校验旧口令）」无落点 |
+| 账号停用 / 启用 | 🟡 | 双端协同：`at-permission` 的 `UserAdminService#changeStatus` 落 `sys_user.status`（权限点 `system:user:status`），`at-auth` 在**登录与刷新时服务端强校验**（禁用 → `1005 ACCOUNT_DISABLED`、锁定 → `1004 ACCOUNT_LOCKED`，不依赖失败计数）；`TokenSessionService#revokeAll` 以 DB `token_epoch+1`（唯一权威）+ 事务提交后清 Redis 实现全端吊销。**缺口：未满足 §4 验收「停用 2 分钟内会话失效」**——`changeStatus` **未联动吊销会话**（`revokeAll` 仅由登出 / 刷新遇停用 / refresh 重放触发，`at-permission` 侧零调用），且 `JwtAuthenticationFilter` 不做逐请求 `status` 校验，故已签发的 access 最长可用到 30 min 自然过期；需补「停用 → 跨模块吊销」联动（扩展 `UserAdminPort` 或订阅事件） |
+| RBAC（角色-权限点-数据范围） | ✅ | `at-permission`：`@RequiresPerm` AOP（多角色并集 + 显式 Deny 优先）、`PermissionService`（`at:perm:{userId}` 缓存 30 min、变更 `invalidate` 即时生效）、`AccessControlService`（归属 + 数据范围 1/2/3 行级守卫）、`GET /v1/permission/my`、`GET /v1/permission-points`。**本轮补齐系统管理面端点（权限点见 `V9__system_admin_permission_points.sql`）**：用户管理 `/v1/system/users`（列表 / 详情 / 部门与角色选项 / 建号 / 编辑含调岗 / 启停 / 重置口令 / 分配角色 / 删除，对应 7 个 `system:user:*` 原子点，**写侧绕道 `UserAdminPort` SPI**）+ 角色管理 `/v1/roles`（列表 / 选项 / 详情 / 建 / 改 / 删 / 查授权 / 授权整集替换，对应 `system:role:*` 原子点）；相关单测 36 例（用户 19 + 角色 17） |
+| 三权分立 | 🟡 | 实际内置 4 角色 `SUPER_ADMIN / DEPT_ADMIN / AUDITOR / USER`（`V2__init_data.sql`）：**原 system_admin / security_admin 职能已并入 SUPER_ADMIN**，仅审计独立（AUDITOR 仅 `audit:log:read`、写操作天然 403）。本轮已落实两条锚点：**内置角色保护**（`RoleAdminService` 四条红线：内置角色不可删、内置角色数据范围不可改、`AUDITOR` 权限集锁定只读 `ErrorCode.AUDITOR_PERM_LOCKED`、非全量数据范围不得提权 `ErrorCode.PRIVILEGE_ESCALATION`）与**防自锁**（账号维度 `UserRoleMapper.countByRoleId` + 权限维度 `SystemAdminConstants.SUPER_ADMIN_REQUIRED_PERMS` 双重兜底）。**缺口：角色互斥（SUPER_ADMIN / AUDITOR 等不可兼得）仍仅有设计口径**（system-design §3.2）——全仓库 `mutex` / 互斥 / `exclusive` **零命中**，数据层约束与服务层校验均未实现 |
+| 敏感级别（低 / 中 / 高）与审批规则配置 | 🟡 | 已落地：`sys_file_node.level`（**1 低 / 2 中 / 3 高，按引用独立、可高于物理文件默认级**，见 `FileNode` 类注释）+ `NodeQuery.level` 作为检索过滤维度；审批侧 `sys_approval_request.level` 与 `ApprovalProperties` 按低 / 中 / 高提供 **SLA 24 / 12 / 4 h**、升级目标与紧急窗口。**缺口：①「单级可配」（每级别自动放行 / 一级审批）无落点**——无规则表、无配置端点，仅 `defaultApproverId` 兜底；**② 敏感级别无变更端点，亦无「级别变更走审计」的动作记录**（`OperationLog` 动作字典中无级别变更项）；**③ 缺少「提级需审批」的强制联动**，级别当前仅用于上传落库与检索过滤 |
+| 分级权限申请审批闭环 | 🟡 | 本轮补齐主线：`PermissionApplicationController`（`/v1/permission`）提供 **提交 `POST /applications`、通过 `POST /applications/{id}/approve`（授权落地含有效期）、驳回 `/reject`、转审 `/transfer`、待我审批 `GET /applications/pending`、我的申请 `GET /applications/mine`、权限地图 `GET /map`**；配套 `sys_approval_request` / `sys_approval_node` / `sys_user_file_permission` 三表（含 `level`、`grant_source`、`expire_at`）、状态机 `ApprovalStateMachine`、错误码 `1008/1009/1010`、`PermissionGrant` 实体、到期 CAS 回收 `PermissionGrantExpireScheduler` + `PermissionExpiredEvent`、超时升级 `ApprovalEscalationScheduler`、紧急通道 `EmergencyApprovalScheduler`（`ApprovalProperties` 按低 / 中 / 高 SLA 24 / 12 / 4 h、升级目标与紧急窗口可配）；审批链路已接审计（`APPROVE` / `REJECT` / `TRANSFER` / `GRANT`）。**缺口：① 申请人主动「撤销」申请单的端点缺失**（`PermissionGrantService.revokeApprovalGrants` 仅由调岗 / 停用被动触发回收，非申请人撤回）；**② §6「每级别自动放行 / 一级审批」的运行时可配规则无落点**——现仅配置文件 + 兜底审批人（`defaultApproverId`），无「自动放行」分支，亦无审批规则配置表 / 端点 |
+| 上传 / 下载流式接口（含 Range 断点） | 🟡 | 下载 ✅：`GET /v1/files/{nodeId}/content` 支持 `Range`（`LocalFileStorage` 流式输出 + 任务级 `speedLimit`），外发链接匿名下载复用同一通道；上传 ✅：`POST /v1/files`（multipart）**流式落盘并边写边算 SHA-256**，不整文件入内存。**缺口：无「暂停 / 恢复」后端语义**——恢复须依赖服务端分片清单，而分片未落地（见下行），当前中断只能整文件重传 |
+| 文件管理（目录 / 移动 / 复制 / 删除） | ✅ | `FolderController`（`/v1/folders`：`GET /tree` / 建 / `PATCH /{id}/rename` / `PATCH /{id}/move` / `DELETE /{id}`）+ `FileController`（`PATCH /{nodeId}/rename`、`PATCH /{nodeId}/move`、`POST /{nodeId}/copy`、`DELETE /{nodeId}` 软删、`POST /batch/recycle` 批量回收、`GET /recycle`、`POST /{nodeId}/restore`、`DELETE /{nodeId}/destroy` 彻底销毁、`POST /recycle/empty` 清空）；写操作统一过 `FileOwnershipGuard` 归属校验并写审计，`file:destroy` 已收敛至仅 SUPER_ADMIN |
+| 分片上传 / 断点续传 | ⬜ | 仍未落地：`at-transfer` 仅 `package-info.java` + `TransferRecord` 实体；`FileContentService` 只有 `upload`（小文件 multipart 直传）/ `instantUpload` / `uploadNewVersion`，**无 precheck / parts / merge 端点，也未消费 `sys_upload_task.uploaded_indexes`**；`sys_upload_task`、`sys_file` 表已就绪；接口契约（状态机含 `6 合并中`）见 use-case-flows §1 |
+| 秒传 + SHA-256 校验 | ✅ | `at-file`：`POST /v1/files/instant`（`InstantUploadRequest` → `FileContentService.instantUpload`，命中既有内容只建引用、不传字节）+ `POST /v1/files`（multipart 直传，**服务端流式重算 sha256、不信任客户端上报**）；内容寻址存储 `LocalFileStorage` + `FileHashUtils`，`sys_file_object.sha256` 唯一键去重；错误码 `4001/4002/4003` 已接入 |
+| 共享空间（Owner / 成员 / 读写角色） | ⬜ | 未落地：`sys_space` 表已建（`sql/V4__menu_route_user_type_and_collaboration.sql`），但 `CollaborationSpace` 实体自述为「骨架」，且**无 `SpaceController` / `SpaceService` / 成员增删改端点**（`at-collaboration` 仅有 Notify / Chat / Todo 三组端点）；`sys_group_member` 当前只被 `ChatService` 用作**会话群成员**，与「空间成员 + 读 / 写角色」不是同一语义（无空间维度的角色字段）。影响：P0「共享空间」不可演示，且「文件 / 任务挂载到空间」的能力无处调用 |
+| 外发链接 | ✅ | `at-file`：`ShareLinkService`（创建 / 撤销 / 详情 / 我的列表；有效期 · 提取码 ≥ 6 位 · 次数限制 · 错 5 次锁 30 min；quota 镜像 + Redis 前置闸）+ `ShareAccessService`（匿名 verify / redeem / `Range` 下载；DB 原子扣减兜底）+ `ShareTicketService`（短时票据，`<a>` / `<img>` 免登录取件）；创建与撤销均写审计（`ShareAuditLogger`）；并发口径有 `ShareQuotaConcurrencyIntegrationTest` 2 例兜底 |
+| 站内通知 | ✅ | `at-collaboration`：`NotifyController`（`/v1/notifications`）提供分页、`/unread` 角标、`/offline` 离线拉取、`POST /{id}/read`、`/read-all`；通知渠道含站内（`sys_notify_message`）与**邮件 `MailNotifier`**（`NotifyProperties` 控制开关，发送失败降级不阻塞主流程） |
+| 审计与合规 | ✅ | 共享内核 `com.anttransfer.common.audit`（`OperationLog` + `OperationLogMapper`，本轮由 `at-file` 下沉至 `at-common`）+ 三域写入器（`FileAuditLogger` / `ShareAuditLogger` / `PermissionAuditLogger`；**成功记录入调用方事务、失败记录走 `REQUIRES_NEW` 独立事务先提交**）+ 只读检索导出 `AuditLogController`（`GET /v1/audit/logs` 分页、`GET /v1/audit/logs/export` CSV，共用 `audit:log:read`，仅 SUPER_ADMIN / AUDITOR）；本轮补齐权限 / 审批域埋点 15 处（用户 6 + 角色 4 + 审批 4 + 授权回收 1，另在「审批通过」时追加一条 `GRANT` 授权落地记录；口令类只记「谁重置了谁」）；全链**无任何 update / delete 端点**（`audit:log:clear` 从不签发）；单测 11 例（`AuditLogQueryServiceTest` 7 + `AuditLogCsvTest` 4） |
+| 工作台数据总览 | ⬜ | 后端仍无统计聚合接口（全仓库无 `stats` / `statistics` / `dashboard` / `overview` 端点）；前端仅 ADP 模板页（`Welcome` / `user/*` / `exception/*`），无工作台页面 |
+| 配置管理 / 健康检查 / 优雅启停 | 🟡 | 配置管理：`application.yml` 已把**连接类与安全类**参数环境变量化（`SERVER_PORT` / `DB_*` / `REDIS_*` / `FLYWAY_ENABLED` / `AUTH_ACCESS_TOKEN_SECRET` / `ANTTRANSFER_CORS_ALLOWED_ORIGINS`），业务阈值（令牌 TTL、共享下载上限与有效期、提取码锁定、内容扫描开关、通知开关、离线补拉与历史上限）集中在 `anttransfer.*` 配置块——**改配置文件可以，但未做环境变量占位**。**缺口：① 文件上传上限完全未配置**——全仓库既无 `spring.servlet.multipart.max-file-size`，也无 Java 侧 `MultipartConfigElement`，沿用 Spring 默认 **单文件 1 MB / 单请求 10 MB**，与「大文件上传」目标直接冲突（分片未落地时尤为突出）；② **无健康检查端点**（`management.*` / actuator 零命中）；③ **未开启优雅启停**（无 `server.shutdown=graceful`，默认 immediate）；④ compose 中 **server 服务无探针**，「就绪探针供 Compose 使用」未满足 |
+| Docker Compose 部署 | 🟡 | `docker-compose.yml`（MySQL 8.4 + Redis 7 + server）+ 多阶段 `Dockerfile` + `docker-compose.dev.yml` 已就绪，`SPRING_PROFILES_ACTIVE=prod` 亦已接入，MySQL / Redis 均配 healthcheck（**server 自身无探针**，见上行「配置管理 / 健康检查 / 优雅启停」）。**缺口：前端 `web/` 未纳入编排**（§4 表述为「可选前端」），「一键拉起全栈」目前仅覆盖后端 + 中间件 |
 
 #### P1
 
-**全部未落地**（权限地图、IM、邮件、待办中心、批量打包、任务级限速、文件历史版本、回收站、标签、搜索、传输统计）。补充说明：
+**后端复核（2026-09-14）**：
 
-- **中英文国际化**：ADP 模板自带 `web/src/locales`（64 个资源文件）具备框架能力，**业务文案尚未接入**；
-- **回收站 / 标签 / 搜索 / 统计 / 版本 / 打包任务**：所需表（`sys_file_version`、`sys_tag`、回收站、统计聚合等）**尚未创建**，需新增 Flyway `V4+` 迁移脚本；
-- 版本管理的权限点 `file:version` 已在 `V2__init_data.sql` 中预置，说明 P1 版本功能在权限模型层已预留。
+- ✅ **已落地**：批量打包下载（`PackService` + `sys_pack_task`，异步打包 + 产物过期清理 + 失败任务收敛）、任务级限速（`BandwidthLimiter` + 下载端点 `speedLimit`，与全局并发 / 带宽兜底叠加）、文件历史版本（`FileVersionService` / `FileVersionController`，权限点 `file:version`：`GET|POST /v1/files/{nodeId}/versions`、`POST .../{versionNo}/rollback`）、回收站与恢复（含彻底销毁 `file:destroy` 已收敛至仅 SUPER_ADMIN）、标签与关键词搜索（`TagService` + `FileController#page` 的 `NodeQuery`：`folderId / keyword / ext / level / size 区间 / 时间区间 / tagId / sort`；**`keyword` 为 LIKE 匹配、未建全文索引**，故 §4「全文搜索」尚未满足）、目录树（`FolderService` + `sys_folder` 物化路径）、站内轻 IM（`ChatController`：发消息 / 拉历史 / 标记已读，`scope + targetId` 会话维度）、邮件通知（`MailNotifier`）、待办中心（`TodoController`：`GET /v1/todos` 分页三态 + `GET /v1/todos/count` 角标）、权限地图（`GET /v1/permission/map`）；
+- ⬜ **仍缺**：中英文国际化**业务文案未接入**（ADP 模板自带 `web/src/locales` 具备框架能力，但业务页未接入）、传输统计 / 统计中心（无后端聚合接口）、站内轻 IM 的 **@ 提及**与「消息保留 ≥ 30 天」策略（无归档 / 清理任务，保留期无实现）；
+- **表与契约**：所需表由 `sql/V6__file_management.sql` 创建 —— `sys_folder`（物化路径目录树）、`sys_file_node`（引用层）、`sys_file_version`（历史版本）、`sys_tag` / `sys_file_tag`（标签与关联）、`sys_pack_task`（异步打包任务）；`sql/V7` 补 `sys_pack_task.node_ids` 输入清单；`sql/V8` 把 `file:destroy` 收敛至仅 SUPER_ADMIN；`sql/V9__system_admin_permission_points.sql` 补系统管理面权限点（`system:user:*` 7 个 + `system:role:*` 系列，**仅授 SUPER_ADMIN、AUDITOR 一个不授**）。对外契约见 `docs/api/README.md` §1 与 `docs/api/error-codes.md`（`4013~4023`）。
 
 #### Won't
 
-均未实现（符合预期）。但因对应模块为空壳，§8 所列扩展点当前**亦仅为设计约定、接口尚未建立**，详见 §8 落地状态说明。
+均未实现（符合预期）。§8 所列扩展点的 CE 落地状态与「命名权威源」待办，见 §8 与 [`architecture.md` §4「⏸ 延期登记」](../architecture/architecture.md) 的 D-2 条目（附录 C 的 7 个接口名当前全仓库零命中，暂以附录 C 命名为准）。
 
 #### 横切地基（超出 P0 清单，但为 P0 前置）
 
-✅ 统一返回体 `Result` / `PageResult`、错误码分段（`0/1xxx/2xxx/4xxx/5xxx`，含 A~H 处理策略标注）、全局异常处理（15 类异常分轨映射）、`traceId` 全链路（logback pattern 消费）、访问日志、`@RateLimit` 固定窗口限流（`4290`）、CORS 属性化、前端契约改造（`web/src/utils/result.ts`、`utils/token.ts`、`requestErrorConfig.ts`，31 例单测通过）、集成测试 8 例。
+✅ 统一返回体 `Result` / `PageResult`、错误码分段（`0/1xxx/2xxx/4xxx/5xxx`，含 A~H 处理策略标注）、全局异常处理（15 类异常分轨映射）、`traceId` 全链路（logback pattern 消费）、访问日志、`@RateLimit` 固定窗口限流（`4290`）、CORS 属性化、前端契约改造（`web/src/utils/result.ts`、`utils/token.ts`、`requestErrorConfig.ts`，31 例单测通过）。
 
-**开放裁决项**：4 处 `AT-DIFF`（01 AccessDenied 码值、02 Filter 权限加载、03 部门范围拦截器、05 接口命名）待整体完工前裁决，详见 [AT-DIFF 待裁决清单](../development/AT-DIFF-todos.md)。
+**后端测试盘点（2026-09-14）**：`server/` 共 20 个测试类 —— `at-permission` 11 类（`PermissionApplicationServiceTest` 21 · `UserAdminServiceTest` 19 · `RoleAdminServiceTest` 17 · `PermissionGrantServiceTest` 9 · `AuditLogQueryServiceTest` 7 · `ApprovalStateMachineTest` 6 · `AccessControlServiceTest` 6 · `PermissionServiceTest` 5 · `AuditLogCsvTest` 4 · `AccessRuleResolverChainTest` 4 · `ApprovalPropertiesTest` 3）、`at-file` 2 类（`FileOwnershipGuardTest` 11 · `ContentScanChainTest` 6）、`at-auth` 2 类（`AuthServiceTest` 6 · `JwtTokenProviderTest` 5）、`at-common` 2 类（`ResultTest` 7 · `PageResultTest` 5）、`at-bootstrap` 3 类（集成测试 `AuthFlowIntegrationTest` 8 + `ShareQuotaConcurrencyIntegrationTest` 2，另有 `FillMetaObjectHandlerTest` 5）。
+
+**开放裁决项**：`AT-DIFF-01` 已裁决（**「权限不足 = `1003` / 403」**，原 `1003 TOKEN_INVALID` 后移至 `1006`，属破坏性契约变更，已同步 `docs/api/error-codes.md` 与前端 `web/src/utils/result.ts`）；`AT-DIFF-02`（Filter 权限加载）、`AT-DIFF-03`（部门范围拦截器）、`AT-DIFF-05`（接口命名）待整体完工前裁决；`AT-DIFF-06 ~ 10` 为「已实现、未阻塞」的登记项。详见 [AT-DIFF 待裁决清单](../development/AT-DIFF-todos.md)。
 
 ---
 
