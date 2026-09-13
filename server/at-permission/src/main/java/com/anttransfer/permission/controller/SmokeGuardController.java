@@ -15,8 +15,8 @@
  */
 package com.anttransfer.permission.controller;
 
+import com.anttransfer.common.permission.RequiresPerm;
 import com.anttransfer.common.result.Result;
-import com.anttransfer.permission.annotation.RequiresPerm;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;

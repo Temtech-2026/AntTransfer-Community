@@ -15,7 +15,7 @@
  */
 package com.anttransfer.permission.aspect;
 
-import com.anttransfer.permission.annotation.RequiresPerm;
+import com.anttransfer.common.permission.RequiresPerm;
 import com.anttransfer.permission.service.PermissionService;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;

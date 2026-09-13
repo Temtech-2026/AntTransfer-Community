@@ -22,9 +22,9 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * 权限校验注解（骨架期遗留，已由 {@link RequiresPerm} 取代）。
+ * 权限校验注解（骨架期遗留，已由 {@link com.anttransfer.common.permission.RequiresPerm} 取代）。
  *
- * @deprecated 请改用 {@link RequiresPerm}：携带精确 perm_code 语义（多角色并集 / Deny 优先），
+ * @deprecated 请改用 {@link com.anttransfer.common.permission.RequiresPerm}：携带精确 perm_code 语义（多角色并集 / Deny 优先），
  * 由 {@code RequiresPermAspect} 统一执行并返回 1003 NO_AUTH。
  * @author AntTransfer CE
  */
