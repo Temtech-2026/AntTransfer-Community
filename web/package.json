@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "description": "AntTransfer Community Edition — 前端（Ant Design Pro / Umi Max）",
+  "repository": {
+    "type": "git",
+    "url": "git+https://gitee.com/Temtech-close_source/AntTransfer-Community.git"
+  },
   "scripts": {
     "analyze": "cross-env ANALYZE=1 max build",
     "build": "max build",

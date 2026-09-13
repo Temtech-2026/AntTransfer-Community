@@ -82,6 +82,11 @@ describe('resolveStrategy（错误码 → 处理策略）', () => {
     expect(resolveStrategy(1004)).toBe(HandleStrategy.DENY);
     expect(resolveStrategy(1005)).toBe(HandleStrategy.DENY);
     expect(resolveStrategy(4010)).toBe(HandleStrategy.DENY);
+    // 4017 彻底销毁被拒（非超管 / 高敏感缺审批）与 4018 下载凭证无效：均就地提示，绝不跳登录
+    expect(resolveStrategy(4017)).toBe(HandleStrategy.DENY);
+    expect(resolveStrategy(4018)).toBe(HandleStrategy.DENY);
+    // 1012 与 1003 同为策略 D：非群成员是「拒绝」而非「未登录」，跳登录是红线
+    expect(resolveStrategy(1012)).toBe(HandleStrategy.DENY);
   });
 
   it('E/F/G/H 类：请求修正 / 状态冲突 / 限流 / 系统兜底', () => {
@@ -90,6 +95,18 @@ describe('resolveStrategy（错误码 → 处理策略）', () => {
     expect(resolveStrategy(4102)).toBe(HandleStrategy.STATE_CONFLICT);
     expect(resolveStrategy(4011)).toBe(HandleStrategy.THROTTLE);
     expect(resolveStrategy(5001)).toBe(HandleStrategy.SYSTEM);
+    // 协作模块新增：1011 审批状态冲突 / 1013、1014 会话参数类
+    expect(resolveStrategy(1011)).toBe(HandleStrategy.STATE_CONFLICT);
+    expect(resolveStrategy(1013)).toBe(HandleStrategy.BAD_REQUEST);
+    expect(resolveStrategy(1014)).toBe(HandleStrategy.BAD_REQUEST);
+    // 文件管理新增（4013~4023）：E 类请求修正 / F 类状态冲突
+    expect(resolveStrategy(4013)).toBe(HandleStrategy.BAD_REQUEST);
+    expect(resolveStrategy(4019)).toBe(HandleStrategy.BAD_REQUEST);
+    expect(resolveStrategy(4023)).toBe(HandleStrategy.BAD_REQUEST);
+    expect(resolveStrategy(4014)).toBe(HandleStrategy.STATE_CONFLICT);
+    expect(resolveStrategy(4016)).toBe(HandleStrategy.STATE_CONFLICT);
+    expect(resolveStrategy(4021)).toBe(HandleStrategy.STATE_CONFLICT);
+    expect(resolveStrategy(4022)).toBe(HandleStrategy.STATE_CONFLICT);
   });
 });
 

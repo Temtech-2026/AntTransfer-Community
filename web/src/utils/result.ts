@@ -93,6 +93,10 @@ const STRATEGY_BY_CODE: Record<number, HandleStrategy> = {
   1008: HandleStrategy.FLOW_BRANCH,
   1009: HandleStrategy.FLOW_BRANCH,
   1010: HandleStrategy.BAD_REQUEST,
+  1011: HandleStrategy.STATE_CONFLICT, // 审批状态机冲突：刷新单据状态后重试，禁止原样重放
+  1012: HandleStrategy.DENY, // 非群成员：403 就地提示，绝不跳登录（与 1003 同为策略 D）
+  1013: HandleStrategy.BAD_REQUEST, // 会话目标无效
+  1014: HandleStrategy.BAD_REQUEST, // 消息类型不允许用于会话
 
   // 2xxx 参数校验
   2001: HandleStrategy.BAD_REQUEST,
@@ -114,6 +118,17 @@ const STRATEGY_BY_CODE: Record<number, HandleStrategy> = {
   4010: HandleStrategy.DENY,
   4011: HandleStrategy.THROTTLE,
   4012: HandleStrategy.STATE_CONFLICT,
+  4013: HandleStrategy.BAD_REQUEST, // 目录不存在：刷新目录树
+  4014: HandleStrategy.STATE_CONFLICT, // 同目录重名：改名后重试
+  4015: HandleStrategy.BAD_REQUEST, // 目录移动成环：请求需修正
+  4016: HandleStrategy.STATE_CONFLICT, // 文件在回收站：先还原再操作
+  4017: HandleStrategy.DENY, // 彻底销毁被拒：403 就地提示，绝不跳登录（高敏感须先走审批）
+  4018: HandleStrategy.DENY, // 下载凭证无效：重新换票，绝不跳登录
+  4019: HandleStrategy.BAD_REQUEST, // 打包超限：创建入口即拒，调整选择范围
+  4020: HandleStrategy.BAD_REQUEST, // 打包任务不存在：刷新任务列表
+  4021: HandleStrategy.STATE_CONFLICT, // 打包产物已过期：需重新发起打包
+  4022: HandleStrategy.STATE_CONFLICT, // 标签重名：沿用已有或改名
+  4023: HandleStrategy.BAD_REQUEST, // 历史版本不存在：刷新版本列表
   4040: HandleStrategy.BAD_REQUEST,
   4101: HandleStrategy.BAD_REQUEST,
   4102: HandleStrategy.STATE_CONFLICT,

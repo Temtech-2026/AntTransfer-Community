@@ -1,22 +1,41 @@
-import { GithubOutlined } from '@ant-design/icons';
+import { GithubOutlined, LinkOutlined } from '@ant-design/icons';
 import packageJson from '@root/package.json';
 import { Divider } from 'antd';
 import { createStyles } from 'antd-style';
 import React from 'react';
 
+/** 兜底地址：package.json 未声明 repository 时指向模板仓库 */
+const FALLBACK_REPO_URL = 'https://github.com/ant-design/ant-design-pro';
+
+/**
+ * 从 package.json 的 repository 推导仓库主页。
+ *
+ * 不写死托管方，只做规范化：去掉 `git+` 前缀、把 `git@host:path` 转成 https、去掉 `.git` 后缀。
+ * 这样 GitHub / Gitee / GitLab 都能正确成链——否则仓库不在 github.com 时会静默退回
+ * 模板仓库地址，把用户引到别人家的仓库（比不显示链接更糟）。
+ */
 const getRepoUrl = () => {
-  if (!packageJson.repository)
-    return 'https://github.com/ant-design/ant-design-pro';
-  const repo =
-    typeof packageJson.repository === 'string'
-      ? packageJson.repository
-      : (packageJson.repository as { url: string }).url;
-  const match = repo.match(/github\.com[:/]([^/]+)\/([^/.]+)/);
-  if (!match) return 'https://github.com/ant-design/ant-design-pro';
-  return `https://github.com/${match[1]}/${match[2]}`;
+  const raw: unknown = packageJson.repository;
+  const url =
+    typeof raw === 'string'
+      ? raw
+      : ((raw as { url?: string } | undefined)?.url ?? '');
+  const normalized = url
+    .trim()
+    .replace(/^git\+/, '')
+    .replace(/^git@([^:]+):/, 'https://$1/')
+    .replace(/\.git$/, '')
+    .replace(/\/+$/, '');
+  // 只接受 https://host/owner/repo 形态，避免把畸形地址渲染成坏链接
+  return /^https?:\/\/[^/]+\/[^/]+\/[^/]+$/.test(normalized)
+    ? normalized
+    : FALLBACK_REPO_URL;
 };
 
 const REPO_URL = getRepoUrl();
+/** 仓库托管域名：用于页脚文案，避免把 Gitee 仓库标成 GitHub */
+const REPO_HOST = new URL(REPO_URL).hostname;
+const IS_GITHUB = REPO_HOST.endsWith('github.com');
 const COMMIT_HASH = process.env.COMMIT_HASH || '';
 
 const useStyles = createStyles(({ token, css }) => ({
@@ -123,8 +142,12 @@ const Footer: React.FC = () => {
           target="_blank"
           rel="noopener noreferrer"
         >
-          <GithubOutlined style={{ marginRight: 4 }} />
-          GitHub
+          {IS_GITHUB ? (
+            <GithubOutlined style={{ marginRight: 4 }} />
+          ) : (
+            <LinkOutlined style={{ marginRight: 4 }} />
+          )}
+          {REPO_HOST}
         </a>
       </div>
     </div>

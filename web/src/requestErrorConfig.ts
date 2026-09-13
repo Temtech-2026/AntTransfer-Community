@@ -314,4 +314,6 @@ export const errorConfig: RequestConfig = {
 };
 
 // 便于单测与调用方复用
-export { presentError, redirectToLogin, resolveStrategy };
+// refreshTokenOnce：供分片上传的 XHR 通道复用同一「单飞刷新」逻辑，
+// 避免上传流另起一套刷新实现导致 refresh 轮换竞态（新令牌被旧请求覆盖）。
+export { presentError, redirectToLogin, refreshTokenOnce, resolveStrategy };
