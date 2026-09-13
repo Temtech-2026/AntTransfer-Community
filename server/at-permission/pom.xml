@@ -57,6 +57,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
+        <!-- Jakarta Bean Validation：申请/审批入参校验（@NotBlank / @Size / @Valid） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
         <!-- Spring Security Core：读取 SecurityContext 中的已认证主体（无需再建过滤链） -->
         <dependency>
             <groupId>org.springframework.security</groupId>
