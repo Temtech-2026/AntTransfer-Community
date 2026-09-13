@@ -37,8 +37,12 @@ package com.anttransfer.common.constant;
  *   at:login:fail:{username}   登录失败计数，TTL 15min，阈值触发账号临时锁定
  *   at:upload:{uploadId}       分片上传任务状态镜像，TTL 24h（分片索引以 DB 为准）
  *   at:share:count:{token}     分享下载次数前置配额闸（DB 原子 UPDATE 裁决），TTL 随链接剩余有效期
- *   at:share:lock:{token}      分享提取码错误锁定，TTL 30min（错 5 次锁 30min，PRD US-03）
+ *   at:share:lock:{token}      分享提取码错误锁定，TTL 30min（错 5 次锁 30min，PRD US-03 / D-8）
+ *   at:share:ticket:{ticket}   访客一次性下载/预览票据，TTL 5min，GETDEL 原子取用（一次即焚）
+ *   at:file:ticket:{ticket}    登录用户下载票据，TTL 5min，绑定 userId+nodeId+fileId，可重试至过期
  *   at:perm:{userId}           用户权限标识缓存，TTL 30min，授权变更主动失效
+ *   at:perm:escalate:{appId}   超时未审批升级提醒幂等键，默认 TTL 24h
+ *   at:perm:emergency:{appId}  紧急通道强提醒幂等键（P1 开关），默认 TTL 30min
  *   at:rl:{类}#{方法}[:biz]:{维度}  固定窗口限流计数，TTL = 注解 windowSeconds（Lua INCR+EXPIRE）
  *   at:ws:channel              集群 WebSocket 广播频道（Pub/Sub），常驻
  * </pre>
@@ -95,8 +99,43 @@ public final class RedisKeyConstants {
 
     /** 分享提取码错误锁定键前缀：at:share:lock:{token}（INCR + EXPIRE） */
     public static final String SHARE_LOCK_PREFIX = PREFIX + "share:lock:";
-    /** 提取码错误锁定 TTL：30min（连续错 5 次临时锁 30min，PRD US-03 / 红队 [C-08]） */
+    /**
+     * 提取码错误锁定 TTL：30min（连续错 5 次临时锁 30min）。
+     *
+     * <p>需求权威源 = PRD US-03；与 system-design §5.3 / §7.1、红队 [C-08] 及 CHANGELOG D-8 裁定一致
+     * （D-8 已裁定「15 min 系与 at:login:fail 串行误抄」）。运行期可由
+     * {@code anttransfer.file.share.code-lock-duration} 覆盖，默认取本常量。</p>
+     */
     public static final long SHARE_LOCK_TTL_SECONDS = 30 * 60L;
+
+    /**
+     * 访客一次性下载/预览票据键前缀：at:share:ticket:{ticket}。
+     *
+     * <p>值为票据载荷 JSON（关联 shareToken / fileId / 访问类型），<b>GETDEL</b> 原子取用保证「一次即焚」；
+     * 属短期可丢失态：丢失仅表现为访客需重新过校验链换票，不影响下载次数正确性（次数裁决以 DB 为准，P-8）。</p>
+     */
+    public static final String SHARE_TICKET_PREFIX = PREFIX + "share:ticket:";
+    /** 票据默认 TTL：5min（可由 {@code anttransfer.file.share.ticket-ttl} 覆盖；仅需覆盖「校验→取件」间隔） */
+    public static final long SHARE_TICKET_TTL_SECONDS = 5 * 60L;
+
+    /* ======================== 文件管理：下载票据 ======================== */
+
+    /**
+     * 登录用户下载票据键前缀：at:file:ticket:{ticket}。
+     *
+     * <p>用途：把「鉴权 + 归属校验」与「真正取件」解耦——下载链接（含票据）可交给浏览器原生下载、
+     * 播放器或下载工具，这些场景无法携带 Authorization 头，故用短时票据替代长 Token 暴露在 URL 上。</p>
+     *
+     * <p>载荷 JSON 固定绑定 {@code userId + nodeId + fileId + expireAt}：
+     * 取件时必须逐项比对，<b>任一不匹配即 4018</b>——防止 A 用自己的票据下载 B 的文件
+     * （票据是承载权限的凭证，不能只验真伪、不验绑定对象）。</p>
+     *
+     * <p>与 {@link #SHARE_TICKET_PREFIX} 的区别：分享票据是<b>访客</b>的（绑定 shareToken + 一次即焚），
+     * 本票据是<b>登录用户</b>的（绑定 userId + 可重复使用至过期，因为同一用户重试下载属正常行为）。</p>
+     */
+    public static final String FILE_TICKET_PREFIX = PREFIX + "file:ticket:";
+    /** 下载票据默认 TTL：5min（可由 {@code anttransfer.file.download-ticket-ttl} 覆盖） */
+    public static final long FILE_TICKET_TTL_SECONDS = 5 * 60L;
 
     /* ============================ 权限缓存 ============================ */
 
@@ -104,6 +143,29 @@ public final class RedisKeyConstants {
     public static final String PERM_PREFIX = PREFIX + "perm:";
     /** 权限缓存 TTL：30min（兜底过期；授权变更走主动失效，RBAC 判定可重算，P-8） */
     public static final long PERM_TTL_SECONDS = 30 * 60L;
+
+    /* ====================== 权限审批：提醒幂等抑制 ====================== */
+
+    /**
+     * 超时未审批「升级提醒」幂等键前缀：at:perm:escalate:{applicationId}。
+     *
+     * <p>纯抑制重复提醒的防御态键：丢失最多导致同一申请单多提醒一次，不影响审批状态正确性
+     * （申请单状态与 SLA 判定始终以 DB 为准，P-8）。TTL 默认
+     * {@link #PERM_ESCALATION_TTL_SECONDS}，可由 {@code anttransfer.permission.approval.escalation-idempotent-window} 覆盖。</p>
+     */
+    public static final String PERM_ESCALATION_PREFIX = PREFIX + "perm:escalate:";
+    /** 升级提醒幂等默认 TTL：24h（同一申请单每日最多升级提醒一次） */
+    public static final long PERM_ESCALATION_TTL_SECONDS = 24 * 60 * 60L;
+
+    /**
+     * 紧急通道「强提醒」幂等键前缀：at:perm:emergency:{applicationId}（P1 开关，默认关闭）。
+     *
+     * <p>语义同上：仅抑制重复强提醒，丢失不影响正确性；TTL 默认
+     * {@link #PERM_EMERGENCY_TTL_SECONDS}，可由 {@code ...approval.emergency.idempotent-window} 覆盖。</p>
+     */
+    public static final String PERM_EMERGENCY_PREFIX = PREFIX + "perm:emergency:";
+    /** 紧急强提醒幂等默认 TTL：30min */
+    public static final long PERM_EMERGENCY_TTL_SECONDS = 30 * 60L;
 
     /* ============================ 接口限流 ============================ */
 
@@ -151,9 +213,29 @@ public final class RedisKeyConstants {
         return SHARE_LOCK_PREFIX + token;
     }
 
+    /** 生成访客一次性下载/预览票据键：at:share:ticket:{ticket} */
+    public static String shareTicketKey(String ticket) {
+        return SHARE_TICKET_PREFIX + ticket;
+    }
+
+    /** 生成登录用户下载票据键：at:file:ticket:{ticket} */
+    public static String fileTicketKey(String ticket) {
+        return FILE_TICKET_PREFIX + ticket;
+    }
+
     /** 生成用户权限缓存键：at:perm:{userId} */
     public static String permKey(long userId) {
         return PERM_PREFIX + userId;
+    }
+
+    /** 生成超时升级提醒幂等键：at:perm:escalate:{applicationId} */
+    public static String permEscalationKey(long applicationId) {
+        return PERM_ESCALATION_PREFIX + applicationId;
+    }
+
+    /** 生成紧急强提醒幂等键：at:perm:emergency:{applicationId} */
+    public static String permEmergencyKey(long applicationId) {
+        return PERM_EMERGENCY_PREFIX + applicationId;
     }
 
     /**
