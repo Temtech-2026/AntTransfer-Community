@@ -19,9 +19,13 @@
   at-collaboration — 协作共享业务模块
 
   职责：多人协作空间 CollaborationSpace（成员邀请 / 共享传输任务 / 访问控制）、
-  分享链接与协作者管理，支撑“社区 + 传输”的协作玩法。
+  通知与 IM 域（站内消息 sys_notify_message 的落库 / 在线推送 / 离线补拉 / 待办聚合、
+  单聊与群聊、WebSocket 长连接、Redis Pub/Sub 多实例广播）。
 
   依赖规则：仅依赖 at-common，禁止依赖其他 at-* 业务模块。
+    · 登录态复用经 at-common 的 AccessTokenVerifier（实现在 at-auth）——依赖倒置；
+    · 通知触发经 at-common 的 NotificationPort（实现即本模块）——依赖倒置；
+    · 审批 / 传输事件由 at-common 的 event 包承载——跨模块事件契约。（见 AT-DIFF-10）
   =====================================================================
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -38,13 +42,55 @@
 
     <artifactId>at-collaboration</artifactId>
     <name>at-collaboration</name>
-    <description>AntTransfer 协作共享：多人协作空间 / 成员 / 分享</description>
+    <description>AntTransfer 协作共享：协作空间 / 成员 / 通知与 IM</description>
 
     <dependencies>
-        <!-- 共享内核：Result / ErrorCode / BaseEntity / BusinessException -->
+        <!-- 共享内核：Result / ErrorCode / BaseEntity / BusinessException /
+             RedisKeyConstants / NotificationPort / AccessTokenVerifier / 事件契约 -->
         <dependency>
             <groupId>com.anttransfer</groupId>
             <artifactId>at-common</artifactId>
+        </dependency>
+        <!-- Spring 基础（IoC / 事件 ApplicationEventPublisher / @Scheduled）：供 Service 使用 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <!-- Spring Web MVC：通知 / 会话 / 待办 REST 接口 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <!-- WebSocket（原生 TextWebSocketHandler）：在线推送长连接（/ws/notify） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+        <!-- Jakarta Bean Validation：发送消息 / 分页查询入参校验（@NotBlank / @Size / @Valid） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <!-- Spring Security Core：SecurityContext 读取当前登录人（@RequireLogin 语义） -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-core</artifactId>
+        </dependency>
+        <!-- Redis：StringRedisTemplate + Pub/Sub 多实例广播（at:ws:channel） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <!-- MyBatis-Plus：@Mapper 自动装配 + BaseMapper（运行时由 at-bootstrap 聚合） -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+        </dependency>
+        <!-- JavaMail：P1 SMTP 邮件通知渠道（默认关闭，见 MailNotifier 的 @ConditionalOnProperty）；
+             仅引 starter，不配置 spring.mail.* 时不会建立连接，不影响 P0 站内信启动 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
         </dependency>
         <!-- Lombok：编译期注解（optional 不传递） -->
         <dependency>
@@ -52,5 +98,13 @@
             <artifactId>lombok</artifactId>
             <optional>true</optional>
         </dependency>
+
+        <!-- ============ 测试 ============ -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
+
 </project>
