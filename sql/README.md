@@ -10,6 +10,10 @@ sql/
 ├── V2__init_data.sql     # 初始化数据：内置角色 SUPER_ADMIN/AUDITOR/DEPT_ADMIN/USER + 菜单树与权限点 + admin
 ├── V3__add_user_token_epoch.sql                    # 增量：sys_user 补 token_epoch（会话吊销纪元）
 ├── V4__menu_route_user_type_and_collaboration.sql  # 增量：菜单路由元数据 + user_type + sys_group_member + sys_space
+├── V5__collaboration_im_notify.sql                 # 增量：sys_notify_message 补会话维度列 + 会话索引 + 幂等唯一键
+├── V6__file_management.sql                         # 增量：目录树 + 文件引用层 + 历史版本 + 标签 + 打包任务（+6 表）
+├── V7__pack_task_node_ids.sql                      # 增量：sys_pack_task 补 node_ids（异步打包任务的输入清单）
+├── V8__restrict_file_destroy_to_super_admin.sql    # 数据收敛：从 DEPT_ADMIN 回收 file:destroy（仅 SUPER_ADMIN）
 └── README.md
 ```
 
@@ -29,11 +33,15 @@ sql/
 | 文件传输族 | `sys_file` / `sys_upload_task` / `sys_share_link` | 元数据（SHA-256 + `ref_count` 物理去重）、分片任务（含 `uploaded_indexes` 已传分片索引持久化）、外发链接（提取码散列/有效期/次数） |
 | 协作审计族 | `sys_notify_message` / `sys_operation_log` / `sys_login_log` | 站内/离线消息、操作审计（append-only，留存 ≥ 6 个月）、登录成功/失败日志 |
 
-> 🧩 **增量迁移（V3 / V4）**：上表为 **V1 基线**（16 表）；V3 / V4 只做**纯增量**（新增列 / 新增表），不改写既有列语义、不删除任何对象。
+> 🧩 **增量迁移（V3 ~ V8）**：上表为 **V1 基线**（16 表）；V3 ~ V7 只做**纯增量**（新增列 / 新增索引 / 新增表），不改写既有列语义、不删除任何对象；V8 为**纯数据收敛**（仅删授权行，不动表结构）。
 >
 > - **V3**：`sys_user` 补 `token_epoch` —— 会话吊销纪元，配合 `at:token:access:{userId}` 缓存镜像实现全端登出 / 改密即失效（见 `architecture.md` §4 D-8 与红队 [C-08]）。
 > - **V4**：① `sys_permission` 补菜单路由元数据 `route_path` / `component` / `icon` / `visible`（仅 `type=1` 菜单使用，**不参与权限判定**）；② `sys_user` 补 `user_type`（`1`-内部用户 / `2`-外部协作者；**CE 已裁定维持 PRD、恒为 `1` 不启用**，该列仅作 EE / 受限账号预留，口径见 `architecture.md` §4 **D-12**）；③ 新建 `sys_group_member`（项目 / 群组成员关系，唯一键 `uk_group_user`）与 `sys_space`（协作空间，字段对齐 at-collaboration `CollaborationSpace` 骨架实体，见 §4 **D-11**）。
-> - ✅ 由此 **sys_ 前缀表由 16 表增至 18 表**；`sys_file.space_id` 自 V4 起为**已落地**的逻辑关联（其原注释「空间表随 at-collaboration 版本落地」所指即 `sys_space`）。
+> - **V5**：`sys_notify_message` 由「系统通知专用」扩展为「系统通知 + 会话消息（IM）」双语义 —— 补 `sender_user_id` / `message_type` / `chat_scope` / `chat_target_id` / `client_msg_id`（**全可空**；存量系统通知行天然为 `NULL` / 默认 `0`，语义与行为完全不变）；新增 `idx_session (recipient_user_id, chat_scope, chat_target_id, id)` 支撑**写扩散**下的单表会话查询（`chat_target_id` 是**接收人视角**的会话定位：单聊=对端 ID、群聊=群组 ID，故同一单聊在双方各自的行里 target 互指，这是有意为之——只有这样才能用 `(recipient, scope, target)` 一次等值查询取到某人的完整双向记录）；新增 `uk_sender_recipient_client (sender_user_id, recipient_user_id, client_msg_id)` 作为会话消息幂等键，**必须含 `recipient_user_id`**：群聊一条消息按成员各落一行、共享同一 `client_msg_id`，若只按 `(sender, client_msg_id)` 唯一，第 2 个成员就写不进去；系统通知三列全 `NULL`，MySQL 唯一索引不对含 `NULL` 的行做重复判定，故互不影响。同时 `MODIFY COLUMN notify_type` 的注释纳入 `6~8`，与 at-common `NotifyType` 编码表对齐。**未新增表**（`sys_` 前缀表仍为 18）。
+> - **V6**：文件管理主线落地，新增 6 张引用 / 管理表 —— `sys_folder`（物化路径目录树）、`sys_file_node`（**引用层**：一行 = 用户目录里的一个条目，`owner_user_id` 是防水平越权的唯一依据）、`sys_file_version`（历史版本，**不计入 `sys_file.ref_count`**）、`sys_tag` / `sys_file_tag`（标签及其关联）、`sys_pack_task`（异步打包任务与产物生命周期）。引用层与 `sys_file` 物理层的分离理由、`ref_count` 与回收站/销毁的口径见脚本文件头（PRD US-09/US-10/US-12/US-13）。
+> - **V7**：`sys_pack_task` 补 `node_ids` —— 异步打包必须把「要打哪些条目」落库，否则进程重启 / 线程池拒绝后任务清单丢失，只剩永远停在 `status=0` 的僵尸行并持续占用每用户并发名额。
+> - **V8**：**纯数据收敛（不改结构）** —— 从 DEPT_ADMIN 回收 `file:destroy` 授权行，使 `@RequiresPerm("file:destroy")` 等价于「仅超级管理员」。属**破坏性授权变更**：部门管理员不再能执行彻底销毁；高敏感（`level>=3`）文件的销毁另须经 `SensitiveDestroyApprovalPort` 校验一张「已通过」的审批单（两条为**与**关系）。
+> - ✅ 由此 **sys_ 前缀表由 16 表经 V4（+2）后，再经 V6（+6）增至 24 表**；`sys_file.space_id` 自 V4 起为**已落地**的逻辑关联（其原注释「空间表随 at-collaboration 版本落地」所指即 `sys_space`）。
 > - ⚠️ V1 头部「群组成员关系不在 CE 落子表，随 at-collaboration 演进版本（V3+）扩展」的**收敛口径已由 V4 提前落地**；V1 属已发布脚本，按下方「已发布脚本禁止修改」**不回改注释**（Flyway checksum），口径演进说明以 `V4__menu_route_user_type_and_collaboration.sql` 文件头为准。
 
 ## 📐 命名与执行规则
