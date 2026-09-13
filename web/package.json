@@ -23,10 +23,10 @@
     "start:no-mock": "cross-env MOCK=none max dev",
     "start:pre": "cross-env UMI_ENV=pre MOCK=none max dev",
     "start:test": "cross-env UMI_ENV=test MOCK=none max dev",
-    "test": "vitest run",
-    "test:coverage": "vitest run --coverage",
-    "test:watch": "vitest",
-    "test:ui": "vitest --ui",
+    "test": "node scripts/run-vitest.mjs run",
+    "test:coverage": "node scripts/run-vitest.mjs run --coverage",
+    "test:watch": "node scripts/run-vitest.mjs",
+    "test:ui": "node scripts/run-vitest.mjs --ui",
     "doctor": "react-doctor .",
     "tsc": "tsc --noEmit"
   },
@@ -78,6 +78,7 @@
     "tailwindcss": "^4.3.2",
     "ts-node": "^10.9.2",
     "typescript": "^7.0.2",
+    "vite": "^8.1.4",
     "vitest": "4.1.10"
   },
   "overrides": {

@@ -15,6 +15,7 @@
  */
 package com.anttransfer.gateway.ratelimit;
 
+import com.anttransfer.common.constant.RedisKeyConstants;
 import com.anttransfer.common.exception.BusinessException;
 import com.anttransfer.common.ratelimit.RateLimit;
 import com.anttransfer.common.result.ErrorCode;
@@ -49,8 +50,6 @@ import java.util.List;
 public class RateLimitAspect {
 
     private static final Logger log = LoggerFactory.getLogger(RateLimitAspect.class);
-
-    private static final String KEY_PREFIX = "at:rl:";
 
     private static final DefaultRedisScript<Long> INCR_WITH_EXPIRE = new DefaultRedisScript<>("""
             local current = redis.call('INCR', KEYS[1])
@@ -108,8 +107,8 @@ public class RateLimitAspect {
     private String buildKey(ProceedingJoinPoint joinPoint, RateLimit rateLimit) {
         MethodSignature signature = (MethodSignature) joinPoint.getSignature();
         String target = signature.getDeclaringType().getSimpleName() + "#" + signature.getName();
-        String biz = rateLimit.key() == null ? "" : rateLimit.key().trim();
-        return KEY_PREFIX + target + (biz.isEmpty() ? "" : ":" + biz) + ":" + currentDimension();
+        // Key 统一经 at-common 常量类生成，模块内禁止手拼（system-design §7.1）
+        return RedisKeyConstants.rateLimitKey(target, rateLimit.key(), currentDimension());
     }
 
     /** 限流维度：默认客户端 IP（携带凭证接口通常再叠加业务 key / 用户维度） */

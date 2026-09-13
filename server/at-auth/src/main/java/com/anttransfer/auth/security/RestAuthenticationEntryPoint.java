@@ -32,7 +32,7 @@ import java.nio.charset.StandardCharsets;
  * 认证入口点：未认证访问受保护接口时输出统一 {@code Result}（而非容器默认 401 页）。
  *
  * <p>错误码取自 {@link JwtAuthenticationFilter} 写入的请求属性——区分
- * 「未登录 1001」「过期 1002（前端静默刷新）」「令牌无效 1003（跳登录）」；
+ * 「未登录 1001」「过期 1002（前端静默刷新）」「令牌无效 1006（跳登录）」；
  * 无该属性（根本没带令牌）默认 1001。</p>
  *
  * @author AntTransfer CE
@@ -52,11 +52,8 @@ public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
         Object attr = request.getAttribute(JwtAuthenticationFilter.ATTR_AUTH_ERROR_CODE);
         ErrorCode errorCode = ErrorCode.NOT_LOGIN;
         if (attr instanceof Integer code) {
-            try {
-                errorCode = ErrorCode.fromCode(code);
-            } catch (IllegalArgumentException ignored) {
-                // 未知标记码回退未登录，不阻断响应
-            }
+            // 该属性由过滤器写入、属不可信输入：用 find 显式降级，未知码回退「未登录」不阻断响应
+            errorCode = ErrorCode.find(code).orElse(ErrorCode.NOT_LOGIN);
         }
 
         response.setStatus(errorCode.getHttpStatus());

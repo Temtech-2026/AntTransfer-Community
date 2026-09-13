@@ -85,10 +85,10 @@ const STRATEGY_BY_CODE: Record<number, HandleStrategy> = {
   // 1xxx 认证授权
   1001: HandleStrategy.CREDENTIAL,
   1002: HandleStrategy.CREDENTIAL,
-  1003: HandleStrategy.CREDENTIAL,
-  1004: HandleStrategy.DENY,
-  1005: HandleStrategy.DENY,
-  1006: HandleStrategy.DENY,
+  1003: HandleStrategy.DENY, // 无权限：403 就地提示，绝不跳登录
+  1004: HandleStrategy.DENY, // 账号锁定
+  1005: HandleStrategy.DENY, // 账号禁用
+  1006: HandleStrategy.CREDENTIAL, // 令牌无效：清会话并跳登录
   1007: HandleStrategy.CREDENTIAL,
   1008: HandleStrategy.FLOW_BRANCH,
   1009: HandleStrategy.FLOW_BRANCH,

@@ -125,7 +125,7 @@ class AuthServiceTest {
         when(attemptService.recordFailure("bob")).thenReturn(true);
 
         AuthException e = assertThrows(AuthException.class, () -> authService.login("bob", "x"));
-        assertEquals(1005, e.getErrorCode().getCode());
+        assertEquals(1004, e.getErrorCode().getCode());
     }
 
     @Test
@@ -133,7 +133,7 @@ class AuthServiceTest {
         when(attemptService.isLocked("carol")).thenReturn(true);
 
         AuthException e = assertThrows(AuthException.class, () -> authService.login("carol", "x"));
-        assertEquals(1005, e.getErrorCode().getCode());
+        assertEquals(1004, e.getErrorCode().getCode());
         verify(userMapper, never()).selectByUsername("carol");
     }
 
@@ -146,7 +146,7 @@ class AuthServiceTest {
         when(attemptService.isLocked("dave")).thenReturn(false);
 
         AuthException e = assertThrows(AuthException.class, () -> authService.login("dave", "pwd"));
-        assertEquals(1006, e.getErrorCode().getCode());
+        assertEquals(1005, e.getErrorCode().getCode());
         verify(attemptService, never()).recordFailure("dave");
     }
 

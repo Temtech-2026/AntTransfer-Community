@@ -70,13 +70,13 @@
 > `idx_applicant_resource` 支撑活动态判重；授权表 `grant_source`（1-角色继承 / 2-审批获得）、
 > `expire_at` 时效与 `idx_user_expire(user_id,status,expire_at)` / `idx_expire(status,expire_at)` 回收扫描。
 
-**判定合并**：资源是否可访问 = **角色静态权限**（RBAC，at-permission 现状） ∪ **生效授权**（`sys_user_file_permission` 中 `status=1 且 expire_at > now`）。两路都拒绝才返回 `1004 NO_AUTH` 并引导申请。
+**判定合并**：资源是否可访问 = **角色静态权限**（RBAC，at-permission 现状） ∪ **生效授权**（`sys_user_file_permission` 中 `status=1 且 expire_at > now`）。两路都拒绝才返回 `1003 NO_AUTH` 并引导申请。
 
 ### 2.3 📋 时序步骤
 
 | # | 步骤 | 行为 | 正常出口 | 分支 / 错误 |
 | --- | --- | --- | --- | --- |
-| 1 | 无权限访问 | 用户访问/下载未授权资源，权限判定拒绝 | 页面展示 `1004`（403），并给出「申请访问」入口 | — |
+| 1 | 无权限访问 | 用户访问/下载未授权资源，权限判定拒绝 | 页面展示 `1003`（403），并给出「申请访问」入口 | — |
 | 2 | 提交申请 | `POST /api/v1/permission/applications`，提交申请要素：`apply_type + resource(resource_type/resource_id) + purpose + desired_expire_at`；级别自动带出 | 生成 `status=0` 申请单 | 参数非法：`2xxx`；级别与目标不符：`2005` |
 | 3 | 冲突校验 | 系统校验：同人同资源**已有生效授权** → 提示直接可用；**已有进行中申请** → 提示勿重复 | 无冲突，放行 | 命中生效授权：`1008`（HTTP 200 流程提示）；命中在审申请：`1009`（HTTP 200 流程提示） |
 | 4 | 通知审批人 | 提交成功事件路由到资源 Owner（或配置的安全管理员）的**待办 + 站内通知**（US-08）；无审批人兜底路由安全管理员 | 审批人收到待办 | — |

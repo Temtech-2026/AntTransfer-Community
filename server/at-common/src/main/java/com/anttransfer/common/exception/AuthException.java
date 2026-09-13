@@ -29,9 +29,9 @@ import com.anttransfer.common.result.ErrorCode;
  * <ul>
  *     <li>{@link ErrorCode#NOT_LOGIN}（1001）：未携带 token；</li>
  *     <li>{@link ErrorCode#TOKEN_EXPIRED}（1002）：access token 过期，前端应静默刷新并重放；</li>
- *     <li>{@link ErrorCode#TOKEN_INVALID}（1003）：令牌伪造 / 签名错误 / 已吊销；</li>
- *     <li>{@link ErrorCode#NO_AUTH}（1004）：已登录但无权限点或数据范围不足；</li>
- *     <li>{@link ErrorCode#ACCOUNT_LOCKED}（1005）、{@link ErrorCode#ACCOUNT_DISABLED}（1006）。</li>
+ *     <li>{@link ErrorCode#NO_AUTH}（1003）：已登录但无权限点或数据范围不足；</li>
+ *     <li>{@link ErrorCode#ACCOUNT_LOCKED}（1004）、{@link ErrorCode#ACCOUNT_DISABLED}（1005）；</li>
+ *     <li>{@link ErrorCode#TOKEN_INVALID}（1006）：令牌伪造 / 签名错误 / 已吊销。</li>
  * </ul>
  *
  * <p>用法示例：</p>

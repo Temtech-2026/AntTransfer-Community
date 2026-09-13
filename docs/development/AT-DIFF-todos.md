@@ -10,7 +10,7 @@
 代码内标记统一使用 `TODO[AT-DIFF-xx]` 前缀，可被 IDE 与命令行一键聚合：
 
 ```bash
-# 审计：代码内【开放】标记（当前 4 处：01/02/03/05；已办结项 04 不含 TODO 前缀）
+# 审计：代码内【开放】标记（当前 3 处：02/03/05；已办结项 01/04 不含 TODO 前缀）
 grep -rn "TODO\[AT-DIFF-" server/
 
 # 按 ID 精确回查某一条的完整描述与方案
@@ -32,7 +32,7 @@ IDE 提示（任选其一）：
 
 | ID | 主题 | 代码位置 | 状态 |
 | --- | --- | --- | --- |
-| [AT-DIFF-01](#at-diff-01-accessdenied--1003-vs-1004) | AccessDenied 错误码映射：外部计划 1003/403 vs 契约 1004/403 | `server/at-gateway/.../exception/GlobalExceptionHandler.java` | ⏳ 待裁决 |
+| [AT-DIFF-01](#at-diff-01-accessdenied--1003-vs-1004) | AccessDenied 错误码映射：外部计划 1003/403 vs 契约 1004/403 | `server/at-gateway/.../exception/GlobalExceptionHandler.java` | ✅ 2026-09-13 |
 | [AT-DIFF-02](#at-diff-02-filter-内加载权限-vs-惰性解析) | 认证过滤器是否加载权限集合（Filter 内 vs @RequiresPerm 惰性） | `server/at-auth/.../security/JwtAuthenticationFilter.java` | ⏳ 待裁决 |
 | [AT-DIFF-03](#at-diff-03-部门数据范围-mybatis-拦截器) | 部门数据范围：MyBatis 拦截器注入 vs AccessControlService 行级守卫 | `server/at-permission/.../service/AccessControlService.java` | ⏳ 待裁决 |
 | ~~AT-DIFF-04~~ | ~~HTTP 层集成测试缺失~~ → **已落地** | `server/at-bootstrap/src/test/java/com/anttransfer/it/AuthFlowIntegrationTest.java` | ✅ 2026-09-07 |
@@ -40,17 +40,20 @@ IDE 提示（任选其一）：
 
 ---
 
-## AT-DIFF-01：AccessDenied → 1003 vs 1004
+## AT-DIFF-01：AccessDenied → 1003 vs 1004 —— ✅ 已裁决（2026-09-13）
 
-- **差异**：外部计划书要求 `AccessDeniedException → 1003/403`；本仓库已冻结契约
+- **差异**：外部计划书要求 `AccessDeniedException → 1003/403`；原冻结契约
   `docs/api/error-codes.md` 定义 `1003 = TOKEN_INVALID 且 HTTP 401`（前端策略 C 会跳登录），
-  权限不足应为 `1004 NO_AUTH / 403`（策略 D，提示但不引导登录）。
-- **现状**：拒绝类统一映射 **1004/403**——`GlobalExceptionHandler`、at-auth
-  `RestAccessDeniedHandler`、at-permission `@RequiresPerm` 切面、前端 `utils/result.ts` 四方一致。
-- **方案**：
-  - **A（推荐）**：维持 1004，语义正确、改动为零；
-  - **B**：对齐外部计划改 1003 → 需同步 `ErrorCode`、error-codes.md、at-auth 两个 handler、
-    前端 `STRATEGY_BY_CODE`（1003 需从 C 迁到 D），易踩 401/403 语义混淆。
+  权限不足原为 `1004 NO_AUTH / 403`（策略 D，提示但不引导登录）。
+- **裁决**：采纳外部计划书口径 —— **权限不足统一 `NO_AUTH = 1003 / 403`（策略 D）**；
+  原 `1003 TOKEN_INVALID(401)` 后移至 **1006**。1xxx 段最终排序：
+  `1001 未登录 / 1002 Token 过期 / 1003 无权限 / 1004 账号锁定 / 1005 账号禁用 / 1006 Token 无效 / 1007 账号或密码错误`。
+- **落地**：已同步 `ErrorCode` 枚举、`docs/api/error-codes.md`（附录 B 增补迁移表）、at-auth
+  `RestAuthenticationEntryPoint` / `RestAccessDeniedHandler`、at-permission `@RequiresPerm` 注解与切面、
+  at-gateway `GlobalExceptionHandler`、前端 `web/src/utils/result.ts` 策略表及双向单测；
+  代码内 `TODO[AT-DIFF-01]` 已移除。
+- **破坏性**：是。1xxx 编号调整属破坏性契约变更，已在 `CHANGELOG.md` 与 `error-codes.md`
+  附录 B「第二次调整」声明，旧编号不得再对外使用。
 
 ## AT-DIFF-02：Filter 内加载权限 vs 惰性解析
 

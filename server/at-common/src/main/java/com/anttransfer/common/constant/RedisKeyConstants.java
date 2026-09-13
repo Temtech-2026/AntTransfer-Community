@@ -39,6 +39,7 @@ package com.anttransfer.common.constant;
  *   at:share:count:{token}     分享下载次数前置配额闸（DB 原子 UPDATE 裁决），TTL 随链接剩余有效期
  *   at:share:lock:{token}      分享提取码错误锁定，TTL 30min（错 5 次锁 30min，PRD US-03）
  *   at:perm:{userId}           用户权限标识缓存，TTL 30min，授权变更主动失效
+ *   at:rl:{类}#{方法}[:biz]:{维度}  固定窗口限流计数，TTL = 注解 windowSeconds（Lua INCR+EXPIRE）
  *   at:ws:channel              集群 WebSocket 广播频道（Pub/Sub），常驻
  * </pre>
  *
@@ -104,6 +105,15 @@ public final class RedisKeyConstants {
     /** 权限缓存 TTL：30min（兜底过期；授权变更走主动失效，RBAC 判定可重算，P-8） */
     public static final long PERM_TTL_SECONDS = 30 * 60L;
 
+    /* ============================ 接口限流 ============================ */
+
+    /**
+     * 固定窗口限流计数键前缀：at:rl:{类}#{方法}[:业务key]:{维度}（键值 = 窗口内计数）。
+     * TTL 由 {@code @RateLimit(windowSeconds)} 逐端点指定（窗口即 TTL，数值动态，故不设固定常量）。
+     * 属防御态加速数据：Redis 丢失 / 异常仅放宽限流窗口，无正确性风险（P-8 降级放行）。
+     */
+    public static final String RATE_LIMIT_PREFIX = PREFIX + "rl:";
+
     /* ========================== WebSocket 集群 ========================== */
 
     /** 集群 WebSocket 广播频道（Redis Pub/Sub 频道名，常驻，无 TTL） */
@@ -144,5 +154,20 @@ public final class RedisKeyConstants {
     /** 生成用户权限缓存键：at:perm:{userId} */
     public static String permKey(long userId) {
         return PERM_PREFIX + userId;
+    }
+
+    /**
+     * 生成固定窗口限流计数键：at:rl:{target}[:{bizKey}]:{dimension}。
+     *
+     * @param target    限流目标标识，约定「类简名#方法名」
+     * @param bizKey    业务隔离键（null / 空白则省略该段，如按 token、userId 分窗）
+     * @param dimension 限流维度（默认客户端 IP；携带凭证端点可叠加业务维度）
+     */
+    public static String rateLimitKey(String target, String bizKey, String dimension) {
+        StringBuilder key = new StringBuilder(RATE_LIMIT_PREFIX).append(target);
+        if (bizKey != null && !bizKey.isBlank()) {
+            key.append(':').append(bizKey.trim());
+        }
+        return key.append(':').append(dimension).toString();
     }
 }

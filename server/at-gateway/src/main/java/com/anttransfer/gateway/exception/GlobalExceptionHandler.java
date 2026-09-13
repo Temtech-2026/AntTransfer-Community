@@ -59,7 +59,7 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
  *
  * <p>覆盖场景（按类分级，Spring 自动选择最具体的处理器）：</p>
  * <ul>
- *     <li><b>认证授权</b>：{@link AuthException} —— 1xxx（1001~1006，401/403）；
+ *     <li><b>认证授权</b>：{@link AuthException} —— 1xxx（1001~1007，401/403）；
  *         at-auth 接入 Spring Security 后，由其将 {@code AuthenticationException} /
  *         {@code AccessDeniedException} 转换为本异常；</li>
  *     <li><b>业务</b>：{@link BusinessException} —— HTTP 状态取错误码自带映射
@@ -88,8 +88,8 @@ public class GlobalExceptionHandler {
     /* ============================ 认证授权（1xxx） ============================ */
 
     /**
-     * 认证 / 授权失败：前端据 code 区分「静默换令牌（1002）」「跳登录（1001/1003）」
-     * 「无权限提示不跳登录（1004~1006）」，级别 warn 并附带 traceId 便于审计关联。
+     * 认证 / 授权失败：前端据 code 区分「静默换令牌（1002）」「跳登录（1001/1006）」
+     * 「无权限提示不跳登录（1003~1005）」，级别 warn 并附带 traceId 便于审计关联。
      */
     @ExceptionHandler(AuthException.class)
     public ResponseEntity<Result<Void>> handleAuthException(AuthException e) {
@@ -114,24 +114,18 @@ public class GlobalExceptionHandler {
 
     /**
      * 已认证但权限不足（方法级/接口级鉴权抛出的 Spring Security AccessDeniedException）
-     * → 1004 NO_AUTH（HTTP 403，前端策略 D：提示不引导登录）。
+     * → 1003 NO_AUTH（HTTP 403，前端策略 D：提示不引导登录）。
      *
      * <p>注：请求尚未进入 SecurityContext 的 401 由安全链入口点处理（at-auth）；本分支兜底
      * 控制器/切面层方法鉴权抛出的拒绝。业务错误码口径见 docs/api/error-codes.md。</p>
      *
      * <pre>{@code
-     * // ===================== TODO[AT-DIFF-01] 待整体完工后裁决 =====================
-     * // 外部计划书要求 AccessDeniedException → 1003/403；
-     * // 本仓库已冻结契约（docs/api/error-codes.md）1003 = TOKEN_INVALID 且 HTTP 401，
-     * // 若权限不足也用 1003 会导致前端按策略 C 误跳登录。
-     * // 现状：拒绝类统一映射 1004 NO_AUTH/403（本类 + at-auth RestAccessDeniedHandler
-     * //       + at-permission RequiresPermAspect + 前端 web/src/utils/result.ts 一致）。
-     * // 解决方案（二选一，完工前裁定）：
-     * //   A) 维持仓库契约（推荐）：无需改动，前端 1004 → 提示不跳登录语义正确；
-     * //   B) 对齐外部计划改 1003：需同步 ErrorCode 枚举、docs/api/error-codes.md、
-     * //      at-auth RestAuthenticationEntryPoint/RestAccessDeniedHandler、前端 result.ts
-     * //      STRATEGY_BY_CODE（1003 将变成 D 而非 C），改动面大且易踩 401/403 语义混淆。
-     * // ======================================================================
+     * // ===================== [已裁决] AT-DIFF-01（2026-09-13）=====================
+     * // 结论：采纳外部计划书的 1003/403 口径，权限不足统一 NO_AUTH = 1003。
+     * // 原 1003 = TOKEN_INVALID(401) 后移至 1006，凭证失效段整体为 1001 / 1002 / 1006 / 1007。
+     * // 已同步：ErrorCode、docs/api/error-codes.md、at-auth EntryPoint/DeniedHandler、
+     * //        at-permission 注解与切面、前端 web/src/utils/result.ts STRATEGY_BY_CODE。
+     * // 注意：1003 现为策略 D（403 就地提示、不跳登录），不再是策略 C；前端策略表已按新口径登记。
      * }</pre>
      */
     @ExceptionHandler(AccessDeniedException.class)

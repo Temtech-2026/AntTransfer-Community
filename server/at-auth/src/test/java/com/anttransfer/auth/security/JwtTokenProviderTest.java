@@ -72,7 +72,7 @@ class JwtTokenProviderTest {
         String token = provider.createAccessToken(1L, "u", 0L) + "x";
 
         AuthException e = assertThrows(AuthException.class, () -> provider.parseAccessToken(token));
-        assertEquals(1003, e.getErrorCode().getCode());
+        assertEquals(1006, e.getErrorCode().getCode());
     }
 
     @Test
@@ -92,6 +92,6 @@ class JwtTokenProviderTest {
     @Test
     void malformedRefreshToken_shouldMapToTokenInvalid() {
         AuthException e = assertThrows(AuthException.class, () -> provider.parseRefreshUserId("not-a-token"));
-        assertEquals(1003, e.getErrorCode().getCode());
+        assertEquals(1006, e.getErrorCode().getCode());
     }
 }

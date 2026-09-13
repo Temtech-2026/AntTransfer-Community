@@ -46,8 +46,8 @@ import org.springframework.web.bind.annotation.RestController;
 // ===================== [已办结] AT-DIFF-04（2026-09-07，不再作为开放 TODO） =====================
 // HTTP 层集成测试套件已落地：server/at-bootstrap/src/test/java/com/anttransfer/it/
 //   AuthFlowIntegrationTest（Testcontainers 拉起 MySQL+Redis，8 例全绿）：
-//   登录双 token(0) / 无 token 401(1001) / SUPER_ADMIN 200 / AUDITOR 无权限 403(1004) /
-//   AUDITOR 写接口 403(1004) / 登出后旧 token 401(1001) / refresh 复用打击 401(1003) /
+//   登录双 token(0) / 无 token 401(1001) / SUPER_ADMIN 200 / AUDITOR 无权限 403(1003) /
+//   AUDITOR 写接口 403(1003) / 登出后旧 token 401(1001) / refresh 复用打击 401(1006) /
 //   错误密码 401(1007)。运行前提：Docker；镜像源异常时设 TESTCONTAINERS_RYUK_DISABLED=true。
 // ======================================================================
 @RestController

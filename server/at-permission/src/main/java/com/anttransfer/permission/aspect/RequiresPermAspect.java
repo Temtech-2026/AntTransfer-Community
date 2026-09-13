@@ -28,7 +28,7 @@ import java.util.Arrays;
 /**
  * {@link RequiresPerm} 注解切面：方法或类级别声明的 perm_code 校验。
  *
- * <p>不满足 → 抛 {@code AuthException(NO_AUTH)}（网关全局异常 → HTTP 403 + code=1004），
+ * <p>不满足 → 抛 {@code AuthException(NO_AUTH)}（网关全局异常 → HTTP 403 + code=1003），
  * 前端「提示无权限不跳登录」（策略 D）。注意本注解只做<b>功能权限</b>；
  * 数据范围 / 资源归属请在业务方法内调用 {@code AccessControlService}。</p>
  *

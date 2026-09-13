@@ -130,7 +130,7 @@ function presentError(result: Result, opts?: { silent?: boolean }): void {
         message.error(text);
         return;
       }
-      // 1001 未登录 / 1003 令牌无效 / 1002 且刷新失败：清理会话后跳登录
+      // 1001 未登录 / 1006 令牌无效 / 1002 且刷新失败：清理会话后跳登录
       redirectToLogin();
       return;
     }

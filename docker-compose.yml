@@ -25,7 +25,9 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
     ports:
-      - "${MYSQL_PORT:-3306}:3306"
+      # 宿主机 3307 → 容器 3306：与本机自装 MySQL 的 3306 错开（端口约定见 docker-compose.dev.yml）。
+      # 容器内 server 仍按服务名连 mysql:3306，与此处宿主映射无关
+      - "${MYSQL_PORT:-3307}:3306"
     volumes:
       # 数据卷：库文件持久化
       - mysql-data:/var/lib/mysql

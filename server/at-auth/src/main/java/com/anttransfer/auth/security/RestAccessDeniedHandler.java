@@ -29,7 +29,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 /**
- * 已认证但权限不足时的统一输出（403 + {@code 1004 NO_AUTH}，不引导登录）。
+ * 已认证但权限不足时的统一输出（403 + {@code 1003 NO_AUTH}，不引导登录）。
  *
  * @author AntTransfer CE
  */

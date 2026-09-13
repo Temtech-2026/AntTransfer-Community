@@ -135,7 +135,7 @@ DB 事务内执行 `token_epoch = token_epoch + 1`，并主动失效两个 Redis
  1) 默认 DENY；
  2) 命中 RBAC：权限点满足 且 数据范围满足 → ALLOW；
  3) 命中 sys_user_file_permission(status=1 AND expire_at > now) → ALLOW；
- 4) 其余 → NO_AUTH(1004)，按资源 level 决定是否引导申请。
+ 4) 其余 → NO_AUTH(1003)，按资源 level 决定是否引导申请。
 ```
 
 - **对象级（行级）越权防线**：凡按 ID 访问（文件/任务/空间/申请单/分享），必须走
@@ -190,7 +190,7 @@ DB 事务内执行 `token_epoch = token_epoch + 1`，并主动失效两个 Redis
 
 | 表 | 归属 | 版本 | 状态 | 说明 |
 | --- | --- | --- | --- | --- |
-| `sys_user` | at-auth | V1（2026-09-06 二次重置） | 已落地 | 雪花主键 + snake_case；含 dept_id / status（对应错误码 1005/1006）；`token_epoch`（会话吊销纪元，§2.3）随 at-auth 会话实现以 Flyway V3 增列；原脚手架 camelCase 版本已移除（[T-07] 关闭） |
+| `sys_user` | at-auth | V1（2026-09-06 二次重置） | 已落地 | 雪花主键 + snake_case；含 dept_id / status（对应错误码 1004/1005）；`token_epoch`（会话吊销纪元，§2.3）随 at-auth 会话实现以 Flyway V3 增列；原脚手架 camelCase 版本已移除（[T-07] 关闭） |
 | `sys_dept` / `sys_user.dept_id` | at-auth | V1（二次重置） | 已落地 | 树形部门（ancestors 物化路径，`idx_ancestors` 前缀索引），支撑数据范围「本部门及以下」（[V-02] 关闭） |
 | `sys_role` / `sys_permission` / `sys_user_role` / `sys_role_permission` | at-permission | V1（二次重置） | 已落地 | RBAC 核心四表 + 权限点菜单树；`sys_role.data_scope`（1 本人 / 2 本部门及以下 / 3 全部）承载三维度；`sys_permission.perm_code` 点编码唯一 |
 | `sys_group` | at-auth / at-collaboration | V1（二次重置） | 已落地 | 项目 / 群组组织单元基座；成员与文件挂靠随协作演进版本扩展（原 user_group_member 不再占位） |
@@ -307,6 +307,7 @@ Key 与 TTL 的**唯一权威常量**在 at-common `RedisKeyConstants`（各业�
 | `at:share:count:{token}` | String = 剩余配额镜像（DECR 前置闸，DB 裁决） | 随链接剩余有效期 | 链接失效 / 撤销清理；丢失回源 DB 重建（§5.3） |
 | `at:share:lock:{token}` | String = 提取码错误计数（INCR） | 30 min | 错 5 次临时锁（`4011`），提取码正确 DEL |
 | `at:perm:{userId}` | 用户可达权限点聚合（角色静态 ∪ 授权动态快照） | 30 min | 授权 / 角色变更、账号停用主动 DEL；丢失由 RBAC 判定重算（P-8） |
+| `at:rl:{类}#{方法}[:业务key]:{维度}` | String = 固定窗口限流计数（Lua `INCR` + 首增 `EXPIRE` 原子） | = `@RateLimit.windowSeconds`（窗口即 TTL，动态） | 超限 `4290`（HTTP 429）；Redis 异常降级放行（防御态，P-8） |
 | `at:ws:channel` | Pub/Sub 频道名 | 常驻 | 集群 WebSocket 广播通道 |
 
 > 语义红线：本表中仅 `at:token:refresh:{userId}` 与“分享链接临时锁”属 Redis 单写（写丢失
@@ -327,7 +328,8 @@ CE sys_ 前缀 16 表四族 + `V2__init_data.sql` 初始化数据**（2026-09-06
 前端 Ant Design Pro 模板（业务 API 未对接）；
 Redis Key 规划定稿：at-common `RedisKeyConstants`（`at:` 前缀 Key/TTL 常量 + 键工厂方法）与
 本文件 §2.1~2.3（token_epoch 吊销模型）、§5.3（分享次数 DB 裁决 + Redis 前置闸）、§7.1
-（Redis Key 规划表）同步（2026-09-06）。
+（Redis Key 规划表）同步（2026-09-06）；2026-09-13 补入限流键 `at:rl:`——原散落于 at-gateway
+`RateLimitAspect`（手拼前缀），已回归常量类工厂方法，全仓无手拼 Key。
 
 **待实现（按 P0 顺序建议，相关表已随 V1 就绪）**：
 1. ~~认证切面 + 双令牌 + Redis 会话~~ **✅ 已实现（2026-09-07）**：Spring Security 过滤链 +

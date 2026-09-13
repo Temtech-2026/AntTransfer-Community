@@ -6,8 +6,10 @@ AntTransfer CE 使用 **Flyway** 做数据库版本化迁移，脚本统一存�
 
 ```
 sql/
-├── V1__schema.sql        # CE 完整表族（sys_ 前缀 16 表四族，见下方族表）
+├── V1__schema.sql        # CE 完整表族基线（sys_ 前缀 16 表四族，见下方族表）
 ├── V2__init_data.sql     # 初始化数据：内置角色 SUPER_ADMIN/AUDITOR/DEPT_ADMIN/USER + 菜单树与权限点 + admin
+├── V3__add_user_token_epoch.sql                    # 增量：sys_user 补 token_epoch（会话吊销纪元）
+├── V4__menu_route_user_type_and_collaboration.sql  # 增量：菜单路由元数据 + user_type + sys_group_member + sys_space
 └── README.md
 ```
 
@@ -26,6 +28,13 @@ sql/
 | 审批授权族 | `sys_approval_request` / `sys_approval_node` / `sys_user_file_permission` | 申请单（类型/资源/目的/敏感等级/状态/审批人/时效）、EE 多级审批扩展点、对象级实际授权（`grant_source` 角色继承或审批获得 + `expire_at`） |
 | 文件传输族 | `sys_file` / `sys_upload_task` / `sys_share_link` | 元数据（SHA-256 + `ref_count` 物理去重）、分片任务（含 `uploaded_indexes` 已传分片索引持久化）、外发链接（提取码散列/有效期/次数） |
 | 协作审计族 | `sys_notify_message` / `sys_operation_log` / `sys_login_log` | 站内/离线消息、操作审计（append-only，留存 ≥ 6 个月）、登录成功/失败日志 |
+
+> 🧩 **增量迁移（V3 / V4）**：上表为 **V1 基线**（16 表）；V3 / V4 只做**纯增量**（新增列 / 新增表），不改写既有列语义、不删除任何对象。
+>
+> - **V3**：`sys_user` 补 `token_epoch` —— 会话吊销纪元，配合 `at:token:access:{userId}` 缓存镜像实现全端登出 / 改密即失效（见 `architecture.md` §4 D-8 与红队 [C-08]）。
+> - **V4**：① `sys_permission` 补菜单路由元数据 `route_path` / `component` / `icon` / `visible`（仅 `type=1` 菜单使用，**不参与权限判定**）；② `sys_user` 补 `user_type`（`1`-内部用户 / `2`-外部协作者；**CE 已裁定维持 PRD、恒为 `1` 不启用**，该列仅作 EE / 受限账号预留，口径见 `architecture.md` §4 **D-12**）；③ 新建 `sys_group_member`（项目 / 群组成员关系，唯一键 `uk_group_user`）与 `sys_space`（协作空间，字段对齐 at-collaboration `CollaborationSpace` 骨架实体，见 §4 **D-11**）。
+> - ✅ 由此 **sys_ 前缀表由 16 表增至 18 表**；`sys_file.space_id` 自 V4 起为**已落地**的逻辑关联（其原注释「空间表随 at-collaboration 版本落地」所指即 `sys_space`）。
+> - ⚠️ V1 头部「群组成员关系不在 CE 落子表，随 at-collaboration 演进版本（V3+）扩展」的**收敛口径已由 V4 提前落地**；V1 属已发布脚本，按下方「已发布脚本禁止修改」**不回改注释**（Flyway checksum），口径演进说明以 `V4__menu_route_user_type_and_collaboration.sql` 文件头为准。
 
 ## 📐 命名与执行规则
 

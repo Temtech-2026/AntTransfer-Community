@@ -3,6 +3,9 @@
 # db-init.sh — 初始化 AntTransfer 数据库（建库 + 执行 sql/V1__schema.sql、V2__init_data.sql）
 #
 # 适用：未使用 Flyway / docker mysql initdb 的场景（例如本机手工安装的 MySQL）。
+#   注意：本脚本面向「本机自装 MySQL」，故默认端口 3306 与 DB 主配置默认的 3307
+#   （= dev 容器库宿主端口）不同；若要对 dev 容器库执行，请显式 DB_PORT=3307。
+#   常规开发无需本脚本——建表与初始化数据由后端启动时的 Flyway 承担。
 # 用法：
 #   ./scripts/db-init.sh
 # 可用环境变量：DB_HOST / DB_PORT / DB_USERNAME / DB_PASSWORD / DB_NAME

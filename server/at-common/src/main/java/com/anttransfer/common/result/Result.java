@@ -98,10 +98,9 @@ public class Result<T> implements Serializable {
         return new Result<>(errorCode.getCode(), message, null);
     }
 
-    /** 失败（自定义 code + message 的兜底方式） */
-    public static <T> Result<T> fail(int code, String message) {
-        return new Result<>(code, message, null);
-    }
+    // 刻意不提供「自定义 int code」的失败工厂（如 fail(int, String)）：
+    // 未登记到 ErrorCode 的错误码会让前端 resolveStrategy 退化为兜底策略（并触发开发期告警），
+    // 属契约违规。如需新错误码，请先在 ErrorCode 与 docs/api/error-codes.md 登记。
 
     /* ============================ 便捷判断 ============================ */
 

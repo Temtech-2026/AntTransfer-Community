@@ -33,7 +33,7 @@ import org.springframework.stereotype.Service;
  *     <li>数据范围 = 3（全部，内置 SUPER_ADMIN/AUDITOR）→ 放行；</li>
  *     <li>数据范围 = 2（本部门及以下，DEPT_ADMIN）→ 仅当资源归属部门 == 本部门
  *         或在其子树内（sys_dept.ancestors 祖先链判定）放行；</li>
- *     <li>其余一律拒绝（默认 Deny，红队 V-06）→ 403（1004）。</li>
+ *     <li>其余一律拒绝（默认 Deny，红队 V-06）→ 403（1003）。</li>
  * </ol>
  *
  * <p>功能权限（操作点）用 {@code @RequiresPerm}；本类只做「这个数据能不能看」。</p>

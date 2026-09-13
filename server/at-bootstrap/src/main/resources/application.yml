@@ -27,8 +27,11 @@ spring:
   # ---------------- MySQL（数据源，连接信息环境变量化） ----------------
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    # 默认连接本地库 anttransfer；生产务必通过 DB_URL 覆盖
-    url: '${DB_URL:jdbc:mysql://localhost:3306/anttransfer?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}'
+    # 默认连接「本地 dev 容器库」：端口刻意用 3307（= docker-compose.dev.yml 的宿主机映射），
+    # 与开发者本机自装的 MySQL（3306）错开——容器没起来时这里直接连接失败，
+    # 而不会静默连上本机 3306 的库、把本机库误当成容器库。
+    # 生产务必通过 DB_URL 覆盖；改用本机自装 MySQL 时也请显式指定 DB_URL。
+    url: '${DB_URL:jdbc:mysql://localhost:3307/anttransfer?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}'
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:123456}
     hikari:
@@ -66,11 +69,16 @@ spring:
     baseline-version: 0
 
   # ---------------- Jackson 序列化 ----------------
+  # 时间契约（docs/api/README.md §4）：统一 ISO-8601 字符串。
+  # 刻意不配置 date-format / time-zone：
+  #   · date-format 只作用于 java.util.Date/Calendar，会把 Date 输出成 "yyyy-MM-dd HH:mm:ss"
+  #     这种空格分隔的非 ISO 形态，破坏契约；而 java.time.* 由 JavaTimeModule 处理，
+  #     本就输出 ISO-8601（如 2026-09-06T14:30:00），无需也无法靠 date-format 定制。
+  #   · time-zone 是 Date 序列化时区，LocalDateTime 无时区概念不受影响；跨时区字段
+  #     请显式使用 OffsetDateTime / Instant（自带偏移），不依赖全局时区。
   jackson:
-    time-zone: GMT+8
-    date-format: yyyy-MM-dd HH:mm:ss
     serialization:
-      # 时间类型输出为字符串而非时间戳
+      # 时间类型输出为字符串而非时间戳（JavaTimeModule 据此输出 ISO-8601）
       write-dates-as-timestamps: false
 
 # ---------------- MyBatis-Plus ----------------

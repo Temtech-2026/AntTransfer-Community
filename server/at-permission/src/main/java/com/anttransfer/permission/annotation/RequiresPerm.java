@@ -34,7 +34,7 @@ import java.lang.annotation.Target;
  * </ul>
  *
  * <p>与 Spring {@code @PreAuthorize} 的关系：二者二选一即可。本项目以自定义注解为主
- * （可在无 Spring Security 认证上下文的调用链外复用、错误语义精确为 1004），
+ * （可在无 Spring Security 认证上下文的调用链外复用、错误语义精确为 1003），
  * 如需 {@code hasAuthority('file:download')} 写法需在过滤链注入 authorities（当前不采用）。</p>
  *
  * <p>用法：</p>

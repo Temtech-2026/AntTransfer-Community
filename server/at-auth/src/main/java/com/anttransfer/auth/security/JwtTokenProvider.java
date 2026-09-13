@@ -97,7 +97,7 @@ public class JwtTokenProvider {
      * 验签 + 解析 access token。
      *
      * <p>异常映射：过期 → {@code AuthException(TOKEN_EXPIRED, 1002)}；
-     * 伪造 / 签名错误 / 结构非法 → {@code AuthException(TOKEN_INVALID, 1003)}。</p>
+     * 伪造 / 签名错误 / 结构非法 → {@code AuthException(TOKEN_INVALID, 1006)}。</p>
      */
     public AccessClaims parseAccessToken(String token) {
         Claims claims;

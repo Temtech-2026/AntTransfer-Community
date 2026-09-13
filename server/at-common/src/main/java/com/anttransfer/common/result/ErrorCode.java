@@ -17,6 +17,8 @@ package com.anttransfer.common.result;
 
 import lombok.Getter;
 
+import java.util.Optional;
+
 /**
  * 业务错误码枚举。
  *
@@ -72,14 +74,14 @@ public enum ErrorCode {
     NOT_LOGIN(1001, "未登录或登录已过期", 401),
     /** Access Token 已过期：客户端应静默用 refresh token 换新后重放原请求（仅一次）【策略 C】 */
     TOKEN_EXPIRED(1002, "登录态已过期，请重新登录", 401),
-    /** Token 非法（伪造 / 签名错误 / 已被吊销）；refresh 失败亦归此码【策略 C】 */
-    TOKEN_INVALID(1003, "登录态无效，请重新登录", 401),
     /** 已登录但对该资源/操作无权限（RBAC 权限点或数据范围不足），不引导登录【策略 D】 */
-    NO_AUTH(1004, "无操作权限", 403),
+    NO_AUTH(1003, "无操作权限", 403),
     /** 账号被锁定（如多次输错密码被临时锁定）；服务端副作用：失败计数累加【策略 D】 */
-    ACCOUNT_LOCKED(1005, "账号已锁定，请联系管理员", 403),
+    ACCOUNT_LOCKED(1004, "账号已锁定，请联系管理员", 403),
     /** 账号被禁用 / 冻结 / 受限；服务端副作用：令牌立即吊销（≤2 min 生效）【策略 D】 */
-    ACCOUNT_DISABLED(1006, "账号已被禁用，请联系管理员", 403),
+    ACCOUNT_DISABLED(1005, "账号已被禁用，请联系管理员", 403),
+    /** Token 非法（伪造 / 签名错误 / 已被吊销）；refresh 失败亦归此码【策略 C】 */
+    TOKEN_INVALID(1006, "登录态无效，请重新登录", 401),
     /** 账号或密码错误（登录鉴权失败，不区分账号不存在与密码错误）【策略 C】 */
     BAD_CREDENTIALS(1007, "账号或密码错误", 401),
 
@@ -186,16 +188,31 @@ public enum ErrorCode {
     }
 
     /**
-     * 按业务状态码反查枚举。
+     * 按业务状态码反查枚举（<b>无异常</b>版本）。
+     *
+     * <p>面向<b>不可信输入</b>：过滤器写入的请求属性、上游回传码、配置项等。
+     * 未登记时返回 {@link Optional#empty()}，由调用方自行降级，
+     * 避免在异常处理路径上抛异常、反而被兜底处理器吞成 5001。</p>
+     */
+    public static Optional<ErrorCode> find(int code) {
+        for (ErrorCode errorCode : values()) {
+            if (errorCode.code == code) {
+                return Optional.of(errorCode);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * 按业务状态码反查枚举（<b>fail-fast</b> 版本）。
+     *
+     * <p>面向<b>内部已知码</b>：未登记即属契约违规，直接抛异常提示补表。
+     * 若输入来自外部 / 不可信来源，请改用 {@link #find(int)} 并显式降级。</p>
      *
      * @throws IllegalArgumentException 未知错误码（未登记即上线属契约违规，fail-fast 提示补表）
      */
     public static ErrorCode fromCode(int code) {
-        for (ErrorCode errorCode : values()) {
-            if (errorCode.code == code) {
-                return errorCode;
-            }
-        }
-        throw new IllegalArgumentException("未知错误码: " + code + "（请先登记到 error-codes.md 与本文档）");
+        return find(code).orElseThrow(() -> new IllegalArgumentException(
+                "未知错误码: " + code + "（请先登记到 error-codes.md 与本文档）"));
     }
 }

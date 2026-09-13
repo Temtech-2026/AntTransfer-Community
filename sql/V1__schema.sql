@@ -65,7 +65,7 @@ create table if not exists sys_user
     email          varchar(128)                       null comment '邮箱（允许空，非空值去重由应用保证）',
     mobile         varchar(32)                        null comment '手机号',
     dept_id        bigint                             null comment '所属部门 ID（逻辑关联 sys_dept，null=未分配）',
-    status         tinyint                            not null default 0 comment '账号状态：0-正常 1-禁用 2-锁定（对应错误码 1005/1006）',
+    status         tinyint                            not null default 0 comment '账号状态：0-正常 1-禁用（1005） 2-锁定（1004）',
     last_login_time datetime                          null comment '最近登录时间',
     remark         varchar(255)                       null comment '备注',
     tenant_id      bigint                             not null default 0 comment '租户 ID（预留，CE 恒为 0）',

@@ -60,7 +60,7 @@ class AccessControlServiceTest {
     void scopeSelf_cannotSeeOthersResource() {
         AuthException e = assertThrows(AuthException.class,
                 () -> service.assertResourceVisibleTo(snapshot(10L, AccessControlService.SCOPE_SELF), 11L, null));
-        assertEquals(1004, e.getErrorCode().getCode());
+        assertEquals(1003, e.getErrorCode().getCode());
     }
 
     @Test

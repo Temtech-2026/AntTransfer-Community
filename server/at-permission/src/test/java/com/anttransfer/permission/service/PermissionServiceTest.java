@@ -79,7 +79,7 @@ class PermissionServiceTest {
         // Deny 优先：AUDITOR 角色显式拒绝 file:upload，即使 USER 已授予
         AuthException denied = assertThrows(AuthException.class,
                 () -> service.requirePerm(List.of("file:upload"), false, "", snapshot));
-        assertEquals(1004, denied.getErrorCode().getCode());
+        assertEquals(1003, denied.getErrorCode().getCode());
         // 未拒绝项正常放行
         service.requirePerm(List.of("audit:log:read"), false, "", snapshot);
     }

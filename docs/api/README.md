@@ -20,7 +20,7 @@
 | --- | --- | --- |
 | `at-auth` | `/api/v1/auth` | `token`、`token/refresh`（动作端点） |
 | `at-auth` | `/api/v1/users` | 用户 / 账号 |
-| `at-permission` | `/api/v1/roles`、`/api/v1/permission-points` | 角色 / 权限点 / 授权申请 |
+| `at-permission` | `/api/v1/roles`、`/api/v1/permission-points`、`/api/v1/permission` | 角色 / 权限点 / 授权申请；动态菜单 `GET /api/v1/permission/menus`（按登录用户权限点过滤 `type=1` 节点组装树，见 `architecture.md` §4 D-9） |
 | `at-file` | `/api/v1/files` | 文件元数据、上传 / 下载 |
 | `at-transfer` | `/api/v1/transfers` | 传输任务、分片、合并 |
 | `at-collaboration` | `/api/v1/spaces`、`/api/v1/shares` | 协作空间、外发链接 |
@@ -111,9 +111,9 @@ Authorization: Bearer <accessToken>
 | `POST /api/v1/auth/logout` | 登出：全端吊销（DB `token_epoch+1`，已签发 access/refresh 即刻失效） | ❌ |
 | `GET /api/v1/auth/me` | 当前用户摘要（含角色编码，角色变更即时生效） | ❌ |
 
-- 🔁 `accessToken` 过期（HTTP 401 + `code=1002`）时，前端**静默**调用 refresh 端点换取新令牌对并重放原请求一次；刷新失败（401 + `code=1003` / refresh 过期 / **旧 refresh 已被使用过**）跳转登录页。
-- 🚨 同一 refresh token 被使用两次（重复提交 / 泄露重放）时，服务端按疑似盗用处理：**吊销该用户全部会话**并返回 `code=1003`（PRD US-07）。
-- 🚫 无权限访问（HTTP 403 + `code=1004`）提示且不引导登录。
+- 🔁 `accessToken` 过期（HTTP 401 + `code=1002`）时，前端**静默**调用 refresh 端点换取新令牌对并重放原请求一次；刷新失败（401 + `code=1006` / refresh 过期 / **旧 refresh 已被使用过**）跳转登录页。
+- 🚨 同一 refresh token 被使用两次（重复提交 / 泄露重放）时，服务端按疑似盗用处理：**吊销该用户全部会话**并返回 `code=1006`（PRD US-07）。
+- 🚫 无权限访问（HTTP 403 + `code=1003`）提示且不引导登录。
 
 ## 6️⃣ 错误处理策略
 
@@ -126,7 +126,7 @@ Authorization: Bearer <accessToken>
 
 - 📡 业务判据恒为 `body.code`；响应体保持 `Result` 完整结构（不做 `data` 拆包），以保证 B 类分支码能读到 `data` 走业务分支。
 - 🚫 **B 类流程分支码（1008 / 1009 / 4001 / 4002）禁止弹错误提示**：HTTP 200 + `code≠0` 属正常分支（已有生效授权 / 已有在审申请 / 秒传未命中 / 分片缺失），任何位置弹窗都会打断主流程。
-- 🔁 网络层行为：C 类的 `1002` 在响应拦截器内**静默 refresh（单飞）+ 重放原请求一次**，调用方无感知；刷新失败或 `1001 / 1003` → 清除令牌跳 `/user/login`；`1007` 仅提示「账号或密码错误」、不清会话不跳转；D 类（403）就地提示不引导登录；G 类（429）提示退避；H 类（5xx）用通知展示 `traceId` 供上报。
+- 🔁 网络层行为：C 类的 `1002` 在响应拦截器内**静默 refresh（单飞）+ 重放原请求一次**，调用方无感知；刷新失败或 `1001 / 1006` → 清除令牌跳 `/user/login`；`1007` 仅提示「账号或密码错误」、不清会话不跳转；D 类（403）就地提示不引导登录；G 类（429）提示退避；H 类（5xx）用通知展示 `traceId` 供上报。
 - 🗂️ 更细的分流以 **[错误码表 §二 处理策略分类](./error-codes.md#二处理策略分类按具体情况具体分析)** 为准（A 成功 / B 流程分支 / C 凭证失效 / D 拒绝不跳登录 / E 请求需修正 / F 状态失效冲突 / G 限流退避 / H 系统兜底），拦截器应按策略而非 HTTP 状态硬编码行为。
 - 💻 已按本契约改造完成：`web/src/requestErrorConfig.ts`（拦截器与策略分流）、
   `web/src/utils/result.ts`（`Result` / `PageResult` 类型 + A~H 策略表，镜像后端 `ErrorCode`）、

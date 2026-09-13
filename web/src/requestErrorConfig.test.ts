@@ -73,13 +73,14 @@ describe('resolveStrategy（错误码 → 处理策略）', () => {
   it('C 类：凭证失效', () => {
     expect(resolveStrategy(1001)).toBe(HandleStrategy.CREDENTIAL);
     expect(resolveStrategy(1002)).toBe(HandleStrategy.CREDENTIAL);
-    expect(resolveStrategy(1003)).toBe(HandleStrategy.CREDENTIAL);
+    expect(resolveStrategy(1006)).toBe(HandleStrategy.CREDENTIAL);
     expect(resolveStrategy(1007)).toBe(HandleStrategy.CREDENTIAL);
   });
 
   it('D 类：拒绝且不跳登录', () => {
+    expect(resolveStrategy(1003)).toBe(HandleStrategy.DENY);
     expect(resolveStrategy(1004)).toBe(HandleStrategy.DENY);
-    expect(resolveStrategy(1006)).toBe(HandleStrategy.DENY);
+    expect(resolveStrategy(1005)).toBe(HandleStrategy.DENY);
     expect(resolveStrategy(4010)).toBe(HandleStrategy.DENY);
   });
 
@@ -159,7 +160,7 @@ describe('errorHandler（按策略呈现）', () => {
   });
 
   it('D 类（403）就地提示，且不跳登录', () => {
-    errorHandler(httpError(1004, '无操作权限', 403), {});
+    errorHandler(httpError(1003, '无操作权限', 403), {});
 
     expect(message.warning).toHaveBeenCalledWith('无操作权限');
     expect(history.push).not.toHaveBeenCalled();
@@ -197,9 +198,9 @@ describe('errorHandler（按策略呈现）', () => {
     expect(history.push).not.toHaveBeenCalled();
   });
 
-  it('C 类：1001/1003 清除会话并跳转登录', () => {
+  it('C 类：1001/1006 清除会话并跳转登录', () => {
     errorHandler(httpError(1001, '未登录或登录已过期', 401), {});
-    errorHandler(httpError(1003, '登录态无效，请重新登录', 401), {});
+    errorHandler(httpError(1006, '登录态无效，请重新登录', 401), {});
 
     expect(tokenStore.clear).toHaveBeenCalledTimes(2);
     expect(history.push).toHaveBeenCalledWith('/user/login');

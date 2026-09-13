@@ -66,12 +66,13 @@ npm run dev
 ## ❓ 常见问题
 
 - 🐛 **编译报“不支持发行版本 21”**：确认 `JAVA_HOME` 指向 JDK 21（项目根 `mvnw -v` 可查看当前 JVM）。
-- 🔌 **连接数据库失败**：检查 `DB_URL / DB_USERNAME / DB_PASSWORD` 环境变量或
-  `server/at-bootstrap/src/main/resources/application*.yml` 默认值。
-  默认连接 `localhost:3306/anttransfer`、账号 `root` / 密码 `123456`；**本机 MySQL 凭据不同时**
-  须用 `DB_PASSWORD`（或 `DB_USERNAME` / `DB_URL`）覆盖，否则启动时 Flyway 会报
-  `1045 Access denied for user 'root'@'localhost'`。端口冲突可改用其他实例：
-  `DB_URL=jdbc:mysql://localhost:3307/anttransfer?...`。
+- 🔌 **连接数据库失败**：先确认该连哪个库——默认 `DB_URL` 是
+  `localhost:3307/anttransfer`，即 **dev 容器库**（`docker compose -f docker-compose.dev.yml up -d`
+  映射到宿主机的端口），账号 `root` / 密码 `123456`。**3307 连不上 = 容器没起来**，这是刻意设计：
+  3306 留给你本机自装的 MySQL，避免容器没起来时静默连上本机库。
+  若确实要用本机自有 MySQL，显式覆盖 `DB_URL=jdbc:mysql://localhost:3306/anttransfer?...`；
+  凭据不同时再用 `DB_USERNAME / DB_PASSWORD` 覆盖，否则 Flyway 报
+  `1045 Access denied for user 'root'@'localhost'`。
 - 🗄️ **Flyway 行为**：开发与生产**默认均自动迁移**（`FLYWAY_ENABLED` 默认 `true`），脚本位于 `sql/`；如需跳过迁移（例如已手工建表），启动时置 `FLYWAY_ENABLED=false`。
 
 > 📚 更多细节：[开发指南](../development/README.md)、[架构说明](../architecture/README.md)。

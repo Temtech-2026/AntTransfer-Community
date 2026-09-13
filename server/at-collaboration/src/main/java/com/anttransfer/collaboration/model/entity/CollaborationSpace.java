@@ -26,15 +26,17 @@ import java.time.LocalDateTime;
 /**
  * 协作空间实体（骨架）。
  *
- * <p>职责：映射 {@code collaboration_space} 表，代表一个多人协作的
+ * <p>职责：映射 {@code sys_space} 表（DDL 见
+ * {@code sql/V4__menu_route_user_type_and_collaboration.sql}），代表一个多人协作的
  * 逻辑容器（例如“团队项目 / 共享文件夹”）。任务与文件通过空间 ID
- * 挂载到空间内，成员则通过成员子表（协作时扩展）关联本空间。</p>
+ * 挂载到空间内；成员关系落在 {@code sys_group_member}（按 {@code group_id}
+ * 维度），空间可通过 {@link #groupId} 归属某个项目 / 群组。</p>
  *
  * @author AntTransfer CE
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName("collaboration_space")
+@TableName("sys_space")
 public class CollaborationSpace extends BaseEntity {
 
     /** 空间名称 */
@@ -44,6 +46,10 @@ public class CollaborationSpace extends BaseEntity {
     /** 空间创建人（所有者）用户 ID */
     @TableField("owner_user_id")
     private Long ownerUserId;
+
+    /** 归属项目 / 群组 ID（逻辑关联 {@code sys_group}，null = 独立空间） */
+    @TableField("group_id")
+    private Long groupId;
 
     /** 空间描述 */
     @TableField("description")

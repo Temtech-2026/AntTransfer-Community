@@ -5,6 +5,9 @@
 AntTransfer CE（Community Edition）采用 **模块化单体（Modular Monolith）** 架构：
 一个 Spring Boot 进程内以 Maven 多模块强制边界，兼顾单体部署的简单与领域分层的清晰。
 
+> 📐 本文是**总览**（模块职责 + 依赖铁律）。**四层包结构、跨模块协作三通道、一次请求的统一处理链路、
+> CE/EE 扩展点清单、部署拓扑**见 [架构落地说明 architecture.md](./architecture.md)。
+
 ```
                     ┌──────────────────────────────┐
                     │        web/  (Ant Design Pro)│  ← 前端（开发期经代理联调）

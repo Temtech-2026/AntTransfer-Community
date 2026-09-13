@@ -49,9 +49,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>覆盖验收路径（对应 AT-DIFF-04 与实机冒烟）：
  * ① 登录成功返回双 Token；② 未登录访问受保护接口 → 401(1001)；
- * ③ 登录无权限（AUDITOR 访问 file 系接口）→ 403(1004)；④ 有权限（SUPER_ADMIN）→ 200；
- * ⑤ 审计员调用写接口 → 403(1004)；⑥ 登出后旧 access token 立即失效 → 401(1001)；
- * ⑦ refresh 轮换：旧 refresh 复用 → 401(1003)（重放打击）；⑧ 错误密码登录 → 401(1007)。</p>
+ * ③ 登录无权限（AUDITOR 访问 file 系接口）→ 403(1003)；④ 有权限（SUPER_ADMIN）→ 200；
+ * ⑤ 审计员调用写接口 → 403(1003)；⑥ 登出后旧 access token 立即失效 → 401(1001)；
+ * ⑦ refresh 轮换：旧 refresh 复用 → 401(1006)（重放打击）；⑧ 错误密码登录 → 401(1007)。</p>
  *
  * <p>依赖说明：需要 Docker（Testcontainers）；本机无 Docker 时自动跳过（disabledWithoutDocker）。
  * 安全断言不落到真实业务表：审计员等测试账号仅在本次容器化实例内插入，随容器销毁。</p>
@@ -157,7 +157,7 @@ class AuthFlowIntegrationTest {
 
         ResponseEntity<String> read = getWithToken("/v1/smoke/perm/read", token);
         assertEquals(HttpStatus.FORBIDDEN, read.getStatusCode());
-        assertEquals(1004, bodyCode(read));
+        assertEquals(1003, bodyCode(read));
     }
 
     /* ============================ 5. 审计员调写接口 403 ============================ */
@@ -169,7 +169,7 @@ class AuthFlowIntegrationTest {
 
         ResponseEntity<String> write = postWithToken("/v1/smoke/perm/write", token);
         assertEquals(HttpStatus.FORBIDDEN, write.getStatusCode());
-        assertEquals(1004, bodyCode(write));
+        assertEquals(1003, bodyCode(write));
     }
 
     /* ============================ 6. 登出后旧 token 失效 ============================ */
@@ -205,7 +205,7 @@ class AuthFlowIntegrationTest {
         ResponseEntity<String> replay = postJsonRaw("/v1/auth/token/refresh",
                 "{\"refreshToken\":\"" + oldRefresh + "\"}");
         assertEquals(HttpStatus.UNAUTHORIZED, replay.getStatusCode());
-        assertEquals(1003, bodyCode(replay));
+        assertEquals(1006, bodyCode(replay));
     }
 
     /* ============================ 8. 错误密码 ============================ */

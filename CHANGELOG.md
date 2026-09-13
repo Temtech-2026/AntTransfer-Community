@@ -17,9 +17,64 @@
 - 👤 初始化数据 `sql/V2__init_data.sql`：内置角色 SUPER_ADMIN/AUDITOR/DEPT_ADMIN/USER（sys_role）、
   文件菜单树与七个原子文件权限点 + 审计只读权限点（sys_permission / sys_role_permission）、
   初始化管理员 admin（BCrypt cost=10 真实密文，默认口令 Admin@123，首次登录须改密）。
+- 📐 新增 [架构落地说明 `docs/architecture/architecture.md`](docs/architecture/architecture.md)：8 模块职责与依赖方向、
+  **四层包结构（`controller` / `service` / `repository` / `model`）**、跨模块协作三通道（SPI 依赖倒置 + 写单事务 + 事件只承载副作用）、
+  一次请求的统一处理链路（Filter→Controller→Service→Repository）、**CE/EE 扩展点清单**（`IdentityProvider` /
+  `ContentScanInterceptor` / `WatermarkProvider` / `CryptoCodec` / `VirusScanner` / `ApprovalNodeResolver` /
+  `TransportStrategy` + `FileStore`，含契约草案与 PRD §8 命名映射）、部署拓扑（Nginx / Web / Server / MySQL / Redis / 存储）。
+- 🛡️ [红队评审](docs/architecture/red-team-review.md) 升级至 **v1.1**：新增「四列速览表（问题描述 / 风险等级 / 触发条件 / 修改建议）」、
+  主题 E「空指针与边界值」（`N-01~N-11` / `B-01~B-07`）与主题 F「PRD 与 API 契约漏审」（`PRD-01~PRD-09` / `API-01~API-06`），
+  补 `D-06`；发现总数 32 → **66**（高 27 / 中 34 / 低 5），八维度排查已全覆盖。
+- 📐 [架构落地说明 `docs/architecture/architecture.md`](docs/architecture/architecture.md) §4 扩充「⏸ 延期登记」至 **D-1 ~ D-7**，并新增
+  「🎯 本阶段 DoD 现状对照」表；同步更新 [红队评审](docs/architecture/red-team-review.md) 发布门禁第 7 条与待回改项裁决说明：
+  - **D-4**（= D-3「对外契约 4 项」· DoD-3）：写接口 `Idempotency-Key` 幂等键定义缺失、免登录端点集中化与防刷未补、前后端确认无留痕 → 须在**写首个 Controller 之前**完成（硬前置）；
+  - **D-5**（DoD-4）：分片上传 / 审批两组接口未定稿——审批动作端点路径（approve / reject / reassign / 撤销 / 待办 / 列表 / 详情）缺失、
+    字段级 schema（DTO 字段、`precheck` 参数位置、`parts` hash 载体）缺失、`docs/api/README.md` §1 前缀表缺 `/permission/applications` → 须在**进入 Phase 4 之前**完成（硬前置）；
+  - **D-6**（DoD-1 ①）：CE/EE 功能边界未书面冻结（PRD 仍 `v0.2-draft · 待评审`）→ 范围评审后置 `frozen`；
+  - **D-7**（= A-2 范围侧 · DoD-1 ②）：战略规划书 0.3 节原文未入库，`§1.1 ↔ 0.3 节` 逐项对应不可验证 → 原文入库后逐项核对并出具「无遗漏」结论。
+  - DoD 现状：**② 达成**（13 个用户故事、P0 占 9）/ **③ 基本达成**（缺 D-4）/ **①、④ 部分达成**（D-6 / D-7 / D-5 + SPI 接缝 A-6）；
+    风险分级：🟢 口径 / 文档类（D-1 / D-2 / D-6 / D-7）、🔴 有兼容成本类须前置（D-4 / D-5）、⚠️ 接缝类（A-6 / D-2 的 7 个 SPI 仍未建）。
+- 🧩 延期登记再扩充 **D-8 ~ D-12** 并落地配套结构变更（[architecture.md §4 ⏸ 延期登记](docs/architecture/architecture.md)）：
+  - **D-8**（= N-1 · ✅ **已收口**）：`at:share:lock:{token}` TTL 口径裁定为 **30 min** —— 以 PRD US-03「连续 5 次 → 临时锁定（30 分钟）」为需求权威源，
+    与 `RedisKeyConstants.SHARE_LOCK_TTL_SECONDS`、`system-design` §5.3 / §7.1、红队 [C-08] **四处一致**；15 min 系与 `at:login:fail`（确为 15 min）串行误抄。项目内本已一致，**无需回改**；
+  - **D-9**（= N-2 · 随 D-5 收口）：动态菜单「有数据、无字段、无接口」→ V4 已补路由元数据列，`GET /api/v1/permission/menus` 挂 **Phase 5** 路由守卫阶段，字段级 schema 并入 **D-5**；
+  - **D-10**（= N-3）：审计留存 ≥ 6 个月的 `AuditArchiveScheduler`（**先归档后删除** + 分布式锁 + 失败告警）未实现 → 待审计写入方落地后（Phase 3~4）；
+  - **D-11**（= N-4）：群组 / 空间成员模型缺失 → V4 新建 `sys_group_member` / `sys_space`，`at-collaboration` 落地时接管读写；
+  - **D-12**（= N-5 · ✅ **CE 口径已定**）：外部协作者受限身份 → V4 补 `sys_user.user_type`（CE 恒为 `1`，存量行为零变化）；
+    **CE 裁定维持 PRD §2.1 P6**（外部协作者 = **无平台账号**、只走外发链接通道），**不创建外部协作者账号**，该列仅作 **EE / 受限账号预留**；
+    EE 将来若启用受限账号，属需求变更，须先经 **D-6** 范围评审（同步改写 PRD P6 与 US-03 验收标准）。
+- 🗄️ 新增 `sql/V4__menu_route_user_type_and_collaboration.sql`（**纯增量**；「V3」已被 `V3__add_user_token_epoch.sql` 占用，故版本号顺延）：
+  `sys_permission` 补 `route_path` / `component` / `icon` / `visible`；`sys_user` 补 `user_type`（默认 `1`-内部用户）；
+  新建 `sys_group_member`（唯一键 `uk_group_user`）与 `sys_space` —— **`sys_` 前缀表由 16 增至 18**。V1 / V2 / V3 属已发布脚本，按 Flyway checksum 约定**未回改**。
+- 🧵 `at-collaboration` 骨架实体 `CollaborationSpace` 表名由 `collaboration_space` 对齐为 **`sys_space`** 并补 `group_id`；
+  [docs/api/README.md](docs/api/README.md) §1 前缀表登记 `/api/v1/permission/menus`。
+- 🔑 Redis Key 规约收敛：限流键 `at:rl:{类}#{方法}[:业务key]:{维度}` 原由 at-gateway `RateLimitAspect`
+  **手拼前缀**，现回归 at-common `RedisKeyConstants`（新增 `RATE_LIMIT_PREFIX` 常量 + `rateLimitKey(...)` 工厂方法），
+  `system-design` §7.1 Key 规划表同步补录该行 —— 至此**全仓无手拼 Redis Key**（DoD-4 达成）。
+- 🐳 `docker-compose.dev.yml` 的 MySQL / Redis 宿主端口改为**可覆盖**（`${MYSQL_PORT:-3306}` / `${REDIS_PORT:-6379}`），
+  与 `docker-compose.yml`、`.env.example` 口径对齐；宿主机 3306 已被本机 MySQL 服务占用时，
+  复制 `.env.example` 为 `.env` 设 `MYSQL_PORT=3307` 即可，**无需停掉本机服务**（默认值不变，向后兼容）。
 
 ### 🔄 Changed（变更）
 
+- ⚠️ **本地开发默认数据库端口 `3306` → `3307`（杜绝误连本机 MySQL）**：原 `DB_URL` 默认
+  `localhost:3306`，容器没起来时会静默连上开发者本机自装 MySQL 并把 Flyway 跑完，形成
+  「迁移成功、数据却进了本机库」的假象。现确立口径：**宿主机 `3307` = 本项目容器 MySQL，
+  `3306` 留给本机自装 MySQL**——`docker-compose.dev.yml` / `docker-compose.yml` 宿主映射默认
+  `${MYSQL_PORT:-3307}`（容器内仍为 3306）、`.env.example` 设 `MYSQL_PORT=3307`、
+  `application.yml` / `application-mysql.yml` 默认 URL 与端口同步为 3307。
+  **升级须知**：用容器库者无需改动（重新 `up -d` 即映射新端口）；一直使用本机自装 MySQL 者
+  请显式设置 `DB_URL`——否则会连 3307 失败，这正是期望的 fail-fast。
+- 🔎 新增 dev 启动自检 `DatabaseEndpointLogger`（at-bootstrap）：启动后打印实际 JDBC URL、
+  服务端版本、当前库名与 Flyway 已应用版本；若连的是本机地址且端口非 3307，
+  追加醒目告警点明「数据写入了本机库，容器库不受影响」。
+- ⚠️ **破坏性：认证授权错误码重排（1xxx）** —— 裁决 [AT-DIFF-01]，采纳「权限不足 = `1003 / 403`」口径：
+  `1003` 由 `TOKEN_INVALID(401)` 改为 **`NO_AUTH(403)`**，原 Token 非法后移至 `1006`；
+  账号锁定 `1005→1004`、账号禁用 `1006→1005`。新排序为
+  `1001 未登录 / 1002 过期 / 1003 无权限 / 1004 账号锁定 / 1005 账号禁用 / 1006 Token 无效 / 1007 密码错误`。
+  已同步 `ErrorCode`、`docs/api/error-codes.md`（附录 B 迁移表）、at-auth 两个 handler、
+  at-permission 注解与切面、at-gateway `GlobalExceptionHandler`、前端 `web/src/utils/result.ts`
+  策略表与单测。前端红线更新：**`1003` 属策略 D（就地提示、禁止引导登录），跳登录改用 `1006`**。
 - 📦 后端模块物理路径由仓库根迁移至 `server/`，同步修正 Maven 聚合、Dockerfile 产物路径与文档链接。
 - 🗄️ 原 `sql/create_table.sql` 整理为 Flyway 风格 `sql/V1__schema.sql`（内容不变）。
 - 🔄 `sql/V1__schema.sql` 全量重置为 CE `sys_` 前缀 16 表四族基线：原脚手架示例表
@@ -130,23 +185,24 @@
 - 🧱 at-gateway 地基补齐：
   ① 访问日志过滤器 `AccessLogFilter`（order=1，随 TraceIdFilter 之后）：单行 access log
      （method/uri/status/耗时/客户端 IP/traceId，uri 不落 query 防敏感参数泄漏）；
-  ② 全局异常新增 `AccessDeniedException` → **1004 NO_AUTH（403）** 兜底分支
-     （注：与「1003/403」的写法不一致——本仓库契约 1003=TOKEN_INVALID(401) 会触发前端
-     跳登录，故拒绝类统一映射 1004，见 docs/api/error-codes.md）；
+  ② 全局异常新增 `AccessDeniedException` → **1003 NO_AUTH（403）** 兜底分支
+    （2026-09-13 裁决 AT-DIFF-01：采纳「权限不足 = 1003/403」口径，原 1004 已替换，
+    详见 docs/api/error-codes.md 附录 B 与上文 Changed 段的破坏性变更说明）；
   ③ `@RateLimit`（at-common）+ Redis 固定窗口切面（at-gateway）：Lua INCR+EXPIRE 原子计数，
      超限抛新错误码 **4290 RATE_LIMITED**（HTTP 429，策略 G，前端已登记）；Redis 异常降级放行
      仅告警；
   ④ CORS 白名单属性化：`anttransfer.cors.allowed-origin-patterns`（at-gateway 与 at-auth
      同键消费），dev 默认 `*`、生产以 `ANTTRANSFER_CORS_ALLOWED_ORIGINS` 收紧。
 
-- 📋 新增差异点索引页 `docs/development/AT-DIFF-todos.md`：汇总外部计划与仓库契约的 5 处待裁决
-  差异（AccessDenied 1003/1004、Filter 权限加载、部门范围拦截器、HTTP JUnit5 测试、接口命名），
-  详细描述与方案已嵌代码内 `TODO[AT-DIFF-01~05]`。
+- 📋 新增差异点索引页 `docs/development/AT-DIFF-todos.md`：汇总外部计划与仓库契约的 5 处差异
+  （AccessDenied 1003/1004、Filter 权限加载、部门范围拦截器、HTTP JUnit5 测试、接口命名），
+  详细描述与方案已嵌代码内 `TODO[AT-DIFF-01~05]`；其中 **AT-DIFF-01 已于 2026-09-13 裁决**
+  （改采 1003/403，见上文 Changed 段），余下 02/03/05 项仍开放。
 - 🧩 OpenApiConfig（at-bootstrap）：Swagger UI 增加 `bearerAuth` 安全方案与全局 SecurityRequirement，
   登录拿到 access token 后可在 UI Authorize 处填入并在线调试全部受保护接口。
 - 🧪 正式集成测试套件 `AuthFlowIntegrationTest`（at-bootstrap，Testcontainers 自动拉起 MySQL+Redis，
-  无 Docker 自动跳过）：认证/授权八条全链路断言（登录双 token、401/1001、200、auditor 403/1004、
-  登出后旧 token 失效 401/1001、refresh 复用打击 401/1003、错误密码 401/1007），8 例全绿；
+  无 Docker 自动跳过）：认证/授权八条全链路断言（登录双 token、401/1001、200、auditor 403/1003、
+  登出后旧 token 失效 401/1001、refresh 复用打击 401/1006、错误密码 401/1007）；
   AT-DIFF-04 已办结。
 
 ### 🔒 Security（安全）

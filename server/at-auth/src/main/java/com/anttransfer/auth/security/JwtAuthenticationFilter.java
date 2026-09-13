@@ -41,7 +41,7 @@ import java.util.Optional;
  * <ul>
  *     <li>无 Authorization 头 / 非 Bearer → 放行（匿名），由授权规则 / 入口点决定是否 401；</li>
  *     <li>验签失败（过期 / 伪造）→ 把错误码写入请求属性，放行由入口点回读输出
- *         （1002 过期触发前端静默刷新、1003 无效跳登录）；</li>
+ *         （1002 过期触发前端静默刷新、1006 无效跳登录）；</li>
  *     <li>验签通过后比对 {@code ver} 与当前会话纪元（{@code at:token:access:{userId}}，
  *         miss 回源 DB）——已全端吊销的 access 在此拦截（1001）；</li>
  *     <li>全部通过 → 以 {@link LoginUser} 为主体构建 Authentication 放入 SecurityContext，

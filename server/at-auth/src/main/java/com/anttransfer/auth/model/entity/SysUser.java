@@ -53,7 +53,7 @@ public class SysUser extends BaseEntity {
     /** 邮箱 */
     private String email;
 
-    /** 账号状态：0-正常 1-禁用（1006） 2-锁定（1005） */
+    /** 账号状态：0-正常 1-禁用（1005） 2-锁定（1004） */
     private Integer status;
 
     /** 最近登录时间 */

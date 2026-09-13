@@ -37,7 +37,7 @@ check: ## Spotless 许可证头/格式校验（verify 阶段也会自动执行�
 #   Unable to find a suitable main class
 # 而 at-bootstrap 反被 SKIPPED。故：先 install 依赖模块，再对 at-bootstrap 单独 run
 # （不带 -am，依赖自本地仓库解析）。
-run: ## 本地启动后端 at-bootstrap（dev profile，端口 8080）
+run: ## 本地启动后端 at-bootstrap（dev profile，端口 8080；数据库默认连 dev 容器库 localhost:3307）
 	$(MVNW) -q -DskipTests -pl server/at-bootstrap -am install
 	$(MVNW) -pl server/at-bootstrap spring-boot:run
 

@@ -19,7 +19,7 @@
 | --- | --- | --- | --- |
 | `SPRING_PROFILES_ACTIVE` | 是 | `dev` | 生产置 `prod`（关闭 Swagger、Flyway 默认开启） |
 | `SERVER_PORT` | 否 | `8080` | 服务端口 |
-| `DB_URL` | 是 | 本地 3306 | MySQL JDBC URL |
+| `DB_URL` | 是 | `localhost:3307/anttransfer`（dev 容器库端口） | MySQL JDBC URL |
 | `DB_USERNAME` / `DB_PASSWORD` | 是 | `root` / `123456` | 数据库账号密码 |
 | `REDIS_HOST` / `REDIS_PORT` | 是 | `localhost:6379` | Redis 地址 |
 | `REDIS_DATABASE` / `REDIS_PASSWORD` | 否 | `0` / 空 | Redis 库号与密码 |

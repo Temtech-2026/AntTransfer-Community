@@ -89,6 +89,9 @@ docker compose up -d --build
 
 # —— 或 —— 仅启动本地依赖（MySQL/Redis），后端用 IDE/命令行跑：
 docker compose -f docker-compose.dev.yml up -d
+# ↑ 容器 MySQL 映射到宿主机 3307（刻意避开你本机自装 MySQL 的 3306）；application.yml
+#   默认 DB_URL 即 localhost:3307，两者对齐：容器没起来时后端会直接连接失败，
+#   而不是静默连上本机 3306 的库。
 # 后端分两步（等价：make run）：先装依赖模块到本地仓库，再单独启动 at-bootstrap。
 # 启动命令不要加 -am，否则 CLI goal 会作用到根聚合 POM 并因找不到 main class 而失败。
 ./mvnw -DskipTests -pl server/at-bootstrap -am install
@@ -110,7 +113,7 @@ cd web && npm install && npm run dev
 | --- | --- | --- |
 | `SPRING_PROFILES_ACTIVE` | `dev` | 运行环境：`dev` / `prod`（prod 关闭 Swagger、默认开启 Flyway） |
 | `SERVER_PORT` | `8080` | 服务端口 |
-| `DB_URL` / `DB_USERNAME` / `DB_PASSWORD` | 本地 `anttransfer` 库 | MySQL 连接（生产必须覆盖） |
+| `DB_URL` / `DB_USERNAME` / `DB_PASSWORD` | `localhost:3307/anttransfer`（= dev 容器库） | MySQL 连接（生产必须覆盖；改用本机自装 MySQL 时显式指向 3306） |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | 本地 Redis | Redis 连接 |
 | `FLYWAY_ENABLED` | `true` | 是否执行 Flyway 迁移（`dev` / `prod` 默认均开启，置 `false` 可临时关闭） |
 

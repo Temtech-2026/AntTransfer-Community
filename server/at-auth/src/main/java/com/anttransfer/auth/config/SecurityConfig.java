@@ -49,8 +49,8 @@ import java.util.List;
  *         {@code anttransfer.auth.permit-all} 配置）；</li>
  *     <li>其余请求一律 {@code authenticated()}——默认拒绝（红队 V-06）；
  *         未认证经 {@link RestAuthenticationEntryPoint} 输出统一 Result
- *         （1001/1002/1003 由 {@link JwtAuthenticationFilter} 标记），
- *         越权经 {@link RestAccessDeniedHandler} 输出 1004；</li>
+ *         （1001/1002/1006 由 {@link JwtAuthenticationFilter} 标记），
+ *         越权经 {@link RestAccessDeniedHandler} 输出 1003；</li>
  *     <li>{@link JwtAuthenticationFilter} 挂在用户名密码过滤器之前，
  *         并以 {@link FilterRegistrationBean#setEnabled(false)} 阻止 Boot 二次
  *         注册为 Servlet 过滤器（避免每个请求执行两遍）；</li>
