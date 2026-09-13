@@ -82,4 +82,13 @@ public class FileObject extends BaseEntity {
      * 删除语义统一走 deleted 逻辑删除，不用 status 表达） */
     @TableField("status")
     private Integer status;
+
+    /**
+     * 引用计数：指向该物理文件的引用条目数（{@code sys_file_node} 中未彻底销毁的条数）。
+     *
+     * <p>首次入库 = 1；秒传命中 +1；<b>移入回收站不变</b>（引用仍在，物理文件要留着供还原）；
+     * 回收站到期清理与彻底销毁各 -1，归 0 时连行带文件一起物理回收。</p>
+     */
+    @TableField("ref_count")
+    private Integer refCount;
 }
