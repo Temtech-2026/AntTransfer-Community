@@ -201,7 +201,7 @@ class AuthFlowIntegrationTest {
         assertEquals(0, refreshed.get("code").asInt());
         assertNotNull(refreshed.get("data").get("accessToken"));
 
-        // 旧 refresh 再使用 → 重放打击：全端吊销 + 1003
+        // 旧 refresh 再使用 → 重放打击：全端吊销 + 1006（TOKEN_INVALID）
         ResponseEntity<String> replay = postJsonRaw("/v1/auth/token/refresh",
                 "{\"refreshToken\":\"" + oldRefresh + "\"}");
         assertEquals(HttpStatus.UNAUTHORIZED, replay.getStatusCode());

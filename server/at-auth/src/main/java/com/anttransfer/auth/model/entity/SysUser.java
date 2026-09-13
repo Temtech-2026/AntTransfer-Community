@@ -53,12 +53,22 @@ public class SysUser extends BaseEntity {
     /** 邮箱 */
     private String email;
 
+    /** 手机号 */
+    private String mobile;
+
+    /** 所属部门 ID（逻辑关联 sys_dept，null=未分配）；RBAC 数据范围「本部门及以下」的判定输入 */
+    @TableField("dept_id")
+    private Long deptId;
+
     /** 账号状态：0-正常 1-禁用（1005） 2-锁定（1004） */
     private Integer status;
 
     /** 最近登录时间 */
     @TableField("last_login_time")
     private LocalDateTime lastLoginTime;
+
+    /** 备注 */
+    private String remark;
 
     /** 会话吊销纪元：全端吊销 +1；access token 携带 ver claim 与之比对（system-design §2.3） */
     @TableField("token_epoch")
