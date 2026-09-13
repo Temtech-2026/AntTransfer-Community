@@ -5,6 +5,7 @@
  * 说明：已清理 Ant Design Pro 模板示例页，保留布局骨架与必要运行时页面：
  *  - /user/*：登录 / 注册（layout:false）
  *  - /welcome：首页占位（随业务页面逐步替换）
+ *  - /upload：分片上传示例页（演示组件用法，业务页面就绪后可删）
  *  - 其余路径落入 404
  */
 export default [
@@ -45,6 +46,12 @@ export default [
     name: 'welcome',
     icon: 'home',
     component: './Welcome',
+  },
+  {
+    path: '/upload',
+    name: 'upload',
+    icon: 'cloudUpload',
+    component: './upload',
   },
   {
     path: '/',
