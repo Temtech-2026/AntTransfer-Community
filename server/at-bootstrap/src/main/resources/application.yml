@@ -114,8 +114,22 @@ anttransfer:
     login-fail-threshold: 5
     login-lock-duration: 15m
     # 追加免登录白名单（PathPattern，不含 /api 前缀；内置已含登录/刷新端点）
-    # permit-all:
-    #   - /v1/shares/*/download
+    # 外发分享访客侧两个端点必须在此放行：访客无登录态，凭「高熵令牌 + 提取码」自证身份；
+    # 服务层逐项校验令牌/有效期/提取码/次数，接口层另有 @RateLimit 抗爆破（见 ShareAccessController）。
+    # WebSocket 握手同理必须放行：浏览器 WebSocket 构造器无法设置 Authorization 头，
+    # 令牌只能走查询串，在 Security 眼里是「匿名」请求；放行后由 WsHandshakeInterceptor
+    # 在 Upgrade 阶段完成 JWT 校验，未通过不升级为长连接——安全性不降级（见 WebSocketConfig）。
+    # 文件取件两个端点同理必须放行：<a href> 原生下载、<img src> 缩略图、播放器与下载工具
+    # 都无法携带 Authorization 头，凭证只能走查询串里的短时票据。权限判定被前移到换票阶段
+    # （/v1/files/*/ticket 校验 file:download），票据绑定 userId + nodeId + 取件范围，
+    # 服务层核销时逐项复核；无票 / 票不匹配一律 4018，故匿名可达不等于权限可绕
+    # （见 FileDownloadTicketService、FileDownloadService）。
+    permit-all:
+      - /v1/shares/*/verify
+      - /v1/shares/redeem
+      - /v1/files/*/content
+      - /v1/files/*/thumbnail
+      - /ws/notify
 
   # ---------------- RBAC 权限（at-permission） ----------------
   permission:
@@ -130,6 +144,75 @@ anttransfer:
         - 'file:edit'
         - 'file:share'
         - 'file:destroy'
+
+  # ---------------- 文件与外发分享（at-file） ----------------
+  # 映射 ShareProperties（@ConfigurationProperties("anttransfer.file.share")）。
+  # 下列取值与代码默认值一致，显式列出便于运维查阅与按需覆盖（不改代码即可调策略）。
+  file:
+    share:
+      # 总开关：关闭后「创建 / 撤销 / 查询 / 访客换票」全部拒绝（熔断），
+      # 但不影响已生成链接的「核销取件」（避免熔断时已外发的链接突然不可取）。
+      enabled: true
+      # 提取码长度：≥ 6 位字母数字（PRD US-03）；上限用于防超长输入拖垮 BCrypt
+      extract-code-min-length: 6
+      extract-code-max-length: 32
+      # 下载次数：默认值与硬上限（显式指定超过上限以 2005 拒绝，杜绝「无限次」外发）
+      default-download-limit: 10
+      max-download-limit: 1000
+      # 有效期：默认 7 天，最长 30 天（超限以 2005 拒绝）
+      default-expire: 7d
+      max-expire: 30d
+      # 提取码连错 5 次锁 30 分钟（D-8 裁定口径；注意不是 15min——那是登录失败锁，勿串抄）
+      max-code-errors: 5
+      code-lock-duration: 30m
+      # 一次性票据 TTL：仅需覆盖「校验 → 取件」间隔，越短越安全（Redis GETDEL，不落库）
+      ticket-ttl: 5m
+      # 内容扫描总开关：false 时后缀黑名单 / 敏感词 / EE 扫描器全部不生效（应急放行，默认 true）
+      content-scan-enabled: true
+      # 外发后缀黑名单（不区分大小写）：默认阻断可执行 / 安装类格式。
+      # 局限见红队 [V-04]：改名可绕过，EE 应改为「白名单 + 内容嗅探」。
+      blocked-extensions:
+        - exe
+        - sh
+        - bat
+        - msi
+        - com
+        - scr
+      # 文件名敏感词（不区分大小写，命中即 4007 拦截并写 SHARE_BLOCKED 审计）；
+      # 置为 [] 即关闭该规则（例如内网频繁误伤正常文件名时），不影响后缀黑名单。
+      sensitive-words:
+        - 机密
+        - 绝密
+        - 身份证
+        - 薪酬
+
+  # ---------------- 通知与 IM（at-collaboration） ----------------
+  # 映射 NotifyProperties（anttransfer.collaboration.notify.*）与 WsProperties（anttransfer.collaboration.ws.*）。
+  # 下列取值与代码默认值一致，显式列出便于运维查阅与按需覆盖（不改代码即可调策略）。
+  collaboration:
+    notify:
+      # 邮件渠道（P1 附加通道）总开关：默认关闭——CE 默认无 SMTP 依赖可用；
+      # 打开时须同时配置 spring.mail.*，否则该渠道仅降级记录日志，不影响站内信。
+      email-enabled: false
+      # 邮件发件人（仅邮件渠道启用时生效）
+      from: ${NOTIFY_MAIL_FROM:no-reply@anttransfer.local}
+      # 离线补拉单次返回条数上限（防重连时一次性拉爆内存 / 响应体）
+      offline-pull-limit: 50
+      # 会话历史单次返回条数上限（聊天记录向上翻页的硬上限）
+      chat-history-limit: 50
+    ws:
+      # 心跳探测间隔（秒）：服务端定期向本机全部连接发 PING。
+      # 须远小于常见 NAT / 负载均衡的空闲回收时间（通常 60~300s），否则连接会被中间设备静默掐断。
+      heartbeat-interval-seconds: 30
+      # 心跳超时（秒）：超过该时长未收到任何上行帧即判定掉线并清理（须 > 探测间隔，默认 3 倍容错）。
+      # 宁可晚 60s 清理僵尸连接，也不要频繁误踢真实用户。
+      heartbeat-timeout-seconds: 90
+      # 单条发送超时（毫秒）与单连接发送缓冲上限（字节，默认 512KB）：
+      # 客户端「只收不消费」时待发队列会无限堆积直至 OOM，写不出去即判定连接已死并踢除。
+      send-time-limit-millis: 5000
+      buffer-size-limit-bytes: 524288
+      # 单帧文本上限（字节，默认 64KB）：容器级生效（ServletServerContainerFactoryBean），防超大帧打爆内存
+      text-message-size-limit-bytes: 65536
 
   # ---------------- CORS 白名单（at-gateway / at-auth 同键消费） ----------------
   cors:
