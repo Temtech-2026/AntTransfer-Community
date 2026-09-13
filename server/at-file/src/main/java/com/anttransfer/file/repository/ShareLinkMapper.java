@@ -1,0 +1,95 @@
+/*
+ * Copyright (c) 2026 AntTransfer Community Contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.anttransfer.file.repository;
+
+import com.anttransfer.file.model.entity.ShareLink;
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Update;
+
+import java.time.LocalDateTime;
+
+/**
+ * 外发链接 Mapper。
+ *
+ * <p><b>为什么下载次数必须走这里的原子 SQL（P-8 / 红队 [C-08]）</b>：
+ * 「读 downloaded_count → 判断 → 回写」在并发下必然超发。此处以
+ * {@code UPDATE ... SET downloaded_count = downloaded_count + 1 WHERE ...} 的单条语句
+ * 让数据库做行锁下的判定 + 自增，<b>影响行数 = 1 才放行</b>，从根上杜绝超卖。</p>
+ *
+ * <p>Redis 的 {@code at:share:count:{token}} 只是<b>前置快速失败闸门</b>（挡掉绝大多数无效请求，
+ * 降低 DB 压力），正确性一律以本 Mapper 的影响行数为准——即便 Redis 丢键 / 计数漂移，
+ * 也不会多发一次下载。</p>
+ *
+ * <p>注意：原生 {@code @Update} 不经过 MyBatis-Plus 实体填充与 {@code @TableLogic} 拦截，
+ * 因此 SQL 内显式书写 {@code deleted = 0}；{@code update_time} 由表定义的
+ * {@code ON UPDATE CURRENT_TIMESTAMP} 维护。过期判定统一用<b>应用时钟</b>入参 {@code now}
+ * （单一时钟源，见红队 [T-08]），不使用 {@code now()} 以免双时钟漂移。</p>
+ *
+ * @author AntTransfer CE
+ */
+@Mapper
+public interface ShareLinkMapper extends BaseMapper<ShareLink> {
+
+    /**
+     * 原子占用 1 次下载额度（校验未撤销 + 未过期 + 未达上限），并在<b>用掉最后一次</b>时同一语句内
+     * 收敛为「已失效」终态——避免「额度已满但仍显示生效」的悬空状态，也省去一次额外回读。
+     *
+     * <p><b>赋值顺序是正确性的一部分，勿调整</b>：{@code status} / {@code revoke_at} 必须写在
+     * {@code downloaded_count} 之前，因为其 CASE 里引用的 {@code downloaded_count} 必须是<b>自增前</b>
+     * 的旧值。MySQL 的 SET 子句按从左到右求值且后续表达式会看到已赋的新值，先读后写才与标准 SQL 一致；
+     * 若调换顺序，{@code downloaded_count} 将变成「已 +1」的新值，导致提前（如 limit=2 时首次下载即）
+     * 误判为达上限。</p>
+     *
+     * <p><b>为何不会误伤并发成功者</b>：InnoDB 对同一行加排他锁，并发 UPDATE 严格串行且每次都读最新已提交值，
+     * 因此「判定为最后一次」的必然是最后执行的那条；其置 {@code status=2} 之后不会再有本可成功的 UPDATE
+     * 被拒（此后所有语句本就因 {@code downloaded_count < download_limit} 不成立而失败）。</p>
+     *
+     * @param id  链接主键
+     * @param now 当前时间（应用时钟）
+     * @return 影响行数：1=占用成功；0=链接已撤销 / 已过期 / 额度耗尽（调用方据此裁决 4012 / 4004）
+     */
+    @Update("update sys_share_link "
+            + "set status = case when downloaded_count >= download_limit - 1 then 2 else status end, "
+            + "revoke_at = case when downloaded_count >= download_limit - 1 then #{now} else revoke_at end, "
+            + "downloaded_count = downloaded_count + 1 "
+            + "where id = #{id} and status = 0 and deleted = 0 "
+            + "and expire_at > #{now} and downloaded_count < download_limit")
+    int consumeDownloadQuota(@Param("id") Long id, @Param("now") LocalDateTime now);
+
+    /**
+     * 收敛为「已失效」（过期 / 达上限），CAS 保证只迁移一次。
+     *
+     * @param id  链接主键
+     * @param now 失效时间（应用时钟）
+     * @return 影响行数：1=本次完成迁移；0=已非生效态（幂等，无需处理）
+     */
+    @Update("update sys_share_link set status = 2, revoke_at = #{now} "
+            + "where id = #{id} and status = 0 and deleted = 0")
+    int markInvalidated(@Param("id") Long id, @Param("now") LocalDateTime now);
+
+    /**
+     * 撤销链接（0 生效 → 1 已撤销），CAS 保证只迁移一次。
+     *
+     * @param id  链接主键
+     * @param now 撤销时间（应用时钟）
+     * @return 影响行数：1=撤销成功；0=已是终态（调用方据此返回 4012）
+     */
+    @Update("update sys_share_link set status = 1, revoke_at = #{now} "
+            + "where id = #{id} and status = 0 and deleted = 0")
+    int revoke(@Param("id") Long id, @Param("now") LocalDateTime now);
+}
