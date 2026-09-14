@@ -102,16 +102,17 @@ at-gateway  at-auth  at-transfer  at-file  at-permission  at-collaboration
 
 > 📌 **与「跨模块只走事件总线」的口径差异（待裁决）**：外部计划书要求「跨模块只走事件总线」。本仓库**当前采纳上表「读写分道」口径**，因为纯事件总线会直接命中 [T-01]（跨模块写无事务载体，S0）与 [T-02]（授权写表落在事务外，S0），上传与审批主线的一致性会被击穿。若后续裁决坚持纯事件总线，须同步重审 [T-01]/[T-02]/[T-03] 与 [use-case-flows §1.1-7 / §2.3-5](./use-case-flows.md)。详见 §4。
 
-**SPI 接口清单（`at-common/com/anttransfer/common/spi`）**：
+**SPI 接口清单（定义在 `at-common`，按领域分包：`common.spi` / `common.file` / `common.mybatis` / `common.security` …）**：
 
 | SPI 接口 | 提供方（实现） | 消费方（编排） | 用途 |
 | --- | --- | --- | --- |
 | `FileMetadataPort` | `at-file` | `at-transfer`（合并落库编排） | 建/查 `sys_file` 元数据，供上传合并在同一事务内调用 |
+| `FileIngestPort` | `at-file`（已有 `FileIngestAdapter`，**已落地**） | `at-transfer`（秒传预检 + 合并落库） | 秒传命中即建引用（`tryInstant` → `Optional<FileIngestResult>`）；合片产物**逐流**传入登记（`ingest(FileIngestCommand, InputStream)`）。配套 `FileIngestCommand`（userId / 文件名 / 目标目录 / SHA-256 / 字节数）与 `FileIngestResult`（`fileId` / `nodeId`，**以字符串过线**规避 JS 大整数精度丢失）。**上表 `FileMetadataPort` 尚未建**：本轮按「更窄的意图端口」落地，后续若两者并存须收敛为一个，勿留双入口 |
 | `PermissionCheckPort` | `at-permission` | `at-auth`（过滤器可选加载权限，[AT-DIFF-02](../development/AT-DIFF-todos.md) 方案 B） | 按 userId 取权限点/数据范围 |
 | `CurrentUserProvider` | `at-auth`（已有 `SecurityCurrentUserProvider`） | `at-permission` 及业务模块 | 取当前登录用户身份（**已落地**） |
 | `NotificationPort` | `at-collaboration`（通知域，**已落地**） | `at-permission` / `at-transfer` | 写站内通知（`sys_notify_message`）；配套 `NotificationCommand`（收发件人 / 类型 / 业务锚点）与 `NotifyType` 编码表。**渠道开关与落库实现统一收敛于此域**——原先 `at-permission` 自带的站内信 / 邮件实现与开关已删除，避免两套口径分歧 |
 
-> ✅ 已落地样板：`at-common` 的 `com.anttransfer.common.mybatis.CurrentUserProvider` + `com.anttransfer.common.security.AuthenticatedUser`，由 `at-auth` 的 `SecurityCurrentUserProvider` 实现。新增 SPI 请照此办理。
+> ✅ 已落地样板：`at-common` 的 `com.anttransfer.common.mybatis.CurrentUserProvider` + `com.anttransfer.common.security.AuthenticatedUser`，由 `at-auth` 的 `SecurityCurrentUserProvider` 实现；`com.anttransfer.common.file.FileIngestPort` 由 `at-file` 的 `FileIngestAdapter` 实现（分片上传主线）。新增 SPI 请照此办理。
 
 ### 1.4 四层包结构
 
@@ -385,7 +386,7 @@ public interface FileStore {
 | **D-2**（= A-2 / A-3） | CE/EE 扩展点命名的权威源：附录 C 7 接口 vs PRD §8 现名 | 暂以附录 C 命名为准（§2.1），并附 PRD §8 映射表；接口本身仍未建 | ① 将附录 C 原文补入 `docs/`（或明确放弃）；② 按 §2.1 映射表回写 `docs/prd/README.md` §8，消除双名并存 | 附录 C 原文可得时；或 `at-file` / `at-permission` 首个 SPI 落地前（§2.3 门禁） |
 | **D-3** | 红队 v1.1「待回改项」是否代为改动 | 已在 [红队评审·回改清单](./red-team-review.md) 登记但**未改动** | 回改 `system-design.md` §1.3（`mapper` → `repository`）、`docs/prd/README.md` §8、`docs/api/README.md`（幂等键 / 分页上界 / 免登录端点防刷 / 秒传预检语义）、`docs/development/AT-DIFF-todos.md` AT-DIFF-04、`web/src/utils/result.ts` | 随首轮功能实现一并回改；**「对外契约 4 项」按发布门禁第 7 条须在写首个 Controller 前完成** |
 | **D-4**（= D-3「对外契约 4 项」 · DoD-3） | 统一响应体 / 分页 / 错误码的「对外契约」收口与「经前后端确认」留痕：`Result<T>` / `PageResult<T>` / 错误码表已定稿并被遵守，但 **API-03 写接口幂等键尚无定义**（`docs/api/README.md` 全文无 `Idempotency-Key`），免登录端点「集中化白名单 + 防刷」未补齐，「经前后端确认」只有「已完成改造」的事实描述、**无评审结论与日期** | `Result<T>`、分页 `PageResult<T>`（默认 20 / 上限 100，由 `MybatisPlusConfig` 强制收敛）、错误码表 + A~H 策略**按现状实现**（后端 `ErrorCode` 为单一权威源，前端 `result.ts` 镜像策略表 + 20 例单测）；免登录端点已列 §5 表、秒传预检语义已明确 | ① 在 `docs/api/README.md` 补 **`Idempotency-Key` 写接口幂等键**定义（适用范围 / 生成规则 / 重放响应）；② 补免登录端点「集中化白名单 + 防刷约定」；③ 补一份前后端确认留痕（评审结论 + 日期），使「经确认」可追溯 | 写第一个 Controller 之前（**硬前置**，发布门禁第 7 条；与 D-3 同源，此处按 DoD-3 收口口径单列） |
-| **D-5**（DoD-4） | 分片上传 / 审批两组核心接口未「定稿」，尚不足支撑 Phase 4 直接照做 | 上传线按 `use-case-flows` §1.1 已有 4 端点推进；审批线按 §2.3 已定的 `POST /api/v1/permission/applications` 单端点推进 | ① 补齐审批线缺失端点：审批动作（approve / reject / reassign，**路径未定**，仅红队 [V-03] 出现过一次 `PATCH applications/{id}`）、撤销、待办 / 我的申请 / 详情查询、审批规则配置；② 为两组接口补**字段级 schema**（DTO 字段名 / 类型 / 必填；`precheck` 用 JSON body 还是 query；`parts` 分片 hash 载体），消除 Phase 4 歧义；③ `docs/api/README.md` §1 前缀表补 `at-permission` 的 `/permission/applications` 与 `/permission/menus`（动态菜单，见 **D-9**）；④ 解除两份文档 `draft` 标记并落「定稿」版本；⑤ 与 **D-9** 合并推进：为 `GET /api/v1/permission/menus` 补字段级 schema（节点 `routePath` / `component` / `icon` / `visible`、父子层级、排序与权限过滤口径） | 进入 Phase 4 编码前（**硬前置**） |
+| **D-5**（DoD-4） | **审批线**核心接口未「定稿」，尚不足支撑 Phase 4 直接照做（上传线已于 2026-09-14 落地收口） | **上传线 ✅ 已落地**（五端点 + 字段级 schema 由实现定稿：multipart 字段 `chunk` / `hash`、索引取路径、`precheck` 用 JSON body、`received` 回索引数组）；**剩余仅审批线**——按 §2.3 已定的 `POST /api/v1/permission/applications` 单端点推进 | ① 补齐审批线缺失端点：审批动作（approve / reject / reassign，**路径未定**，仅红队 [V-03] 出现过一次 `PATCH applications/{id}`）、撤销、待办 / 我的申请 / 详情查询、审批规则配置；② 为**审批线**补字段级 schema（DTO 字段名 / 类型 / 必填；上传线的 `chunk` / `hash` 载体与 `precheck` JSON body 已由 2026-09-14 实现定稿），消除 Phase 4 歧义；③ `docs/api/README.md` §1 前缀表补 `at-permission` 的 `/permission/applications` 与 `/permission/menus`（动态菜单，见 **D-9**）；④ 解除两份文档 `draft` 标记并落「定稿」版本；⑤ 与 **D-9** 合并推进：为 `GET /api/v1/permission/menus` 补字段级 schema（节点 `routePath` / `component` / `icon` / `visible`、父子层级、排序与权限过滤口径） | 进入 Phase 4 编码前（**硬前置**） |
 | **D-6**（DoD-1 ①） | CE/EE 功能边界未「**书面冻结**」：`docs/prd/README.md` 仍标 `v0.2-draft · 待评审`，无评审结论 / 冻结日期 | 以 PRD §1.1（范围表）+ §4（功能清单）+ §8（Won't）三表**内部自洽**为准推进 | 组织一次范围评审，把 PRD 状态由 `draft` 置为 `frozen`，并留下评审结论 / 日期 / 参与方；同步冻结 §1.1 / §4 / §8 / §2.1 各处清单 | M1 里程碑评审前（或范围发生变更时） |
 | **D-7**（= A-2 范围侧 · DoD-1 ②） | 「P0/P1 清单与**战略规划书 0.3 节**逐项对应无遗漏」当前**无法验证**：战略规划书（含 0.3 节 P0 / P1 / EE 三栏原文）未入库，附录 C 原文亦零命中 | 按 §1.1 内注释「战略规划书当前为外部归档文档，入库后在此补精确章节引用」暂缓；先完成**内部自洽核对**（已核对：§1.1 P0 8 类 / P1 12 项被 §4 全覆盖；§8 Won't 9 项与 §1.1 Won't 栏一一对应；§2.1 覆盖全部 9 个 Won't 能力） | ① 战略规划书入库并落实 §1.1 的章节引用；② 对 0.3 节三栏与 §1.1 / §4 / §8 **逐项比对并出具「无遗漏」结论** | 战略规划书可得时；不晚于 D-6 的范围评审 |
 | **D-8**（= N-1 · ✅ **已收口**） | `at:share:lock:{token}` 提取码锁定 TTL 存在两套口径：**15 min**（需求口述清单）vs **30 min**（代码与全部文档） | **采纳 30 min**（2026-09-13 裁定）：`RedisKeyConstants.SHARE_LOCK_TTL_SECONDS = 30 * 60L`、`system-design.md` §5.3 与 §7.1、PRD US-03「连续 5 次 → 临时锁定（30 分钟）」、红队 [C-08] **四处一致**；15 min 系与 `at:login:fail`（确为 15 min）串行误抄 | 无需回改（项目内本已一致）。后续若确需调整 TTL，须同步 4 处：`RedisKeyConstants` / `system-design` §5.3+§7.1 / PRD US-03 / CHANGELOG，并重开红队 [C-08] | **不适用（已收口）** |
@@ -398,15 +399,18 @@ public interface FileStore {
 >
 > - 🟢 **口径 / 文档类**（延后无损）：**D-1**（跨模块口径）、**D-2**（扩展点命名）、**D-6**（范围书面冻结）、**D-7**（0.3 节逐项核对）——只影响认知与文档一致性，不影响继续开发。
 > - 🔴 **有兼容成本类**（须前置）：**D-4**（幂等键 / 免登录端点防刷 / 前后端确认留痕）、**D-5**（审批端点 + 字段级 schema）——延期到「系统差不多」之后再补，会回头改已实现的 Controller、前端策略表与已定契约；其中 **D-4 须在写首个 Controller 前、D-5 须在进入 Phase 4 前**落掉。D-3 的文档勘误部分可延后。
-> - ⚠️ **接缝类**：**A-6 / D-2** 的 7 个 SPI 接口当前**代码尚未建立**（`at-file` / `at-transfer` / `at-collaboration` 仍为空壳），按 §2.3「不晚于首个功能落地」执行。
+> - ⚠️ **接缝类**：**A-6 / D-2** 的 7 个 **CE/EE 扩展点**当前**代码尚未建立**（§2.1 仍为契约草案），按 §2.3「不晚于首个功能落地」执行。注意区分：§1.3 的 `FileIngestPort` 属**跨模块协作端口**（模块间依赖倒置），已随分片上传主线落地，**不等于** CE/EE 扩展点已就绪，两者勿混谈。
 > - ✅ **已收口**：**D-8**（`at:share:lock` TTL 裁定 **30 min**）——2026-09-13 当场裁决，项目内本已一致，**无需回改**。
 > - 🏗️ **结构已落地 / 实现待补**：**D-9**（菜单路由列 + 菜单接口）、**D-10**（审计归档任务）、**D-11**（成员 / 空间两表 + at-collaboration 消费）、**D-12**（`user_type` 列 + 协作者口径）——DDL 已随 `sql/V4__menu_route_user_type_and_collaboration.sql` 落地，Java 侧实现与契约补全按各自触发时机执行；其中 **D-9 的接口契约随 D-5 前置**，**D-12 的 CE 口径已定**（维持 PRD，列仅作 EE 预留，不阻塞）。
 
 > **📌 配套清单（2026-09-14）**：以 `server/` 实际代码复核 `docs/prd/README.md` §4.1 后端现状时，
-> 另识别出 **8 项实现缺口**（上传上限未配置、停用未联动吊销会话、无自助改密、健康检查与优雅启停缺失、
+> 另识别出 **8 项实现缺口**（~~上传上限未配置~~、停用未联动吊销会话、无自助改密、健康检查与优雅启停缺失、
 > 角色互斥无校验、敏感级别无变更审计、全文索引未建、轻 IM 缺 @ 提及与保留期），已登记在
 > [`docs/development/AT-DIFF-todos.md`](../development/AT-DIFF-todos.md) § 🧱 后端功能缺口登记（GAP-01 ~ GAP-08），
-> 与本节 **D-x 同批关闭**（时机：三条主线跑通后的加固期；其中「上传上限」建议提前至分片落地前）。
+> 与本节 **D-x 同批关闭**（时机：三条主线跑通后的加固期）。其中 **GAP-01「上传上限」已随分片上传主线落地（2026-09-14）**：
+> `spring.servlet.multipart`（单文件 64 MB / 单请求 80 MB / 阈值 0）与 `anttransfer.transfer.*`（默认分片 8 MiB / 单分片上限
+> 64 MiB / 片数上限 1024，超限 4006）已配置，单用户进行中任务上限 4103 ——「默认 1 MB 挡掉大文件」已不复存在
+> （剩余 Nginx `client_max_body_size` 与前端前置校验待补）。
 > 共享空间 / 审批端点 / 分片上传三项已由 **D-11 / D-5** 覆盖，未重复登记。
 
 ### 🎯 本阶段 DoD 现状对照（2026-09-13 核对）
@@ -418,9 +422,9 @@ public interface FileStore {
 | 1 | CE/EE 功能边界书面冻结；P0/P1 清单与 0.3 节逐项对应无遗漏；Won't 项只留扩展点不排期 | 🟡 **部分达成** | PRD §1.1 范围表 + §4 功能清单 + §8 Won't 三表齐备且**内部自洽**（§1.1 P0 8 类 / P1 12 项被 §4 全覆盖；§8 Won't 9 项与 §1.1 Won't 栏一一对应；§2.1 覆盖全部 9 个 Won't 能力）；Won't 未排期（§9 延至 M3 评估） | ① 未「冻结」（仍标 `v0.2-draft · 待评审`，无评审结论 / 日期）→ **D-6**；② 战略规划书 0.3 节原文未入库，逐项核对**不可验证** → **D-7**；③ 7 个 SPI 接缝**代码尚未建立** → **A-6 / D-2**（文档层位置已留） |
 | 2 | 至少 6 个核心用户故事带可测试验收标准 | ✅ **达成（超额）** | PRD §3 共 **13** 个（US-01~US-13），P0 占 9 个，各含独立「验收标准」且多为数值化判据：8 MiB 分片 / 并发 ≤ 5 / 秒传 P95 < 5 s / 错 5 次锁 30 min / access 30 min + refresh 7 d / 首屏 P95 < 1 s | 无硬缺口。可优化项：US-10 统计中心未给数据口径与延迟，属定性表述 |
 | 3 | 统一响应体、分页、错误码表经前后端确认，后续代码一律遵守 | 🟡 **基本达成** | `Result<T>` + `PageResult<T>` + `error-codes.md` 全表与 A~H 策略**已定稿**；后端 `ErrorCode` 单一权威源、前端 `result.ts` 镜像策略表 + 20 例单测；分页上界（默认 20 / 上限 100）由分页插件强制收敛；免登录端点表（§5）、秒传预检语义（§2 示例 + §7 B 类）已明确 | ① **API-03 写接口幂等键未定义**（`docs/api/README.md` 全文无 `Idempotency-Key`）→ **D-4**；② 「经前后端确认」无评审结论 / 日期留痕，仅「已完成改造」事实描述 → **D-4**。**属发布门禁第 7 条硬前置** |
-| 4 | 分片上传、审批两组核心接口契约定稿（Phase 4 直接照做） | 🟡 **部分达成** | 上传线：`use-case-flows` §1.1 已定 4 端点（`precheck` / `GET parts` / `PUT parts` / `merge`）+ 参数 + 错误码 + 7 态状态机 + 事务口径；审批线：§2.3 已定 `POST /api/v1/permission/applications` + 三选一审批 + 申请 5 态 / 授权 3 态 + 事件 + 到期回收 | ① **审批动作端点路径缺失**（approve / reject / reassign / 撤销 / 待办 / 列表 / 详情查询）；② **字段级 schema 缺失**，Phase 4 会在 `precheck` 参数位置（body / query）、`parts` 分片 hash 载体等处产生歧义；③ `docs/api/README.md` §1 前缀表缺 `/permission/applications`；④ 两份文档仍标 `draft` → **D-5**。**属 Phase 4 硬前置** |
+| 4 | 分片上传、审批两组核心接口契约定稿（Phase 4 直接照做） | 🟡 **部分达成（上传线 ✅ / 审批线待 D-5）** | 上传线：**✅ 已落地（2026-09-14）**——`use-case-flows` §1.1 的 5 端点（`precheck` / `GET parts` / `PUT parts` / `merge` / `DELETE`）+ 字段级 schema（`chunk` / `hash`、索引取路径、`received` 回索引数组）+ 错误码 + 7 态状态机 + 事务口径，均有控制器 / 服务层测试兜底（25 例）；审批线：§2.3 已定 `POST /api/v1/permission/applications` + 三选一审批 + 申请 5 态 / 授权 3 态 + 事件 + 到期回收 | ① **审批动作端点路径缺失**（approve / reject / reassign / 撤销 / 待办 / 列表 / 详情查询）；② **审批线字段级 schema 缺失**（上传线 `precheck` JSON body 与 `parts` 的 `chunk` / `hash` 载体已由 2026-09-14 实现定稿）；③ `docs/api/README.md` §1 前缀表缺 `/permission/applications`；④ 两份文档仍标 `draft` → **D-5**（**剩余仅审批线**）。**属 Phase 4 硬前置** |
 
-> **小结**：4 条 DoD 中 **② 达成**；**③ 基本达成但有硬缺口（D-4）**；**① / ④ 部分达成（D-6 / D-7 / D-5）**。
+> **小结**：4 条 DoD 中 **② 达成**；**③ 基本达成但有硬缺口（D-4）**；**① 部分达成（D-6 / D-7）**；**④ 上传线已达成（2026-09-14），剩审批线（D-5）**。
 > 对外契约相关的 **D-4 / D-5 须在写首个 Controller 与进入 Phase 4 前收口**；其余（D-1 / D-2 / D-6 / D-7）可随三条主线推进回头补齐，与 D-1~D-3「不阻塞当前开发」的既有裁决一致。
 
 ---

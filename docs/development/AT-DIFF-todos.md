@@ -219,14 +219,16 @@ IDE 提示（任选其一）：
 > - **共享空间 P0 未落地**（`sys_space` 仅骨架实体、无 Controller / Service / 成员角色端点）→ 见 **D-11**
 >   （两表结构已落地，待 at-collaboration 四层接管读写）；
 > - **审批动作 / 撤销 / 待办 / 我的申请 / 审批规则配置等端点缺失** → 见 **D-5**（进入 Phase 4 前的硬前置）；
-> - **分片上传 / 断点续传未落地**（`at-transfer` 未建、无 precheck / parts / merge）→ 见 §4.1 表（⬜）与 **D-5**。
+> - ~~**分片上传 / 断点续传未落地**（`at-transfer` 未建、无 precheck / parts / merge）~~ **✅ 已于 2026-09-14 落地**
+>   （`at-transfer` 五端点 + `TransferTaskService` 编排 + `ChunkStore` + 25 例测试）→ §4.1 表已置 ✅，D-5 上传线随之收口。
 >
 > **关闭时机**：与 AT-DIFF 一致——上传 / 审批 / 分享三条主线跑通后的加固期逐条改进。
-> 其中 **GAP-01 建议提前**（默认 1 MB 会直接挡掉大文件上传验收），**GAP-02 / GAP-03 同批**（账号生命周期动作）。
+> 其中 ~~**GAP-01 建议提前**（默认 1 MB 会直接挡掉大文件上传验收）~~ **✅ 已随分片上传主线落地（2026-09-14）**，
+> **GAP-02 / GAP-03 同批**（账号生命周期动作）。
 
 | ID | 缺口 | 级别 | 代码现状锚点 |
 | --- | --- | --- | --- |
-| [GAP-01](#gap-01上传大小上限未配置) | 上传上限未配置，沿用 Spring 默认单文件 1 MB | P0 配置缺口（**建议提前**） | `server/at-bootstrap/src/main/resources/application.yml` |
+| [GAP-01](#gap-01上传大小上限未配置) | ~~上传上限未配置，沿用 Spring 默认单文件 1 MB~~ **✅ 主要缺口已关闭（2026-09-14）**：`spring.servlet.multipart` 64 MB / 80 MB + `anttransfer.transfer.*` | P0 配置缺口 | `server/at-bootstrap/src/main/resources/application.yml` |
 | [GAP-02](#gap-02账号停用未联动吊销会话) | 停用账号未吊销在途会话，不满足「2 分钟内失效」 | P0 验收缺口 | `at-permission/.../service/UserAdminService.java`、`at-auth/.../security/JwtAuthenticationFilter.java` |
 | [GAP-03](#gap-03无用户自助改密端点) | 无用户自助改密端点（仅管理面重置） | P0 功能缺口 | `at-auth/.../controller/AuthController.java` |
 | [GAP-04](#gap-04健康检查与优雅启停缺失) | 无健康检查端点、未开优雅启停、compose 中 server 无探针 | P0 部署缺口 | `at-bootstrap/src/main/resources/application.yml`、`docker-compose.yml` |
@@ -239,17 +241,22 @@ IDE 提示（任选其一）：
 
 ### GAP-01：上传大小上限未配置
 
+> **✅ 状态：主要缺口已关闭（2026-09-14）**。已随分片上传主线落地。`application.yml` 现配 `spring.servlet.multipart`
+> （`max-file-size=64MB` / `max-request-size=80MB` / `file-size-threshold=0`）与 `anttransfer.transfer.*`
+> （默认分片 8 MiB / 单分片上限 64 MiB / 片数上限 1024，超限 4006；单用户进行中任务上限 4103），
+> 下文「现象 / 证据 / 影响」均不再成立。**剩余**：环境变量占位、Nginx `client_max_body_size`、前端前置校验。
+
 - **现象**：经 `POST /v1/files`（multipart）上传超过 **1 MB** 的文件会被框架层直接拒绝。
 - **证据**：全仓库检索 `spring.servlet.multipart.max-file-size` / `max-request-size` /
   `MultipartConfigElement` / `MultipartProperties` **零命中**；`application.yml` 内无 `spring.servlet.multipart` 段。
 - **影响**：Spring Boot 默认 **单文件 1 MB / 单请求 10 MB**，与「大文件上传」目标直接冲突；
   §4 P0「配置管理（文件上限 / 分片 / 令牌时长 / 通知等）」的「文件上限」一项无落点。
   因分片未落地（见 D-5 / §4.1），当前**无任何绕过路径**。
-- **回头需完成**：① `application.yml` 补 `spring.servlet.multipart.max-file-size` / `max-request-size`，
-  并以**环境变量占位**（如 `${ANTTRANSFER_MAX_FILE_SIZE:2GB}`）落实「上限可配」；
+- **回头需完成**：① ~~`application.yml` 补 `spring.servlet.multipart.max-file-size` / `max-request-size`，
+  并以**环境变量占位**（如 `${ANTTRANSFER_MAX_FILE_SIZE:2GB}`）落实「上限可配」~~ **✅ 配置已补（环境变量占位待补）**；
   ② 同步 Nginx `client_max_body_size` 与未来 at-gateway 的请求体限制；
   ③ 前端在超限前置校验并提示，避免用户白传。
-- **触发时机**：**建议提前至分片上传落地前**——本组唯一「直接导致功能不可用」的项。
+- **触发时机**：~~**建议提前至分片上传落地前**~~ **✅ 已随分片上传主线落地（2026-09-14）**。
 
 ### GAP-02：账号停用未联动吊销会话
 

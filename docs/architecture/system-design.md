@@ -351,7 +351,11 @@ Redis Key 规划定稿：at-common `RedisKeyConstants`（`at:` 前缀 Key/TTL �
 2. ~~访问判定 + 资源归属校验~~ **✅ 守卫已就绪（2026-09-07）**：`@RequiresPerm` +
    `AccessControlService` 可作为各业务模块 by-id 访问的统一入口；剩余：RBAC 写管理
    （角色/授权界面与 `invalidate` 触发点）待业务模块实现期接入；
-3. 上传主线（sys_upload_task 状态机 + uploaded_indexes 分片索引 + merge 短事务 + 整件 SHA-256 校验）；
+3. ~~上传主线（sys_upload_task 状态机 + uploaded_indexes 分片索引 + merge 短事务 + 整件 SHA-256 校验）~~
+   **✅ 已实现（2026-09-14）**：落地于 `at-transfer`——`TransferController` 五端点（`precheck` / `GET parts` /
+   `PUT parts` / `merge` / `DELETE`）+ `TransferTaskService` 编排 + `TransferTaskStateStore`（`SELECT ... FOR UPDATE` + 状态 CAS）
+   + `ChunkStore`（`.tmp` 原子改名落片 / 流式合片 / 服务端重算 SHA-256）+ `ChunkIndexes`（`uploaded_indexes` 索引集）；
+   合片产物经 `FileIngestPort` 交 `at-file` 登记（不破坏依赖铁律）；单测 25 例（服务层 18 + 控制器 7）；
 4. 审批主线（冲突判重 1008/1009 + CAS + 到期回收定时任务）；
 5. ~~外发分享（下载三校验 + 次数原子扣减 + 审计）~~ **✅ 已实现（2026-09-13）**：落地于 `at-file`
    （**非**本文档原规划的 at-collaboration，差异见 [AT-DIFF-06](../development/AT-DIFF-todos.md#at-diff-06-外发分享模块归属)）；

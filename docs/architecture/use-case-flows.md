@@ -24,7 +24,7 @@
 | 1 | 计算全文件 Hash | 前端先对整件算 SHA-256（秒传键），再按 8 MiB 切分并逐片算分片 Hash | 本地完成，附带整件摘要与分片清单进入预检 | — |
 | 2 | 秒传检查 | `POST /api/v1/transfers/precheck`，携带 `sha256 + sizeBytes + fileName`；服务端按 `sys_file.sha256(+长度)` 查重 | **命中**：返回既有 `fileId`，秒传完成（P95 < 5 s，US-02），不落新物理副本 | **未命中**：`code=4001`（HTTP 200 分支码），`data` 附 `uploadId / chunkSize / chunkCount`，进入下一步 |
 | 3 | 查询已传分片 | `GET /api/v1/transfers/{id}/parts`，返回 `{ received: [已收分片索引], chunkSize }` | 首传 `received=[]` 同样走此入口 → 保证「首传」与「断点续传」共用同一收敛逻辑 | 任务不存在：`4101` |
-| 4 | 并发上传分片 | `PUT /api/v1/transfers/{id}/parts/{index}`；并发 ≤ 5、单片 ≤ 8 MiB，逐片校验分片 Hash 后写临时分片；累加 `TransferRecord.transferredSize` | 全部分片就绪 | 单片失败：`4008`（保留已传分片可续传）；状态冲突：`4102`；超并发/流量：`4103` |
+| 4 | 并发上传分片 | `PUT /api/v1/transfers/{id}/parts/{index}`；并发 ≤ 5、单片 ≤ 8 MiB，逐片校验分片 Hash 后写临时分片（先写 `.tmp` 再原子改名，半个分片不计入已收）；原子累加 `TransferTask.transferredSize` | 全部分片就绪 | 单片失败：`4008`（保留已传分片可续传）；状态冲突：`4102`；超并发/流量：`4103` |
 | 5 | 合并 | `POST /api/v1/transfers/{id}/merge`：先 CAS 迁移任务 `1 传输中 → 6 合并中`，随后在**数据库事务外**重组文件（长 IO 不进事务，避免占用连接池与行锁） | 分片齐全，进入合并中 | **缺片**：`4002`（HTTP 200 分支码），`data` 附 `missing: [...]`，回 §1.1-3；源状态非 `1`（非传输中）：`4102` |
 | 6 | SHA-256 完整性校验 | 重组后服务端**整件重算** SHA-256，与步骤 1 上报值比对（仍在事务外） | 一致 | **不一致**：`4003`（409），CAS 置任务 `status=4 失败` 并提示重传 |
 | 7 | 落库（短事务） | CAS `6 合并中 → 3 已完成` 的**短事务**内写 `sys_file`（`status=0 可用`，含 `sha256`）与 `sys_upload_task`（`status=3 已完成`）；事务提交后（`AFTER_COMMIT`）发布 `FileUploadedEvent` 供审计/后续处理管道（PRD §8 扩展点）监听 | `code=0`，返回 `fileId` | DB 异常：`5002`（整体回滚，任务保持 `6 合并中`，merge 可幂等重入）；兜底：`5001` |
@@ -37,11 +37,11 @@
 
 | 项 | 现状 | 结论 |
 | --- | --- | --- |
-| 实体 | `TransferRecord`（fileId/fileSize/status/transferredSize）、`FileObject.sha256` 已具 | 满足 |
+| 实体 | `TransferTask`（表 `sys_upload_task`：`status` / `fileSize` / `chunkSize` / `chunkCount` / `uploadedIndexes` / `transferredSize` / `parentId`）、`sys_file_object.sha256` 唯一键已具 | 满足 |
 | 错误码 | 4001/4002/4003/4008/4101~4103 已定义 | 满足 |
-| API 契约 | `precheck/parts/merge` 语义已入 API README（骨架期无 Controller） | 需实现 |
-| 分片索引持久化 | `sys_upload_task.uploaded_indexes`（JSON 已传分片索引）已随 2026-09-06 `sql/V1` 二次重置落地 | 满足 |
-| 双层 Hash | 未显式文档化 | 本文件已定义（§1.1-1/6） |
+| API 契约 | `precheck` / `GET parts` / `PUT parts` / `merge` / `DELETE` 五端点**已落地**（`at-transfer` 的 `TransferController`）；分片字段名 `chunk` / `hash`、索引以路径为准、`received` 回**索引数组**（非计数），与前端 `uploadApi.ts` 逐字对齐 | ✅ 已落地（2026-09-14） |
+| 分片索引持久化 | `sys_upload_task.uploaded_indexes`（JSON 已传分片索引）已随 2026-09-06 `sql/V1` 二次重置落地；读改写随任务行 `SELECT ... FOR UPDATE` 同事务 | 满足 |
+| 双层 Hash | §1.1-1/6 已定义；分片级与整件级 SHA-256 **均由服务端重算**（不信任客户端上报） | 满足 |
 
 ---
 

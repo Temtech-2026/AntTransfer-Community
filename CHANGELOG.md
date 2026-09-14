@@ -71,6 +71,31 @@
   配套 `_mock.ts` 以**内存**模拟服务端（票据、已收分片、秒传索引均存活于 dev server 进程），
   因此 `npm run start`（开启 mock）可在**无后端**时完整走通分片上传、秒传与「刷新后重选文件续传」；
   路由与中英文菜单文案（`menu.upload`）同步登记。
+- ⬆️ **后端分片上传主线（at-transfer）**：前端分片上传模块（含示例页）已就绪，但后端此前**零落点**（无 precheck / parts / merge），
+  本轮把「秒传预检 → 断点续传 → 分片落盘 → 合片校验 → 落库」补齐，端点与前端契约逐字对齐：
+  - 端点（`/api/v1/transfers`）：`POST /precheck`（命中秒传直接建引用并回 `fileId/nodeId`）、`GET /{uploadId}/parts`（已收分片清单）、
+    `PUT /{uploadId}/parts/{index}`（multipart：字节流字段 `chunk` + 分片指纹字段 `hash`，索引以路径为准；
+    成功回 `data.received` = 已收分片**索引数组**而非计数，与前端 `PartUploadedResult.received: number[]` 逐字对齐）、
+    `POST /{uploadId}/merge`（合片落库）、`DELETE /{uploadId}`（取消并清暂存）；
+  - **B 类流程分支码不抛异常**：秒传未命中 `4001`、缺片 `4002` 均以 **HTTP 200 + `code` 分流 + `data` 载荷**返回
+    （上传票据 / `received` + `missing`）。若按异常处理，全局处理器会回 `Result<Void>`，`data` 被静默丢弃，
+    前端将同时失去「秒传」与「补传」两条路——故 `at-common` 的 `Result` 新增 `failWithData` 工厂承载分支载荷；
+  - `TransferTaskStateStore`：`SELECT ... FOR UPDATE` 行锁 + 状态 CAS（`0 排队 / 1 传输中 / 2 暂停 / 3 完成 / 4 失败 / 5 取消 / 6 合并中`），
+    `sys_upload_task.uploaded_indexes` 的读改写不依赖应用层「先查后写」；合片与流式落盘等大 IO 一律留在事务外，
+    事务内只碰元数据（短事务 + 大 IO 分离）；
+  - `ChunkStore`：分片先写 `.tmp` 再原子改名（避免半个分片被计入已收）、合片**流式**拷贝不整件入内存、
+    分片级与整件级 SHA-256 **均由服务端重算**（不信任客户端上报）；
+  - 跨模块接缝：`FileIngestPort`（at-common）+ `FileIngestAdapter`（at-file），`at-transfer` **不依赖 `at-file`**，
+    合片产物经端口登记，守住「依赖倒置」的架构铁律；
+  - 安全与配额：任务归属校验失败一律按「不存在」处理（不区分 403 / 404，避免票据号被枚举探测）、
+    单用户进行中任务数超限 `4103`、单文件超限（`max-chunk-size × max-chunk-count`）`4006`、任务 TTL 24 h 顺带回收；
+  - 配置：新增 `anttransfer.transfer.*`（8 MiB 默认分片 / 64 MiB 单分片 / 1024 片上限 / 暂存根 / 并发上限 / TTL）与
+    `spring.servlet.multipart`（`max-file-size=64MB` / `max-request-size=80MB` / `file-size-threshold=0`）——
+    后者此前**完全未配置**，一直沿用 Spring 默认单文件 1 MB，与本能力直接冲突；
+  - `V10__upload_task_parent_id.sql` 补 `sys_upload_task.parent_id`：预检上报目标目录，
+    **同内容传到不同目录不再互相复用票据**，合片时作为 `folderId` 透传 at-file；
+  - 测试：`TransferTaskServiceTest` 18 例（秒传命中 / 复用进行中任务 / 并发上限 / 参数越界 / 续传 / 分片大小与指纹 /
+    缺片分支 / 请求过期 / 整件指纹不符 / 归属越权 / 取消）+ `TransferControllerTest` 7 例（HTTP 契约与分支码载荷）。
 - 🔐 **权限申请审批闭环（at-permission）**：打通「无权限 → 申请 → 审批 → 授权 → 到期回收」全链路，
   写侧一律 CAS + 行数校验（红线 P-1），事件与缓存副作用统一在**事务提交后**发布：
   - **申请**（`PermissionApplicationService.create` + `ApplicationCreateDTO`）：按 `applyType` / `resourceType` /
@@ -302,6 +327,21 @@
   - 🧪 新增单测 11 例：`AuditLogQueryServiceTest` 7 例（展示名批量反查 / 系统动作不反查 / 缺联系人回落 / 分页与页码收敛 /
     时间倒挂早失败且不打库 / 导出强制 `LIMIT` 上界 / 导出与列表同过滤）+ `AuditLogCsvTest` 4 例（BOM / 空结果仅表头 /
     逗号引号换行转义与结果语义化 / null 渲染为空串）；同步 4 个既有 Service 单测的构造依赖（注入 `PermissionAuditLogger`）。
+
+- 📊 **工作台「传输量 / 成功率」统计聚合落地（`at-transfer` + 前端接真实接口）**：
+  - 新增 `GET /api/v1/transfers/statistics`（`TransferStatisticsController`，**登录即可用、不挂权限点**——只回调用者自己的聚合数字，
+    用户 ID 仅从登录态取；一旦开放 `?userId=` 就能越权看他人传输量）；
+  - 数据源复用共享内核审计账本 `sys_operation_log` 的 `FILE_UPLOAD` / `FILE_DOWNLOAD` 流水（不另立统计表，避免双写漂移）；
+    `detail` 字节键由 `OperationLog` 集中定义（`transferredBytes` / `sentBytes`），写方（at-file）与聚合 SQL 引用同一常量，
+    **键名一改即编译失败**，不会退化成「统计悄悄恒为 0」；
+  - 口径：条数按 `result` 分成功 / 失败（失败不并入 upload / downloadCount，否则成功率分母自我重复计入）；
+    字节取**实际过网量**——上传 `transferredBytes`（秒传命中为 0）、下载 `sentBytes`（`Range` 续传只计本段），
+    且**不受结果过滤**（失败前已下发的半份仍是真实流量）；无任何流水时 `successRate` 返回 `null` 而非 `0`，以区分「还没数据」与「全失败」；
+  - 字段级契约：`TransferStatisticsVO`（record）与前端 `services/dashboard/types.ts` 的 `TransferStats` 逐一对齐；
+    工作台四卡片全部接真实接口，统计拉取失败仅让对应卡片降级为「--」占位（`silent` 请求、不弹错误 toast），整页照常可用；
+  - 🧪 单测 5 例（`TransferStatisticsServiceTest`：聚合 / 无数据 null 率 / 全失败 0% / 整数率保留一位小数 / null 列归 0）+
+    Testcontainers 集成 3 例（`TransferStatisticsIntegrationTest`，真 MySQL 8.4 校验 JSON 路径与口径：只看自己 / 秒传不计量 /
+    失败前已下发算量 / 老流水缺字节键归 0 / 无流水 null 率 / 未登录 401(1001)）。
 
 ### 🔄 Changed（变更）
 

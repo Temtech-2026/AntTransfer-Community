@@ -32,7 +32,9 @@
 | 文件列表 `/file` | 标签 CRUD / 打标 | `file:preview`（读）/ `file:edit`（写） | 全部业务角色（不另立 `tag:*` 权限点） |
 | 文件列表 `/file` | 批量打包下载 | `file:download` | 全部业务角色 |
 | 审计日志 `/audit` | 页面可见 + 查询 / 导出 | `audit:log:read` | 仅 SUPER_ADMIN / AUDITOR |
+| 工作台 `/workbench`（web 首页） | 页面可见（待办 / 待审批 / 传输统计） | —（后端按当前登录用户收敛，无原子权限点） | 全部业务角色 |
 | （不存在）日志清除 | 任何入口都**不渲染** | 后端从不签发 `audit:log:clear` | 任何角色（含 SUPER_ADMIN）都无 |
+| 权限地图 `/permission-map` | 页面可见（我的权限点 / 角色 / 审批授权） | —（后端 `GET /v1/permission/map` 只返回当前登录用户的权限，无原子权限点） | 全部业务角色 |
 | 系统管理 `/system/users` | 页面可见（菜单） | `system:user:list` | 仅 SUPER_ADMIN |
 | 系统管理 `/system/users` | 新建用户 | `system:user:create` | 仅 SUPER_ADMIN |
 | 系统管理 `/system/users` | 编辑资料 / 调岗 | `system:user:update` | 仅 SUPER_ADMIN |
@@ -45,6 +47,9 @@
 | 系统管理 `/system/roles` | 编辑角色 | `system:role:update` | 仅 SUPER_ADMIN |
 | 系统管理 `/system/roles` | 删除角色 | `system:role:delete` | 仅 SUPER_ADMIN |
 | 系统管理 `/system/roles` | 分配权限点 | `system:role:assign-perm` | 仅 SUPER_ADMIN |
+| 系统管理 `/system/depts` | 页面可见（菜单，只读部门树） | `system`（type=1 根节点，CE 无部门原子权限点） | 仅 SUPER_ADMIN |
+| 系统管理 `/system/groups` | 页面可见（菜单，只读占位说明） | `system`（同上；CE 无群组接口与权限点） | 仅 SUPER_ADMIN |
+| 系统管理 `/system/menus` | 页面可见（菜单，只读权限点目录） | `system`（同上） | 仅 SUPER_ADMIN |
 
 > 🔐 **系统管理面四条红线的前端职责**：后端已强制（`RoleAdminService` / `UserAdminService`），前端**只需如实呈现**，不要「猜」：
 > ① 内置角色（`SUPER_ADMIN` / `AUDITOR` / `DEPT_ADMIN` / `USER`）禁用删除入口与数据范围选择器（`1020`）；
