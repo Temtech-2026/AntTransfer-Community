@@ -203,10 +203,14 @@ anttransfer:
   # 映射 TransferProperties（anttransfer.transfer.*）。
   # 下列取值与代码默认值一致，显式列出便于运维查阅与按需覆盖（不改代码即可调策略）。
   transfer:
-    # 默认单分片 8 MiB：前端按预检返回的 chunkSize 切片，改这里即改前端切片粒度
-    chunk-size: 8MB
-    # 单分片上限 64 MiB，须与 spring.servlet.multipart.max-file-size 对齐
-    max-chunk-size: 64MB
+    # ⚠ 本块绑定到 TransferProperties 的 long 字段，**必须写字节数**，不能写 8MB / 64MB。
+    #   Spring 只对 DataSize / Duration 类型做单位解析；写成 8MB 会在启动绑定阶段抛
+    #   NumberFormatException（Failed to bind properties under 'anttransfer.transfer.chunk-size'），
+    #   整个应用起不来。Duration 类配置（如 auth.access-token-ttl: 30m）才可以用单位后缀。
+    # 默认单分片 8 MiB = 8 × 1024 × 1024：前端按预检返回的 chunkSize 切片，改这里即改前端切片粒度
+    chunk-size: 8388608
+    # 单分片上限 64 MiB = 64 × 1024 × 1024，须与 spring.servlet.multipart.max-file-size（64MB）对齐
+    max-chunk-size: 67108864
     # 单任务分片数上限（受 uploaded_indexes varchar(8192) 约束）；超限自动放大分片而非拒绝
     max-chunk-count: 1024
     # 分片暂存根目录（合片前的 *.part 与 merged.bin）：须落在持久卷上，容器内请指到挂载点
