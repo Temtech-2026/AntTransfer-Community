@@ -512,14 +512,18 @@ export default function FileWorkbenchPage() {
             return actions;
           }
           actions.push(
-            <Button
-              key="upload"
-              type="primary"
-              icon={<UploadOutlined />}
-              onClick={() => setUploadOpen(true)}
-            >
-              上传文件
-            </Button>,
+            // 权限点取自 docs/development/frontend-permission-map.md（单一事实源）：
+            // 「上传 / 秒传 → file:upload」。缺这道门禁时无上传权的用户仍会看到入口，
+            // 点进去到预检才吃 403 —— 属于「按钮可见但必然失败」，必须在渲染层就藏掉。
+            <Access key="upload" perm="file:upload">
+              <Button
+                type="primary"
+                icon={<UploadOutlined />}
+                onClick={() => setUploadOpen(true)}
+              >
+                上传文件
+              </Button>
+            </Access>,
           );
           actions.push(
             <Access key="recycle" perm="file:preview">
