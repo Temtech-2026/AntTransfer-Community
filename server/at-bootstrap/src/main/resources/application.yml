@@ -81,6 +81,19 @@ spring:
       # 时间类型输出为字符串而非时间戳（JavaTimeModule 据此输出 ISO-8601）
       write-dates-as-timestamps: false
 
+  # ---------------- 分片上传的 multipart 上限 ----------------
+  # 分片经 multipart/form-data 提交，Servlet 容器会在进入 Controller 之前先按此上限拦截：
+  #   · max-file-size 必须 ≥ anttransfer.transfer.max-chunk-size（64 MiB），否则合法分片被裸 400 拒绝，
+  #     业务日志里连栈都没有，排查成本极高；
+  #   · 上限刻意贴近「单分片大小」而非「单文件大小」——分片端点每次只应收到一个分片，
+  #     放宽到 GB 级只会让超长请求先落盘、再被业务按 size 校验拒绝，白耗暂存盘与带宽；
+  #   · file-size-threshold=0 表示一律落临时文件，不在内存里缓冲 64 MiB。
+  servlet:
+    multipart:
+      max-file-size: 64MB
+      max-request-size: 80MB
+      file-size-threshold: 0
+
 # ---------------- MyBatis-Plus ----------------
 mybatis-plus:
   # 各 at-* 模块的 Mapper XML 统一放本模块资源 mapper/ 目录下（classpath* 支持跨模块）
@@ -185,6 +198,23 @@ anttransfer:
         - 绝密
         - 身份证
         - 薪酬
+
+  # ---------------- 分片上传（at-transfer） ----------------
+  # 映射 TransferProperties（anttransfer.transfer.*）。
+  # 下列取值与代码默认值一致，显式列出便于运维查阅与按需覆盖（不改代码即可调策略）。
+  transfer:
+    # 默认单分片 8 MiB：前端按预检返回的 chunkSize 切片，改这里即改前端切片粒度
+    chunk-size: 8MB
+    # 单分片上限 64 MiB，须与 spring.servlet.multipart.max-file-size 对齐
+    max-chunk-size: 64MB
+    # 单任务分片数上限（受 uploaded_indexes varchar(8192) 约束）；超限自动放大分片而非拒绝
+    max-chunk-count: 1024
+    # 分片暂存根目录（合片前的 *.part 与 merged.bin）：须落在持久卷上，容器内请指到挂载点
+    staging-root: ${TRANSFER_STAGING_ROOT:./data/transfer-staging}
+    # 单用户同时进行中的任务数上限，超出以 4103 拒绝，防止暂存盘被刷爆
+    max-active-tasks: 3
+    # 进行中任务的保留时长（小时）：超时任务在后续预检时顺带标记失败并清理暂存
+    task-ttl-hours: 24
 
   # ---------------- 通知与 IM（at-collaboration） ----------------
   # 映射 NotifyProperties（anttransfer.collaboration.notify.*）与 WsProperties（anttransfer.collaboration.ws.*）。
