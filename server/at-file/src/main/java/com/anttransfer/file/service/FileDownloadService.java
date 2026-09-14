@@ -475,15 +475,15 @@ public class FileDownloadService {
     private void auditSuccess(FileNode node, long sent) {
         Map<String, Object> extra = new LinkedHashMap<>();
         extra.put("name", node.getName());
-        extra.put("sizeBytes", node.getSizeBytes());
-        extra.put("sentBytes", sent);
+        extra.put(OperationLog.DETAIL_SIZE_BYTES, node.getSizeBytes());
+        extra.put(OperationLog.DETAIL_SENT_BYTES, sent);
         auditLogger.success(OperationLog.ACTION_FILE_DOWNLOAD, OperationLog.TARGET_FILE, node.getId(), extra);
     }
 
     private void auditDownload(FileNode node, long sent, String reason) {
         Map<String, Object> extra = new LinkedHashMap<>();
         extra.put("name", node.getName());
-        extra.put("sentBytes", sent);
+        extra.put(OperationLog.DETAIL_SENT_BYTES, sent);
         extra.put("reason", reason);
         auditLogger.log(OperationLog.ACTION_FILE_DOWNLOAD, OperationLog.TARGET_FILE, node.getId(), false, extra);
     }

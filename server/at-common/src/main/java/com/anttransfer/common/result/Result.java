@@ -98,6 +98,26 @@ public class Result<T> implements Serializable {
         return new Result<>(errorCode.getCode(), message, null);
     }
 
+    /**
+     * 失败（错误码 + 业务数据）——专供 <b>B 类流程分支码</b>使用。
+     *
+     * <p>4001 秒传未命中、4002 分片缺失这类码的 HTTP 仍是 200，{@code code} 表达的是
+     * 「前端该走哪条分支」而不是失败，因此必须能随响应把上下文数据带回：</p>
+     * <ul>
+     *     <li>4001 → {@code data} 携带上传票据（uploadId / chunkSize / chunkCount），前端据此切片续传；</li>
+     *     <li>4002 → {@code data} 携带缺失分片清单，前端据此补传。</li>
+     * </ul>
+     *
+     * <p>与 {@code fail(ErrorCode)} 系列的约束一致：本方法同样只接受已登记到
+     * {@link ErrorCode} 的码（{@code fail(int, ...)} 依旧不开放），不构成对契约的绕过。</p>
+     *
+     * @param errorCode 已登记的错误码（约定为策略 B 的流程分支码）
+     * @param data      分支所需数据载荷
+     */
+    public static <T> Result<T> failWithData(ErrorCode errorCode, T data) {
+        return new Result<>(errorCode.getCode(), errorCode.getMessage(), data);
+    }
+
     // 刻意不提供「自定义 int code」的失败工厂（如 fail(int, String)）：
     // 未登记到 ErrorCode 的错误码会让前端 resolveStrategy 退化为兜底策略（并触发开发期告警），
     // 属契约违规。如需新错误码，请先在 ErrorCode 与 docs/api/error-codes.md 登记。

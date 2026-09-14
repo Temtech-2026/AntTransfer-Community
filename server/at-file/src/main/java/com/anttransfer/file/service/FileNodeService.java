@@ -478,7 +478,9 @@ public class FileNodeService {
         fileNodeMapper.insert(node);
 
         auditLogger.success(OperationLog.ACTION_FILE_UPLOAD, OperationLog.TARGET_FILE, node.getId(),
-                Map.of("name", node.getName(), "instant", true, "fileId", file.getId()));
+                Map.of("name", node.getName(), "instant", true, "fileId", file.getId(),
+                        OperationLog.DETAIL_SIZE_BYTES, Objects.requireNonNullElse(node.getSizeBytes(), 0L),
+                        OperationLog.DETAIL_TRANSFERRED_BYTES, 0L));
         return toUploadResult(node, file, true);
     }
 
@@ -542,7 +544,10 @@ public class FileNodeService {
         fileNodeMapper.insert(node);
 
         auditLogger.success(OperationLog.ACTION_FILE_UPLOAD, OperationLog.TARGET_FILE, node.getId(),
-                Map.of("name", name, "instant", reused, "fileId", file.getId()));
+                Map.of("name", name, "instant", reused, "fileId", file.getId(),
+                        OperationLog.DETAIL_SIZE_BYTES, Objects.requireNonNullElse(node.getSizeBytes(), 0L),
+                        OperationLog.DETAIL_TRANSFERRED_BYTES,
+                        reused ? 0L : Objects.requireNonNullElse(node.getSizeBytes(), 0L)));
         return toUploadResult(node, file, reused);
     }
 

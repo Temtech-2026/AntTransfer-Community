@@ -188,6 +188,32 @@ public class OperationLog extends BaseEntity {
     /** 结果：失败 */
     public static final int RESULT_FAIL = 1;
 
+    /* ==================== detail JSON 键（跨模块读取契约） ==================== */
+
+    /**
+     * {@code detail} 键：条目总字节数（{@link #ACTION_FILE_UPLOAD}）。
+     *
+     * <p>用于审计可读性（这条上传落地的文件多大）；<b>不是</b>传输量口径——秒传命中同样记一条
+     * {@code FILE_UPLOAD}，但它没有字节过网，传输量取 {@link #DETAIL_TRANSFERRED_BYTES}。</p>
+     */
+    public static final String DETAIL_SIZE_BYTES = "sizeBytes";
+
+    /**
+     * {@code detail} 键：<b>本次请求实际过网</b>的字节数——上传侧（{@code FILE_UPLOAD}）。
+     *
+     * <p>秒传命中为 {@code 0}（内容已在库中，本次没有字节上行）。与下载侧的
+     * {@link #DETAIL_SENT_BYTES} 同义，二者共同构成「传输量」口径。</p>
+     */
+    public static final String DETAIL_TRANSFERRED_BYTES = "transferredBytes";
+
+    /**
+     * {@code detail} 键：<b>本次请求实际下发</b>的字节数——下载侧（{@code FILE_DOWNLOAD}）。
+     *
+     * <p>Range 续传时一次只下发一段，故与 {@link #DETAIL_SIZE_BYTES}（文件总大小）不同：
+     * 传输量取「实际下发」，否则分段下载会被重复计成整份文件。</p>
+     */
+    public static final String DETAIL_SENT_BYTES = "sentBytes";
+
     /** 操作人用户 ID（访客 / 系统任务为 null） */
     @TableField("user_id")
     private Long userId;

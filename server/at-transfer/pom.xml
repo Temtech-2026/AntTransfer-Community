@@ -19,7 +19,9 @@
   at-transfer — 传输任务核心业务模块
 
   职责：传输任务的全生命周期管理（创建 / 排队 / 断点续传 / 进度上报 /
-  取消与重试），代表 AntTransfer 的核心领域模型 TransferRecord。
+  取消与重试），代表 AntTransfer 的核心领域模型 TransferRecord；
+  传输统计——工作台 P0 数据总览的「传输量 / 成功率」卡片（按 sys_operation_log
+  聚合「我的传输」，审计表与 Mapper 均在 at-common 共享内核，无跨模块耦合）。
 
   依赖规则：仅依赖 at-common，禁止依赖其他 at-* 业务模块。
   文件内容物理读写由 at-file 模块通过“接口契约”协作，避免编译期耦合。
@@ -42,16 +44,49 @@
     <description>AntTransfer 传输任务核心：任务状态机 / 断点续传 / 进度</description>
 
     <dependencies>
-        <!-- 共享内核：Result / ErrorCode / BaseEntity / BusinessException -->
+        <!-- 共享内核：Result / ErrorCode / BaseEntity / BusinessException /
+             OperationLog（审计动作与 detail 字节口径键） -->
         <dependency>
             <groupId>com.anttransfer</groupId>
             <artifactId>at-common</artifactId>
+        </dependency>
+        <!-- Spring 基础（IoC）：供 Service 使用 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <!-- Spring Web MVC：传输统计 REST 接口（/v1/transfers/statistics） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <!-- Jakarta Bean Validation：预检 / 合并入参校验（@NotBlank / @Size / @Min / @Valid） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <!-- Spring Security Core：SecurityContext 读取当前登录人 -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-core</artifactId>
+        </dependency>
+        <!-- MyBatis-Plus：@Mapper 自动装配 + 聚合查询（运行时由 at-bootstrap 聚合） -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
         </dependency>
         <!-- Lombok：编译期注解（optional 不传递） -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <optional>true</optional>
+        </dependency>
+
+        <!-- ============ 测试 ============ -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 </project>
