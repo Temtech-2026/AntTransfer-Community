@@ -33,7 +33,8 @@ import java.nio.charset.StandardCharsets;
  *
  * <p>错误码取自 {@link JwtAuthenticationFilter} 写入的请求属性——区分
  * 「未登录 1001」「过期 1002（前端静默刷新）」「令牌无效 1006（跳登录）」；
- * 无该属性（根本没带令牌）默认 1001。</p>
+ * 无该属性（根本没带令牌）默认 1001。属性属不可信输入，未登记码与 0(SUCCESS)
+ * 一律降级为 1001：认证失败的出口只允许输出失败态。</p>
  *
  * @author AntTransfer CE
  */
@@ -52,8 +53,13 @@ public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
         Object attr = request.getAttribute(JwtAuthenticationFilter.ATTR_AUTH_ERROR_CODE);
         ErrorCode errorCode = ErrorCode.NOT_LOGIN;
         if (attr instanceof Integer code) {
-            // 该属性由过滤器写入、属不可信输入：用 find 显式降级，未知码回退「未登录」不阻断响应
-            errorCode = ErrorCode.find(code).orElse(ErrorCode.NOT_LOGIN);
+            // 该属性由过滤器写入、属不可信输入：用 find 显式降级，未知码回退「未登录」不阻断响应。
+            // 还须排除 0(SUCCESS)——它是已登记码、find 会正常命中，一旦透出，这条「认证失败」
+            // 的出口就变成 HTTP 200 + code=0「成功」，按 code 判定的客户端会把「未放行」读成「已放行」。
+            // 即：认证失败的出口只允许落在失败态上。
+            errorCode = ErrorCode.find(code)
+                    .filter(candidate -> candidate != ErrorCode.SUCCESS)
+                    .orElse(ErrorCode.NOT_LOGIN);
         }
 
         response.setStatus(errorCode.getHttpStatus());
