@@ -78,6 +78,10 @@ class ShareQuotaConcurrencyIntegrationTest {
     private static final int QUOTA = 3;
     /** 并发访客数（远大于额度，制造超卖压力） */
     private static final int VISITORS = 12;
+    /** 100 线程风暴场景：并发访客数 */
+    private static final int STORM_VISITORS = 100;
+    /** 100 线程风暴场景：下载额度（远小于并发数） */
+    private static final int STORM_QUOTA = 20;
     /** 链接过期错误码 */
     private static final int CODE_EXPIRED_OR_LIMIT = 4004;
     /** 提取码锁定错误码 */
@@ -175,6 +179,70 @@ class ShareQuotaConcurrencyIntegrationTest {
         // ⑤ Redis 镜像与 DB 最终一致（归零）
         assertEquals("0", redis.opsForValue().get(RedisKeyConstants.shareCountKey(token)),
                 "镜像应归零，与 DB 保持一致");
+    }
+
+    /* ==================== 1b. 100 线程风暴：额度依然不超发 ==================== */
+
+    /**
+     * 12 线程只覆盖「有压力」，20 额度 / 100 线程才覆盖「极端争抢 + 长排队」：
+     * 线程池与 HikariCP 都会让绝大多数请求在锁外排队，容易暴露
+     * 「先读后写」的乐观实现（读到同一个旧计数 → 集体放行）。
+     * 这里把上界钉死为「成功数 == 额度」，多一个都不允许。
+     */
+    @Test
+    void concurrentRedeem_100Threads_shouldNeverOversell() throws Exception {
+        String token = newToken();
+        long shareId = insertLink(token, STORM_QUOTA);
+        redis.opsForValue().set(RedisKeyConstants.shareCountKey(token), String.valueOf(STORM_QUOTA),
+                Duration.ofHours(1));
+
+        // ① 100 个访客各自换票（不消费额度）；IP 打散，避免落到同一限流/风控桶
+        List<String> tickets = new ArrayList<>();
+        for (int i = 0; i < STORM_VISITORS; i++) {
+            tickets.add(verify(token, "10.9." + (i / 250) + "." + (i % 250)).getTicket());
+        }
+        assertEquals(STORM_VISITORS, tickets.size(), "100 个访客都应换到票据");
+        assertEquals(0, currentCount(shareId), "换票阶段不得消费额度");
+
+        // ② 100 个票据同时核销，争抢同一行（起跑线对齐）
+        AtomicInteger success = new AtomicInteger();
+        AtomicInteger failed = new AtomicInteger();
+        Set<Integer> failureCodes = ConcurrentHashMap.newKeySet();
+        ExecutorService pool = Executors.newFixedThreadPool(STORM_VISITORS);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<Void>> futures = new ArrayList<>();
+        for (String ticket : tickets) {
+            futures.add(pool.submit((Callable<Void>) () -> {
+                start.await();
+                RedeemTicketRequest req = new RedeemTicketRequest();
+                req.setTicket(ticket);
+                try {
+                    shareAccessService.redeem(req, "10.9.0.1", "it-agent");
+                    success.incrementAndGet();
+                } catch (BusinessException e) {
+                    failed.incrementAndGet();
+                    failureCodes.add(e.getCode());
+                }
+                return null;
+            }));
+        }
+        start.countDown();
+        for (Future<Void> f : futures) {
+            f.get(60, TimeUnit.SECONDS);
+        }
+        pool.shutdown();
+        assertTrue(pool.awaitTermination(20, TimeUnit.SECONDS));
+
+        // ③ 恰好 STORM_QUOTA 成功，其余全部 4004（不多不少，逐个票据都有明确结局）
+        assertEquals(STORM_QUOTA, success.get(),
+                "100 线程争抢下成功次数必须恰好等于额度（不超发、不少发）");
+        assertEquals(STORM_VISITORS - STORM_QUOTA, failed.get(), "其余票据都应恰失败一次");
+        assertEquals(Set.of(CODE_EXPIRED_OR_LIMIT), failureCodes, "失败的都应是 4004");
+
+        // ④ DB 权威计数不超发，Redis 镜像最终归零
+        assertEquals(STORM_QUOTA, currentCount(shareId), "downloaded_count 不得被写超");
+        assertEquals("0", redis.opsForValue().get(RedisKeyConstants.shareCountKey(token)),
+                "镜像应归零，与 DB 最终一致");
     }
 
     /* ==================== 2. 提取码连错 5 次锁定 30 分钟 ==================== */
