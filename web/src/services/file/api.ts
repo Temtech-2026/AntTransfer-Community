@@ -51,6 +51,28 @@ export async function fetchFolderTree(): Promise<FolderNode[]> {
 
 /* ============================ 预览 / 下载 ============================ */
 
+/*
+ * 取件链路的协议口径（权威实现在服务端 `FileDownloadService`，前端只依赖、不重定义）。
+ *
+ * <p>1. 取件地址免登录，鉴权全在 `?ticket=`；**不要**给它再加 Authorization 头——
+ * 服务端本就不读，加了只会让人误判「鉴权发生在这里」。</p>
+ *
+ * <p>2. 成功响应恒带 `Accept-Ranges: bytes`（`416` 与错误响应不带）。**续传 = 用同一张票对
+ * 同一个 URL 重发 `Range`**：票据在 TTL 内可重复使用（见 `DownloadTicket`），中断重试不会
+ * 让票据失效，因此重试路径上不需要重新换票。</p>
+ *
+ * <p>3. 单段 `Range` 生效时返回 `206` + `Content-Range: bytes start-end/total`；
+ * 但**不能假定「带了 Range 就一定 206」**——多段（含逗号）与语法不合法的 `Range`
+ * 会被忽略并整份返回 `200`（HTTP 允许服务端忽略不支持的 Range）。判定续传是否生效
+ * 要看状态码与 `Content-Range`，不能只看请求发没发。</p>
+ *
+ * <p>4. 只有**起点**越界才返回 `416`（`end` 超出总长会被收敛到末尾），此时
+ * `Content-Range` 只带总长（`bytes *<总长>`）：应按该总长重算区间再续传，而不是从头再来。</p>
+ *
+ * <p>5. 传输中断不会得到错误码（响应头早已提交，服务端无力回改），只在审计里记
+ * 「已发送字节数」。故**用户侧感知不到这次失败**，续传只能由客户端主动发起。</p>
+ */
+
 /**
  * 预览元信息。
  *
@@ -61,7 +83,7 @@ export function fetchPreview(nodeId: number): Promise<PreviewInfo> {
   return get<PreviewInfo>(FILE_ENDPOINTS.preview(nodeId));
 }
 
-/** 换一次性下载票据（需 `file:download`）。 */
+/** 换下载票据（需 `file:download`）。票据绑定 `nodeId`，在 TTL 内可重复取件。 */
 export function issueDownloadTicket(nodeId: number): Promise<DownloadTicket> {
   return post<DownloadTicket>(FILE_ENDPOINTS.issueTicket(nodeId));
 }
@@ -102,7 +124,15 @@ export interface DownloadOptions {
 /**
  * 下载文件：换票 → 凭票取件 → 落盘。
  *
- * <p>票据一次性且绑定单文件，所以每次下载都要重新换票（不要缓存 URL）。</p>
+ * <p><b>票据不是一次即焚</b>（服务端只校验不销毁，过期由 TTL 兜底），故取件失败后用
+ * <b>同一张票</b>重发即可——重试与 `Range` 断点续传都不会让票据失效，重试路径上无需再换票。
+ * 协议细节见本节头部的「取件链路的协议口径」。</p>
+ *
+ * <p>这里仍每次调用都换票：票据 TTL 仅 5 分钟（`expiresInSeconds`），跨会话缓存 URL 必然
+ * 在过期后拿到 `4018`；换票成本远低于为省一次请求而引入的过期判断。</p>
+ *
+ * <p>本函数走 {@link downloadBinary} 整份落盘，不做分块续传；若要支持大文件续传，对同一个
+ * 取件 URL 带 `Range` 重发即可（服务端返回 `206` + `Content-Range`）。</p>
  */
 export async function downloadNode(node: FileNode, options: DownloadOptions = {}): Promise<void> {
   const ticket = await issueDownloadTicket(node.id);

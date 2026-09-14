@@ -12,9 +12,9 @@ export const FILE_ENDPOINTS = {
   detail: (nodeId: number | string) => `/api/v1/files/${nodeId}`,
   /** 预览元信息（服务端下发策略，需 file:preview） */
   preview: (nodeId: number | string) => `/api/v1/files/${nodeId}/preview`,
-  /** 换下载票据（需 file:download；票据一次性、绑定单文件） */
+  /** 换下载票据（需 file:download；票据绑定 userId + nodeId，在 TTL 内可重复取件，非一次即焚） */
   issueTicket: (nodeId: number | string) => `/api/v1/files/${nodeId}/ticket`,
-  /** 取件地址（免登录，凭票据；走 downloadUrl 即可） */
+  /** 取件地址（免登录，凭票据；走 downloadUrl 即可。支持 Range 续传：单段 206 / 起点越界 416） */
   content: (nodeId: number | string) => `/api/v1/files/${nodeId}/content`,
   /** 缩略图（免登录，凭票据） */
   thumbnail: (nodeId: number | string) => `/api/v1/files/${nodeId}/thumbnail`,
