@@ -7,40 +7,22 @@
  * 2. 用 `useSyncExternalStore` 订阅快照，避免把高频进度写进 state 引发渲染风暴；
  * 3. 把动作函数包成稳定引用，便于配合 `useCallback` / 依赖数组使用。
  *
+ * 注册表落在 {@link uploadQueueHub} 而非本文件，原因是顶栏的全局进度指示器需要
+ * 订阅「所有队列」的聚合快照——登记处上提后才能一处增删、处处可见。
+ *
  * 入参对象每次渲染都会被同步到控制器持有的同一个 options 引用上，
  * 因此并发数、回调等配置变更无需重建控制器。
  */
 
 import { useMemo, useRef, useSyncExternalStore } from 'react';
 
-import {
-  ChunkUploadController,
-  type ChunkUploadOptions,
-} from '@/services/upload/ChunkUploadController';
+import { uploadQueueHub } from '@/services/upload/queueHub';
+import type { ChunkUploadOptions } from '@/services/upload/ChunkUploadController';
 import type { ResumableRecord, UploadTaskView } from '@/services/upload/types';
-
-/** 同一 `id` 全局共享一个控制器 */
-const registry = new Map<string, ChunkUploadController>();
-
-function getController(
-  id: string,
-  options: ChunkUploadOptions,
-): ChunkUploadController {
-  let controller = registry.get(id);
-  if (!controller) {
-    controller = new ChunkUploadController(options);
-    registry.set(id, controller);
-  }
-  return controller;
-}
 
 /** 单测/登出时销毁指定控制器 */
 export function disposeUploadController(id = 'default'): void {
-  const controller = registry.get(id);
-  if (controller) {
-    controller.destroy();
-    registry.delete(id);
-  }
+  uploadQueueHub.release(id);
 }
 
 export interface UseChunkUploadOptions extends ChunkUploadOptions {
@@ -76,7 +58,7 @@ export function useChunkUpload(
   Object.assign(liveOptions, rest);
 
   const store = useMemo(
-    () => getController(id, liveOptions),
+    () => uploadQueueHub.ensure(id, liveOptions),
     [id, liveOptions],
   );
 

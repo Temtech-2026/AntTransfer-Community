@@ -2,9 +2,24 @@ import { CheckOutlined, GlobalOutlined } from '@ant-design/icons';
 import { getAllLocales, getLocale, setLocale } from '@umijs/max';
 import type { MenuProps } from 'antd';
 import { Button } from 'antd';
-import { useMemo } from 'react';
+import dayjs from 'dayjs';
+import 'dayjs/locale/en';
+import 'dayjs/locale/zh-cn';
+import { useEffect, useMemo } from 'react';
 import HeaderDropdown from '../HeaderDropdown';
 import useHeaderActionStyles from './style';
+
+/**
+ * 界面语言 → dayjs 语言名。
+ *
+ * <p>Umi 的 `locale.antd: true` 只负责 antd 组件文案；dayjs 的全局语言要自己同步，
+ * 否则相对时间（`fromNow`）会停留在上一个语种。这里**静态** import 语言包而不是
+ * 动态 `import()` 拼接路径：后者会让打包器生成 context 模块，得不偿失（语言包各约 1KB）。
+ */
+const DAYJS_LOCALE: Record<string, string> = {
+  'zh-CN': 'zh-cn',
+  'en-US': 'en',
+};
 
 const localeLabelMap: Record<string, { emoji: string; label: string }> = {
   'zh-CN': { emoji: '🇨🇳', label: '简体中文' },
@@ -28,6 +43,14 @@ export const LangDropdown: React.FC = () => {
   const allLocales = useMemo(() => getAllLocales(), []);
   const currentLocale = getLocale();
   const supportLocales = allLocales.filter((l) => l in localeLabelMap);
+
+  // dayjs 全局语言跟随界面语言（antd 语言由 Umi 的 `locale.antd` 负责）
+  useEffect(() => {
+    const name = DAYJS_LOCALE[currentLocale];
+    if (name) {
+      dayjs.locale(name);
+    }
+  }, [currentLocale]);
 
   if (supportLocales.length <= 1) {
     return null;

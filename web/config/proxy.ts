@@ -17,6 +17,9 @@ export default {
       target: 'http://localhost:8080',
       // 允许 http<->https 与跨域改写 Host，cookie 等依赖 origin 的能力正常
       changeOrigin: true,
+      // 实时通知走 /api/ws/notify（原生 WebSocket 握手，token 在查询串里）：
+      // 不开 ws 转发的话 upgrade 请求会被当成普通 HTTP，握手恒 400
+      ws: true,
     },
   },
   /**

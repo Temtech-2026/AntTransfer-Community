@@ -17,6 +17,7 @@ import type { RequestConfig } from '@umijs/max';
 import { history, request } from '@umijs/max';
 import { message, notification } from 'antd';
 
+import { withAcceptLanguageHeader } from './utils/locale';
 import {
   BAD_CREDENTIALS_CODE,
   DEFAULT_ERROR_MESSAGE,
@@ -302,6 +303,8 @@ export const errorConfig: RequestConfig = {
 
   requestInterceptors: [
     (config: any) => {
+      // 语言随请求走：后端据此返回对应语种的错误消息 / 通知标题 / 字典 label
+      withAcceptLanguageHeader(config);
       const accessToken = tokenStore.getAccessToken();
       if (accessToken) {
         return withAuthHeader(config, accessToken);

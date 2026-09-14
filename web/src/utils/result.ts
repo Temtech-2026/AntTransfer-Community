@@ -42,6 +42,8 @@ export interface TokenPair {
 export const SUCCESS_CODE = 0;
 /** access token 过期：唯一允许「静默刷新后重放一次」的错误码 */
 export const TOKEN_EXPIRED_CODE = 1002;
+/** 账号锁定：连续登录失败超限，登录页按后端文案挂倒计时（策略 D，不跳登录） */
+export const ACCOUNT_LOCKED_CODE = 1004;
 /** 账号或密码错误：由登录接口返回，不得触发跳登录 */
 export const BAD_CREDENTIALS_CODE = 1007;
 /** 网络异常等拿不到响应体时的兜底文案 */

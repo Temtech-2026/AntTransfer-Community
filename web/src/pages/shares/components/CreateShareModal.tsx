@@ -1,0 +1,128 @@
+/**
+ * 创建外发分享弹窗（第 2 步页面 7）。
+ *
+ * <p>三个业务字段：有效期 / 提取码 / 下载次数上限；文件通过搜索选择（只列文件域分页里的文件）。</p>
+ *
+ * <p><b>提取码只进不出</b>：服务端立即 BCrypt 散列入库，任何查询接口都不回显。因此这里的默认值
+ * 在打开时随机生成，且创建成功后由父页面立刻展示一次——错过这个窗口就再也拿不回来，
+ * 只能撤销后重建。</p>
+ *
+ * <p>生命周期由父组件用「条件挂载」控制（关闭即卸载），这样每次打开都是全新表单，
+ * 不需要依赖 Modal 的 destroyOnClose（该属性在 antd 5.25 起已更名）。</p>
+ */
+
+import { ModalForm, ProFormDigit, ProFormSelect, ProFormText } from '@ant-design/pro-components';
+import React, { useMemo } from 'react';
+
+import {
+  createShare,
+  pageFiles,
+  SHARE_EXPIRE_PRESETS,
+  SHARE_LIMITS,
+  type ShareLink,
+  isValidExtractCode,
+  randomExtractCode,
+} from '@/services/file';
+import { toBackendDateTime } from '@/utils/datetime';
+
+interface CreateShareModalProps {
+  /** 关闭弹窗（父组件据此卸载本组件） */
+  onClose: () => void;
+  /** 创建成功：链接元信息 + 本次明文提取码（只此一次可见） */
+  onCreated: (link: ShareLink, extractCode: string) => void;
+}
+
+/** 表单字段（与 ProForm 的 name 对齐）。 */
+interface CreateShareFormValues {
+  fileId: number;
+  expireDays: number;
+  downloadLimit: number;
+  extractCode: string;
+}
+
+const CreateShareModal: React.FC<CreateShareModalProps> = ({ onClose, onCreated }) => {
+  // 打开即随机一个提取码：可直接使用，也可改成便于口头转达的自定义码
+  const defaultExtractCode = useMemo(() => randomExtractCode(), []);
+
+  return (
+    <ModalForm<CreateShareFormValues>
+      title="创建外发分享"
+      open
+      width={520}
+      modalProps={{ onCancel: onClose, maskClosable: false }}
+      initialValues={{
+        expireDays: SHARE_LIMITS.defaultExpireDays,
+        downloadLimit: SHARE_LIMITS.defaultDownloadLimit,
+        extractCode: defaultExtractCode,
+      }}
+      onFinish={async (values) => {
+        const extractCode = values.extractCode.trim();
+        const link = await createShare({
+          fileId: values.fileId,
+          extractCode,
+          downloadLimit: values.downloadLimit,
+          // 后端要 LocalDateTime（不带时区）：天数 → 绝对到期时刻由前端算好再交给 toBackendDateTime
+          expireAt: toBackendDateTime(new Date(Date.now() + values.expireDays * 86_400_000)),
+        });
+        onCreated(link, extractCode);
+        return true;
+      }}
+    >
+      <ProFormSelect
+        name="fileId"
+        label="外发文件"
+        placeholder="输入文件名搜索"
+        showSearch
+        rules={[{ required: true, message: '请选择要外发的文件' }]}
+        // 文件域分页参数是 current/pageSize（NodeQuery），与分享域的 page/size 不同口径
+        params={{ current: 1, pageSize: 20 }}
+        request={async (params) => {
+          const keyword = (params as { keyword?: string } | undefined)?.keyword?.trim();
+          const page = await pageFiles({ current: 1, pageSize: 20, keyword });
+          return page.records.map((node) => ({ label: node.name, value: node.id }));
+        }}
+        fieldProps={{ filterOption: false, notFoundContent: '没有匹配的文件' }}
+      />
+
+      <ProFormSelect
+        name="expireDays"
+        label="有效期"
+        options={SHARE_EXPIRE_PRESETS}
+        rules={[{ required: true, message: '请选择有效期' }]}
+        extra={`最长 ${SHARE_LIMITS.maxExpireDays} 天，到期后链接自动失效`}
+      />
+
+      <ProFormDigit
+        name="downloadLimit"
+        label="下载次数上限"
+        min={1}
+        max={SHARE_LIMITS.maxDownloadLimit}
+        rules={[{ required: true, message: '请输入下载次数上限' }]}
+        fieldProps={{ precision: 0 }}
+        extra={`1 ~ ${SHARE_LIMITS.maxDownloadLimit} 次，用完后链接自动失效`}
+      />
+
+      <ProFormText
+        name="extractCode"
+        label="提取码"
+        rules={[
+          { required: true, message: '请输入提取码' },
+          {
+            validator: async (_rule, value?: string) => {
+              if (isValidExtractCode(value)) {
+                return;
+              }
+              throw new Error(
+                `提取码需为 ${SHARE_LIMITS.extractCodeMin}~${SHARE_LIMITS.extractCodeMax} 位字母或数字`,
+              );
+            },
+          },
+        ]}
+        extra="服务端只保存散列，创建成功后请立即转达给对方，之后无法再次查看"
+        fieldProps={{ maxLength: SHARE_LIMITS.extractCodeMax, autoComplete: 'off' }}
+      />
+    </ModalForm>
+  );
+};
+
+export default CreateShareModal;

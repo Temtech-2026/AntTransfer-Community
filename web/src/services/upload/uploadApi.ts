@@ -13,6 +13,7 @@
 
 import { request } from '@umijs/max';
 
+import { currentAcceptLanguage } from '@/utils/locale';
 import { isResult, type Result, SUCCESS_CODE } from '@/utils/result';
 import { tokenStore } from '@/utils/token';
 import {
@@ -295,6 +296,8 @@ function xhrSend(init: {
     const xhr = new XMLHttpRequest();
     xhr.open(init.method, init.url, true);
     xhr.withCredentials = true;
+    // 上传走 XHR 绕开了 axios 拦截器，语言头需在此补齐：后端要用它回对应语种的分片错误
+    xhr.setRequestHeader('Accept-Language', currentAcceptLanguage());
     if (init.timeoutMs) {
       xhr.timeout = init.timeoutMs;
     }

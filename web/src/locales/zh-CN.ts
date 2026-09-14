@@ -1,6 +1,8 @@
+import common from './zh-CN/common';
 import component from './zh-CN/component';
 import globalHeader from './zh-CN/globalHeader';
 import menu from './zh-CN/menu';
+import message from './zh-CN/message';
 import network from './zh-CN/network';
 import pages from './zh-CN/pages';
 import settingDrawer from './zh-CN/settingDrawer';
@@ -19,4 +21,6 @@ export default {
   ...settings,
   ...network,
   ...component,
+  ...common,
+  ...message,
 };

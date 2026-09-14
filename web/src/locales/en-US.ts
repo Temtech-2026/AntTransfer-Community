@@ -1,6 +1,8 @@
+import common from './en-US/common';
 import component from './en-US/component';
 import globalHeader from './en-US/globalHeader';
 import menu from './en-US/menu';
+import message from './en-US/message';
 import network from './en-US/network';
 import pages from './en-US/pages';
 import settingDrawer from './en-US/settingDrawer';
@@ -19,4 +21,6 @@ export default {
   ...network,
   ...component,
   ...pages,
+  ...common,
+  ...message,
 };
