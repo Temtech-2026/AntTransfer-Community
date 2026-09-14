@@ -75,5 +75,14 @@
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-core</artifactId>
         </dependency>
+
+        <!-- ============ 测试 ============ -->
+        <!-- 全局异常与错误码映射单测：JUnit 5 / AssertJ / MockMvc（版本由 Spring Boot BOM 锁定）。
+             本模块此前无测试代码，故测试依赖在此显式声明，不依赖其它模块传递。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>
