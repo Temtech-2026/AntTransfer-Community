@@ -1,0 +1,39 @@
+# Codecov 配置（仓库根目录）
+#
+# ⚠️ Codecov 只读取【仓库根目录】的 codecov.yml / .codecov.yml；
+#    web/codecov.yml 位于子目录，不会被 Codecov 读取（仅作历史留存，勿在此处改阈值）。
+#
+# 阈值策略（与 docs/development/dod.md 对齐）：
+#   · DoD 目标：核心后端模块【行覆盖率 ≥ 85%】、核心安全逻辑【≥ 90%】；
+#     该目标由 Maven 侧 jacoco:check 判定（见根 pom.xml），当前以 report-only 运行。
+#   · 本文件负责「防回归」：项目整体覆盖率不得低于下面 target，否则 Codecov 状态检查变红。
+coverage:
+  status:
+    project:
+      default:
+        # ⚠️ 这是【防回归下限（coverage ratchet）】，不是 DoD 的 85% 目标。
+        #    当前实测整体 36.5%（2026-09-14），故先以 36% 锁住存量；
+        #    覆盖率抬升后请同步上调，直至达到 DoD 目标 85%。
+        target: 36%
+        threshold: 1%
+        informational: false
+    patch:
+      # 新增/变更行的覆盖率：达标前仅公示，不阻断功能 PR（沿用 web/codecov.yml 的既有口径）
+      default:
+        target: 80%
+        threshold: 0%
+        informational: true
+
+# 不计入统计的路径（前端覆盖率独立工具链，此处只统计后端 JaCoCo 产物）
+ignore:
+  - "web/**"
+  - "tests/**"
+  - "deploy/**"
+  - "scripts/**"
+  - "sql/**"
+  - "docs/**"
+
+comment:
+  layout: "reach,diff,flags,tree"
+  behavior: default
+  require_changes: false

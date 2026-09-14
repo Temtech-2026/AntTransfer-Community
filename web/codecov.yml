@@ -1,3 +1,7 @@
+# ⚠️ 注意：Codecov 只读取【仓库根目录】的 codecov.yml / .codecov.yml，本文件位于 web/ 子目录，
+#    因此当前【不生效】；实际生效的是根目录 ../../codecov.yml（后端防回归阈值 + 前端 patch 口径）。
+#    本文件仅作历史留存，调整阈值请改根目录 codecov.yml（详见 docs/development/dod.md §2）。
+#
 # Codecov configuration
 # Coverage is reported for visibility but does not block PRs. Small fixes
 # (style, config, generated code) often ship without tests; dedicated test

@@ -1,6 +1,11 @@
 # AntTransfer CE — 持续集成
 # 触发：push 到 master、任意 PR
-# 内容：JDK21 + Maven 全量 verify（含 Spotless 许可证头校验）
+# 内容：
+#   1) backend ：JDK21 + Maven 全量 verify（测试 + Spotless 许可证头 + JaCoCo 覆盖率判定），
+#                并将各模块 jacoco.xml 上传 Codecov（阈值策略见仓库根 codecov.yml）；
+#   2) frontend：Node 22 + Vitest 全量用例 + tsc 类型检查 + 生产构建。
+# 门禁说明：任一 job 失败即 CI 红；仓库侧把 backend / frontend 配置为必需检查（required status checks）
+#          即可实现「测试失败即阻断合并」。
 name: CI
 
 on:
@@ -29,9 +34,48 @@ jobs:
       - name: Make Maven wrapper executable
         run: chmod +x mvnw
 
+      # 包含：全部单测/集成测试（Testcontainers）、Spotless 许可证头、JaCoCo report + check
       - name: Build & verify
         run: ./mvnw -B -ntp verify
 
-      - name: Upload coverage (待接入后启用)
-        if: false
-        run: echo "TODO: 接入 JaCoCo 后上传覆盖率报告"
+      # 覆盖率报告由 JaCoCo 生成：各模块 target/site/jacoco/jacoco.xml
+      # 私有仓库需在仓库 Secrets 配置 CODECOV_TOKEN；未配置时 fail_ci_if_error=false 不会拖红构建
+      - name: Upload coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v7
+        with:
+          files: server/*/target/site/jacoco/jacoco.xml
+          flags: backend
+          name: backend-jacoco
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  frontend:
+    name: Frontend (Vitest + Build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests (Vitest)
+        run: npm test
+
+      - name: Type check (tsc --noEmit)
+        run: npm run tsc
+
+      - name: Production build
+        run: npm run build
