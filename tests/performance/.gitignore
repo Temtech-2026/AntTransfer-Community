@@ -1,0 +1,15 @@
+# 压测产物与凭据：一律不入库
+# 令牌文件含 access token，属凭据，严禁提交
+tokens.txt
+tokens.csv
+urls.txt
+ticket.json
+
+# 结果与日志
+*.jtl
+report/
+obs/
+*.log
+
+# 临时生成的压测数据
+tmp/
