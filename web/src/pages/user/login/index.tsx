@@ -1,415 +1,216 @@
-import {
-  AlipayCircleOutlined,
-  LockOutlined,
-  MobileOutlined,
-  TaobaoCircleOutlined,
-  UserOutlined,
-  WeiboCircleOutlined,
-} from '@ant-design/icons';
-import {
-  LoginForm,
-  ProFormCaptcha,
-  ProFormCheckbox,
-  ProFormText,
-} from '@ant-design/pro-components';
-import {
-  FormattedMessage,
-  Helmet,
-  SelectLang,
-  useIntl,
-  useModel,
-} from '@umijs/max';
-import { Alert, App, Button, Tabs } from 'antd';
-import { createStyles } from 'antd-style';
-import React, { startTransition, useState } from 'react';
-import { Footer } from '@/components';
-import { login } from '@/services/ant-design-pro/api';
-import { getFakeCaptcha } from '@/services/ant-design-pro/login';
-import Settings from '../../../../config/defaultSettings';
-
 /**
- * Validate redirect URL to prevent open redirect attacks.
- * Only allow same-origin relative paths starting with '/'.
+ * 登录页。
+ *
+ * <p>范围与口径（第 2 步页面 1）：
+ * <ul>
+ *   <li>只提供账号密码登录：<b>不提供注册入口</b>，也不保留模板的第三方 / 手机号登录
+ *       （后端没有对应端点，摆了就是假功能）；</li>
+ *   <li>图形验证码只做 <b>UI 预留位</b>：服务未接入，因此控件禁用并在 label 上说明，
+ *       不伪造一个「永远通过」的假校验；</li>
+ *   <li>记住我：只记账号（localStorage），<b>绝不记密码 / 令牌</b>；</li>
+ *   <li>登录失败 5 次触发后端锁定（1004）：展示后端原文案，并按文案里的分钟数挂倒计时，
+ *       倒计时期间禁止再次提交；</li>
+ *   <li>成功后双令牌已在 services/auth 落盘，这里按 `redirect` 回跳。</li>
+ * </ul>
+ *
+ * <p>回跳用整页跳转而不是 `history.push`：`getInitialState` 只在应用启动时执行一次，
+ * 路由跳转不会重新拉取权限与动态菜单，会出现「已登录但菜单还是空的 / 残留上个账号权限」；
+ * 整页跳转顺带把上一个会话的内存态全部丢弃，更安全。</p>
  */
-const getSafeRedirectUrl = (redirect: string | null): string => {
-  if (!redirect?.startsWith('/')) return '/';
 
-  if (redirect.startsWith('//')) return '/';
+import { LockOutlined, PictureOutlined, UserOutlined } from '@ant-design/icons';
+import { useSearchParams } from '@umijs/max';
+import { Alert, Button, Checkbox, Form, Input, Space, Typography, theme } from 'antd';
+import React, { useEffect, useMemo, useState } from 'react';
 
-  try {
-    const parsed = new URL(redirect, window.location.origin);
-    if (parsed.origin !== window.location.origin) return '/';
-    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
-  } catch {
-    return '/';
-  }
-};
+import {
+  formatCountdown,
+  lockDeadline,
+  loginByPassword,
+  parseLockMinutes,
+  readRememberedUsername,
+  remainingSeconds,
+  saveRememberedUsername,
+} from '@/services/auth';
+import { BizError } from '@/services/request';
+import { safeRedirectPath } from '@/utils/redirect';
+import { ACCOUNT_LOCKED_CODE, DEFAULT_ERROR_MESSAGE } from '@/utils/result';
 
-const useStyles = createStyles(({ token }) => {
-  return {
-    action: {
-      marginLeft: '8px',
-      color: 'rgba(0, 0, 0, 0.2)',
-      fontSize: '24px',
-      verticalAlign: 'middle',
-      cursor: 'pointer',
-      transition: 'color 0.3s',
-      '&:hover': {
-        color: token.colorPrimaryActive,
-      },
-    },
-    lang: {
-      width: 42,
-      height: 42,
-      lineHeight: '42px',
-      position: 'fixed',
-      right: 16,
-      borderRadius: token.borderRadius,
-      ':hover': {
-        backgroundColor: token.colorBgTextHover,
-      },
-    },
-    container: {
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100vh',
-      overflow: 'auto',
-      backgroundImage:
-        "url('https://mdn.alipayobjects.com/yuyan_qk0oxh/afts/img/V-_oS6r-i7wAAAAAAAAAAAAAFl94AQBr')",
-      backgroundSize: '100% 100%',
-    },
-  };
-});
+/** 登录表单字段。 */
+interface LoginFormValues {
+  username: string;
+  password: string;
+  /** 记住我：只记账号 */
+  remember?: boolean;
+}
 
-const ActionIcons = () => {
-  const { styles } = useStyles();
+const LoginPage: React.FC = () => {
+  const { token } = theme.useToken();
+  const [searchParams] = useSearchParams();
+  const redirect = searchParams.get('redirect');
 
-  return (
-    <>
-      <AlipayCircleOutlined
-        key="AlipayCircleOutlined"
-        className={styles.action}
-      />
-      <TaobaoCircleOutlined
-        key="TaobaoCircleOutlined"
-        className={styles.action}
-      />
-      <WeiboCircleOutlined
-        key="WeiboCircleOutlined"
-        className={styles.action}
-      />
-    </>
-  );
-};
+  // 只在首次渲染读一次：之后再改 localStorage 不应影响已渲染的表单初值
+  const rememberedUsername = useMemo(() => readRememberedUsername(), []);
 
-const Lang = () => {
-  const { styles } = useStyles();
+  const [submitting, setSubmitting] = useState(false);
+  const [errorText, setErrorText] = useState<string | null>(null);
+  /** 解锁时刻（毫秒）；为 null 表示当前未锁定 */
+  const [lockUntil, setLockUntil] = useState<number | null>(null);
+  /** 后端锁定原文案（倒计时旁原样展示，避免前端改写政策） */
+  const [lockMessage, setLockMessage] = useState('');
+  const [remaining, setRemaining] = useState(0);
 
-  return (
-    <div className={styles.lang} data-lang>
-      {SelectLang && <SelectLang />}
-    </div>
-  );
-};
-
-const LoginMessage: React.FC<{
-  content: string;
-}> = ({ content }) => {
-  return (
-    <Alert
-      style={{
-        marginBottom: 24,
-      }}
-      title={content}
-      type="error"
-      showIcon
-    />
-  );
-};
-
-const Login: React.FC = () => {
-  const [userLoginState, setUserLoginState] = useState<API.LoginResult>({});
-  const [type, setType] = useState<string>('account');
-  const { initialState, setInitialState } = useModel('@@initialState');
-  const { styles } = useStyles();
-  const { message } = App.useApp();
-  const intl = useIntl();
-
-  const fetchUserInfo = async () => {
-    const userInfo = await initialState?.fetchUserInfo?.();
-    if (userInfo) {
-      startTransition(() => {
-        setInitialState((s) => ({
-          ...s,
-          currentUser: userInfo,
-        }));
-      });
+  // 倒计时：每秒重算剩余秒数，归零后自动解除锁定态
+  useEffect(() => {
+    if (lockUntil == null) {
+      setRemaining(0);
+      return;
     }
-  };
-
-  const handleSubmit = async (values: API.LoginParams) => {
-    try {
-      // 登录
-      const msg = await login({ ...values, type });
-      if (msg.status === 'ok') {
-        const defaultLoginSuccessMessage = intl.formatMessage({
-          id: 'pages.login.success',
-          defaultMessage: '登录成功！',
-        });
-        message.success(defaultLoginSuccessMessage);
-        await fetchUserInfo();
-        const urlParams = new URL(window.location.href).searchParams;
-        const redirectUrl = getSafeRedirectUrl(urlParams.get('redirect'));
-        window.location.href = redirectUrl;
-        return;
+    setRemaining(remainingSeconds(lockUntil));
+    const timer = window.setInterval(() => {
+      const left = remainingSeconds(lockUntil);
+      setRemaining(left);
+      if (left <= 0) {
+        window.clearInterval(timer);
+        setLockUntil(null);
       }
-      // 如果失败去设置用户错误信息
-      setUserLoginState(msg);
-    } catch {
-      const defaultLoginFailureMessage = intl.formatMessage({
-        id: 'pages.login.failure',
-        defaultMessage: '登录失败，请重试！',
-      });
-      message.error(defaultLoginFailureMessage);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [lockUntil]);
+
+  const locked = lockUntil != null && remaining > 0;
+
+  const handleFinish = async (values: LoginFormValues) => {
+    if (locked) {
+      return;
+    }
+    setSubmitting(true);
+    setErrorText(null);
+    const username = values.username.trim();
+    try {
+      await loginByPassword(username, values.password);
+      // 勾选才记账号；取消勾选要顺手清掉上一次的记录
+      saveRememberedUsername(values.remember ? username : null);
+      window.location.assign(safeRedirectPath(redirect));
+    } catch (error) {
+      const biz = error instanceof BizError ? error : undefined;
+      if (biz?.code === ACCOUNT_LOCKED_CODE) {
+        const minutes = parseLockMinutes(biz.message);
+        setLockMessage(biz.message);
+        // 解析不到分钟数时只展示原文案：不臆造一个可能早已过期的倒计时
+        setLockUntil(minutes ? lockDeadline(minutes) : null);
+      }
+      setErrorText(biz?.message || (error as Error)?.message || DEFAULT_ERROR_MESSAGE);
+      setSubmitting(false);
     }
   };
-  const { status, type: loginType } = userLoginState;
 
   return (
-    <div className={styles.container}>
-      <Helmet>
-        <title>
-          {intl.formatMessage({
-            id: 'menu.login',
-            defaultMessage: '登录页',
-          })}
-          {Settings.title && ` - ${Settings.title}`}
-        </title>
-      </Helmet>
-      <Lang />
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        padding: '24px 16px',
+        background: token.colorBgLayout,
+      }}
+    >
       <div
         style={{
-          flex: '1',
-          padding: '32px 0',
+          width: 380,
+          maxWidth: '100%',
+          padding: 32,
+          background: token.colorBgContainer,
+          borderRadius: token.borderRadiusLG,
+          boxShadow: token.boxShadowSecondary,
         }}
       >
-        <LoginForm
-          contentStyle={{
-            minWidth: 280,
-            maxWidth: '75vw',
-          }}
-          logo={<img alt="logo" src="/logo.svg" />}
-          title="Ant Design"
-          subTitle={intl.formatMessage({
-            id: 'pages.layouts.userLayout.title',
-          })}
-          initialValues={{
-            autoLogin: true,
-          }}
-          actions={[
-            <FormattedMessage
-              key="loginWith"
-              id="pages.login.loginWith"
-              defaultMessage="其他登录方式"
-            />,
-            <ActionIcons key="icons" />,
-          ]}
-          onFinish={async (values) => {
-            await handleSubmit(values as API.LoginParams);
-          }}
-        >
-          <Tabs
-            activeKey={type}
-            onChange={setType}
-            centered
-            items={[
-              {
-                key: 'account',
-                label: intl.formatMessage({
-                  id: 'pages.login.accountLogin.tab',
-                  defaultMessage: '账户密码登录',
-                }),
-              },
-              {
-                key: 'mobile',
-                label: intl.formatMessage({
-                  id: 'pages.login.phoneLogin.tab',
-                  defaultMessage: '手机号登录',
-                }),
-              },
-            ]}
+        <div style={{ marginBottom: 24, textAlign: 'center' }}>
+          <Typography.Title level={3} style={{ marginBottom: 8 }}>
+            AntTransfer
+          </Typography.Title>
+          <Typography.Text type="secondary">企业文件传输与协作平台</Typography.Text>
+        </div>
+
+        {locked ? (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 16 }}
+            title="账号已锁定"
+            description={`${lockMessage || '登录失败次数过多'}（剩余 ${formatCountdown(remaining)}）`}
           />
+        ) : null}
 
-          {status === 'error' && loginType === 'account' && (
-            <LoginMessage
-              content={intl.formatMessage({
-                id: 'pages.login.accountLogin.errorMessage',
-                defaultMessage: '账户或密码错误(admin/ant.design)',
-              })}
-            />
-          )}
-          {type === 'account' && (
-            <>
-              <ProFormText
-                name="username"
-                fieldProps={{
-                  size: 'large',
-                  prefix: <UserOutlined />,
-                }}
-                placeholder={intl.formatMessage({
-                  id: 'pages.login.username.placeholder',
-                  defaultMessage: '用户名: admin or user',
-                })}
-                rules={[
-                  {
-                    required: true,
-                    message: (
-                      <FormattedMessage
-                        id="pages.login.username.required"
-                        defaultMessage="请输入用户名!"
-                      />
-                    ),
-                  },
-                ]}
-              />
-              <ProFormText.Password
-                name="password"
-                fieldProps={{
-                  size: 'large',
-                  prefix: <LockOutlined />,
-                }}
-                placeholder={intl.formatMessage({
-                  id: 'pages.login.password.placeholder',
-                  defaultMessage: '密码: ant.design',
-                })}
-                rules={[
-                  {
-                    required: true,
-                    message: (
-                      <FormattedMessage
-                        id="pages.login.password.required"
-                        defaultMessage="请输入密码！"
-                      />
-                    ),
-                  },
-                ]}
-              />
-            </>
-          )}
+        {!locked && errorText ? (
+          <Alert type="error" showIcon style={{ marginBottom: 16 }} title={errorText} />
+        ) : null}
 
-          {status === 'error' && loginType === 'mobile' && (
-            <LoginMessage content="验证码错误" />
-          )}
-          {type === 'mobile' && (
-            <>
-              <ProFormText
-                fieldProps={{
-                  size: 'large',
-                  prefix: <MobileOutlined />,
-                }}
-                name="mobile"
-                placeholder={intl.formatMessage({
-                  id: 'pages.login.phoneNumber.placeholder',
-                  defaultMessage: '手机号',
-                })}
-                rules={[
-                  {
-                    required: true,
-                    message: (
-                      <FormattedMessage
-                        id="pages.login.phoneNumber.required"
-                        defaultMessage="请输入手机号！"
-                      />
-                    ),
-                  },
-                  {
-                    pattern: /^1\d{10}$/,
-                    message: (
-                      <FormattedMessage
-                        id="pages.login.phoneNumber.invalid"
-                        defaultMessage="手机号格式错误！"
-                      />
-                    ),
-                  },
-                ]}
-              />
-              <ProFormCaptcha
-                fieldProps={{
-                  size: 'large',
-                  prefix: <LockOutlined />,
-                }}
-                captchaProps={{
-                  size: 'large',
-                }}
-                placeholder={intl.formatMessage({
-                  id: 'pages.login.captcha.placeholder',
-                  defaultMessage: '请输入验证码',
-                })}
-                captchaTextRender={(timing, count) => {
-                  if (timing) {
-                    return `${count} ${intl.formatMessage({
-                      id: 'pages.getCaptchaSecondText',
-                      defaultMessage: '获取验证码',
-                    })}`;
-                  }
-                  return intl.formatMessage({
-                    id: 'pages.login.phoneLogin.getVerificationCode',
-                    defaultMessage: '获取验证码',
-                  });
-                }}
-                name="captcha"
-                rules={[
-                  {
-                    required: true,
-                    message: (
-                      <FormattedMessage
-                        id="pages.login.captcha.required"
-                        defaultMessage="请输入验证码！"
-                      />
-                    ),
-                  },
-                ]}
-                onGetCaptcha={async (phone) => {
-                  const result = await getFakeCaptcha({
-                    phone,
-                  });
-                  if (!result) {
-                    return;
-                  }
-                  message.success('获取验证码成功！验证码为：1234');
-                }}
-              />
-            </>
-          )}
-          <div
-            style={{
-              marginBottom: 24,
-            }}
+        <Form
+          layout="vertical"
+          size="large"
+          requiredMark={false}
+          initialValues={{
+            username: rememberedUsername,
+            remember: Boolean(rememberedUsername),
+          }}
+          onFinish={handleFinish}
+        >
+          <Form.Item
+            name="username"
+            label="账号"
+            rules={[{ required: true, message: '请输入账号' }]}
           >
-            <ProFormCheckbox noStyle name="autoLogin">
-              <FormattedMessage
-                id="pages.login.rememberMe"
-                defaultMessage="自动登录"
-              />
-            </ProFormCheckbox>
-            <Button
-              type="link"
-              style={{
-                float: 'right',
-                padding: 0,
-              }}
-            >
-              <FormattedMessage
-                id="pages.login.forgotPassword"
-                defaultMessage="忘记密码"
-              />
-            </Button>
-          </div>
-        </LoginForm>
+            <Input
+              prefix={<UserOutlined />}
+              placeholder="请输入账号"
+              autoComplete="username"
+              disabled={locked}
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="password"
+            label="密码"
+            rules={[{ required: true, message: '请输入密码' }]}
+          >
+            <Input.Password
+              prefix={<LockOutlined />}
+              placeholder="请输入密码"
+              autoComplete="current-password"
+              disabled={locked}
+            />
+          </Form.Item>
+
+          <Form.Item label="图形验证码" tooltip="图形验证码服务尚未接入，当前登录不做校验（仅 UI 预留）">
+            <Space.Compact style={{ width: '100%' }}>
+              <Input placeholder="服务接入后启用" disabled />
+              <Button icon={<PictureOutlined />} disabled style={{ width: 104 }}>
+                验证码
+              </Button>
+            </Space.Compact>
+          </Form.Item>
+
+          <Form.Item name="remember" valuePropName="checked" style={{ marginBottom: 16 }}>
+            <Checkbox disabled={locked}>记住我（仅记住账号，不保存密码）</Checkbox>
+          </Form.Item>
+
+          <Button type="primary" htmlType="submit" block loading={submitting} disabled={locked}>
+            {locked ? `请 ${formatCountdown(remaining)} 后重试` : '登录'}
+          </Button>
+        </Form>
+
+        <Typography.Paragraph
+          type="secondary"
+          style={{ marginTop: 16, marginBottom: 0, fontSize: 12, textAlign: 'center' }}
+        >
+          账号由管理员统一分配，如需开通请联系管理员
+        </Typography.Paragraph>
       </div>
-      <Footer />
     </div>
   );
 };
 
-export default Login;
+export default LoginPage;
