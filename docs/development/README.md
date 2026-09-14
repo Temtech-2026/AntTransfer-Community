@@ -51,9 +51,16 @@ make web-dev    # 本地起前端
 
 | 层 | 位置 | 工具 | 现状 |
 | --- | --- | --- | --- |
-| 单元/集成 | 各模块 `src/test/java` | JUnit 5 + Mockito | 模块落地中 |
+| 单元/集成（后端） | 各模块 `src/test/java` | JUnit 5 + Mockito + Testcontainers | 383 用例全绿；覆盖率由 JaCoCo 统计（整体 36.5%），`./mvnw verify` 出报告 |
+| 单元/组件（前端） | `web/src/**/*.test.ts(x)` | Vitest + Testing Library | 已接入，21 文件 / 225 用例；`npm test`（`npm run test:coverage` 出覆盖率） |
 | E2E | `tests/e2e` | Playwright（规划） | 空，见该目录 README |
-| 性能 | `tests/performance` | k6（规划） | 空，见该目录 README |
+| 性能 | `tests/performance` | JMeter + wrk（方案已就位）；k6（规划） | 见 [tests/performance/README.md](../../tests/performance/README.md) |
+
+- 🔌 **联调准备（Step 1）**：OpenAPI → Apifox 集合导入步骤与端到端冒烟用例集（S01–S17）见
+  [joint-debug-prep.md](./joint-debug-prep.md)。
+- ✅ **交付质量 DoD（4 项完成标准）**：冒烟用例集 / 覆盖率与 CI 阻断 / 压测基线 / 前端测试与构建的
+  **逐项核对结论、覆盖率基线数据与待办清单**见 [dod.md](./dod.md)（2026-09-14 实跑核对）。
+  注意与 [`architecture.md` § 🎯 本阶段 DoD](../architecture/architecture.md)（**阶段范围 DoD**）区分。
 
 ## ⚠️ 技术债与待裁决差异（AT-DIFF）
 

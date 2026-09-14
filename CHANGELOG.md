@@ -343,6 +343,26 @@
     Testcontainers 集成 3 例（`TransferStatisticsIntegrationTest`，真 MySQL 8.4 校验 JSON 路径与口径：只看自己 / 秒传不计量 /
     失败前已下发算量 / 老流水缺字节键归 0 / 无流水 null 率 / 未登录 401(1001)）。
 
+- 🧪 **质量门禁补齐：JaCoCo 覆盖率接入 `verify` + 前端独立 CI job**（对应交付 DoD 第 2 / 4 条，
+  核对结论见 [docs/development/dod.md](docs/development/dod.md)）：
+  - 父工程 `pom.xml` 接入 `jacoco-maven-plugin` **0.8.15**：`prepare-agent` 探针 + `verify` 阶段 `report`
+    （各模块产出 `target/site/jacoco/{index.html,jacoco.xml,jacoco.csv}`）+ `check` 判定规则
+    （**模块整体行覆盖率 ≥ 85%**、**安全逻辑类 ≥ 90%**，与 DoD 门槛一致）；
+  - ⚠️ `check` 当前以 `haltOnFailure=false` **report-only** 运行：实测基线（2026-09-14）为
+    **整体 36.50%（1892/5184 行）**、**安全包 52.86%（120/227 行）**，远低于目标值 —— 若直接硬门禁会让 CI
+    永久红灯并阻断全部合并；达标后删除该参数即成为硬门禁（`pom.xml` 内已就地标注 ⛔）；
+  - 打开 CI 中原 `if: false` 的覆盖率步骤，改为 `codecov/codecov-action@v7` 上传各模块 `jacoco.xml`；
+    新增仓库根 [`codecov.yml`](codecov.yml)（后端防回归下限 `project target 36%` / `threshold 1%`，
+    patch 覆盖率仅公示不阻断）；
+  - CI **新增 `frontend` job**（Node 22，`web/` 工作目录）：`npm ci` → `npm test` → `npm run tsc` → `npm run build`，
+    前端用例与类型错误自此进入 CI（此前 CI 仅覆盖后端），两个 job 并列即为「测试失败 → CI 红」；
+  - 📌 统计口径：85% 按模块（BUNDLE）、90% 按类（CLASS）逐一判定；`at-collaboration` 因暂无测试执行
+    不产出 `jacoco.exec`，报告与判定被自动跳过（属「尚未被测」而非「通过」）。
+- 📄 **新增 [docs/development/dod.md](docs/development/dod.md)：交付质量 DoD 清单本体 + 逐项核对结论**，
+  含四项标准的达成判定、实测证据、分模块覆盖率基线表、差距分析与待办清单；并在
+  [docs/development/README.md](docs/development/README.md) § 测试策略建立入口（与 `architecture.md`
+  § 🎯 本阶段 DoD「阶段范围 DoD」明确区分，避免两套 DoD 混淆）。
+
 ### 🔄 Changed（变更）
 
 - ⚠️ **授权收敛（破坏性）**：`sql/V8__restrict_file_destroy_to_super_admin.sql` 从 DEPT_ADMIN 回收
