@@ -17,7 +17,7 @@
 
 ## 🛠️ 本地开发
 
-**前置要求**：JDK 21（本机默认的 JDK 17 会报「不支持发行版本 21」）、Maven 3.9+（可用 `./mvnw`）、Node.js 22+（前端 `engines` 强制；Node 18 会被 utoopack 拒绝）、MySQL 8.x、Redis 7.x。
+**前置要求**：JDK 21（JDK 不对会在构建最开始被 maven-enforcer 拦下）、Maven 3.9+（可用 `./mvnw`）、Node.js 22+（前端 `engines` 强制；Node 18 会被 utoopack 拒绝）、MySQL 8.x、Redis 7.x。
 
 推荐使用 Makefile（见 `make help`）；不使用 Make 时直接执行等价命令：
 

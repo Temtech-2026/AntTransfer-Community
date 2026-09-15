@@ -6,7 +6,7 @@
 
 | 依赖 | 版本 | 用途 |
 | --- | --- | --- |
-| ☕ JDK | 21 | 后端编译运行（JDK 17 会报「不支持发行版本 21」） |
+| ☕ JDK | 21 | 后端编译运行；JDK 不对会在构建最开始（`validate`）被 maven-enforcer 拦下 |
 | 📦 Maven | 3.9+ | 后端构建（也可直接用 `./mvnw`；**构建入口在仓库根，`server/` 下没有 `mvnw`**） |
 | 🟢 Node.js | 22+ | 前端（`web/`）；`engines` 强制 ≥ 22，Node 18 会被 utoopack 拒绝 |
 | 🗄️ MySQL | 8.x | 主库（默认库名 `anttransfer`） |
@@ -65,7 +65,9 @@ npm run dev
 
 ## ❓ 常见问题
 
-- 🐛 **编译报“不支持发行版本 21”**：确认 `JAVA_HOME` 指向 JDK 21（项目根 `mvnw -v` 可查看当前 JVM）。
+- 🐛 **JDK 版本不对**：Maven 构建会在最开始（`validate` 阶段）被 maven-enforcer 拦下并直接点名要求 JDK 21；
+  IDE 内编译则报「不支持发行版本 21」。修复：把 `JAVA_HOME` 指向 JDK 21 后重跑
+  （`mvnw -v` 可查看当前 JVM；`JAVA_HOME` 属会话级变量，每个新终端都要重设）。
 - 🔌 **连接数据库失败**：先确认该连哪个库——默认 `DB_URL` 是
   `localhost:3307/anttransfer`，即 **dev 容器库**（`docker compose -f docker-compose.dev.yml up -d`
   映射到宿主机的端口），账号 `root` / 密码 `123456`。**3307 连不上 = 容器没起来**，这是刻意设计：

@@ -586,6 +586,14 @@
   ⑧ 轻 IM 缺 @ 提及与「消息保留 ≥ 30 天」策略（无归档 / 清理任务）。
   共享空间 / 审批端点 / 分片上传三项已由 **D-11 / D-5** 覆盖，**未重复登记**。
 
+- 🧱 **构建前置门禁：JDK 版本不符时构建一开始就失败**（根 `pom.xml` 新增 `maven-enforcer-plugin`
+  的 `requireJavaVersion`，版本区间 `[21,)`，绑定最早的 `validate` 阶段）。此前 `JAVA_HOME` 指向 JDK 17
+  时会撞上一种极隐蔽的失败：`target/classes` 里是 JDK 21 编的类（major 65），JDK 17 的 javac 因增量检查
+  认定「Nothing to compile」而**跳过重编译**，构建日志一路全绿，直到 `spring-boot:run` 派生 JVM 才抛
+  `UnsupportedClassVersionError`（65.0 无法被只认到 61.0 的 JVM 加载）——报错落在运行期、根因却在环境变量。
+  现 JDK 不对即失败并直接给出修复指引（`mvnw -v` 可查看当前 JVM）。口径：校验的就是「运行 Maven 的 JDK」
+  （它同时是 `spring-boot:run` 派生 JVM 的来源，二者必然一致），下界 21、不设上界（JDK 22/25 照常放行）。
+
 ### 🔒 Security（安全）
 
 - 🚫 生产 profile 默认关闭 Swagger / OpenAPI 文档暴露。

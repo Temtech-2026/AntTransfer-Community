@@ -111,12 +111,31 @@
 - 但「**阻断合并**」还需**仓库侧设置**：把 `Backend (Maven verify)` 与 `Frontend (Vitest + Build)` 配置为 **required status checks**（分支保护）。
   **该设置不在仓库内**（`.github/` 无分支保护配置文件），属待完成的仓库设置项，需在 GitHub 仓库 Settings 中手工开启。
 
-### ⚠️ 一个本地误判（勿当成 CI 失败）
+### ⚠️ 本地行尾误判（勿当成 CI 失败）+ 它掩盖的 14 处真违规
 
-Windows 本机执行 `./mvnw verify` 时，Spotless 会因 3 个文件
-（`at-common/.../common/file/{FileIngestCommand,FileIngestPort,FileIngestResult}.java`）工作区换行符为 **LF** 而报格式违规
-（Spotless 默认按 `PLATFORM` 取换行符，Windows = CRLF）。而 `git ls-files --eol` 显示这些文件索引与工作区**均为 LF**，
-Linux CI 的 `PLATFORM` 换行符也是 LF，**故 CI 不会红**。本地验证可加 `-Dspotless.check.skip=true`。
+Windows 本机执行 `./mvnw verify` 时，Spotless 会因 **39 个 Java 文件**工作区换行符为 **LF** 而报格式违规
+（Spotless 默认按 `PLATFORM` 取换行符，Windows = CRLF；分布：at-transfer 24 / at-permission 6 / at-common 3 /
+at-bootstrap 2 / at-file 2 / at-auth 1 / at-gateway 1）。这 39 个不能一概而论，须分两类处理：
+
+| 类别 | 数量 | 判据 | Linux CI |
+| --- | --- | --- | --- |
+| 纯行尾误判（工作区 LF） | 25 | `git ls-files --eol` 索引为 LF，Linux 的 `PLATFORM` 换行符亦为 LF | **不会红** |
+| license header 残缺 | 14 | 与平台无关 | **必然红** |
+
+- **25 个纯行尾**：本地执行一次 `./mvnw spotless:apply` 把工作区转成 CRLF 即可消除，且 `git add -n .` **不会**暂存它们
+  （`core.autocrlf=true` 下 CRLF 会被规范化回 LF，与索引一致 —— `git status` 显示的 `M` 是假象）。
+- **14 个 header 残缺**（全在 `at-transfer`，随 `794f1ee` 2026-09-14 引入）：header 只有
+  `* Licensed under the Apache License, Version 2.0.` 一行，缺 Apache-2.0 完整正文。涉及
+  `config/TransferProperties.java`、`controller/TransferController.java`、`model/dto/{MergeRequest,PrecheckRequest}.java`、
+  `model/entity/TransferTask.java`、`model/vo/{ChunkPartsVO,MergeResultVO,PartUploadedVO,PrecheckResultVO}.java`、
+  `repository/TransferTaskMapper.java`、`service/{ChunkIndexes,ChunkStore,TransferTaskService,TransferTaskStateStore}.java`
+  —— 必须 `spotless:apply` 补全后**提交**；第 1 节证据表那次 BUILD SUCCESS 对这 14 个文件不成立。
+
+> ⚠️ `-Dspotless.check.skip=true` 会**同时**跳过换行符与 header 检查，只能用于「已确认是 25 个纯行尾」的场景，
+> **不可当常规做法**（它会掩盖上面 14 个真违规）。正确顺序：`./mvnw spotless:apply` → `./mvnw -B -ntp verify`。
+>
+> 📝 本段 2026-09-15 复核更正：原记录称「Spotless 会因 3 个文件…… 故 CI 不会红」，实测工作区 LF 的文件为 **39 个**
+> （at-common 那 3 个只是构建最先撞上的），且其中 14 个与平台无关、CI 必然红。
 
 ---
 
@@ -170,8 +189,11 @@ Linux CI 的 `PLATFORM` 换行符也是 LF，**故 CI 不会红**。本地验证
 ```bash
 # 后端：全量验证（含测试 + Spotless + JaCoCo report/check）
 JAVA_HOME=<jdk-21> ./mvnw -B -ntp verify
-# Windows 本机若遇 Spotless 换行符误判（见第 2 节说明）：
-JAVA_HOME=<jdk-21> ./mvnw -B -ntp verify -Dspotless.check.skip=true
+# Windows 本机若报 Spotless 行尾违规（见第 2 节说明）：先修工作区，再验证
+JAVA_HOME=<jdk-21> ./mvnw -B -ntp spotless:apply
+JAVA_HOME=<jdk-21> ./mvnw -B -ntp verify
+# 应急（会同时跳过 license header 检查、可能掩盖真违规，见第 2 节）：
+# JAVA_HOME=<jdk-21> ./mvnw -B -ntp verify -Dspotless.check.skip=true
 
 # 覆盖率报告位置（各模块）
 #   server/<module>/target/site/jacoco/index.html   （HTML）

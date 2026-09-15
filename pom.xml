@@ -120,6 +120,11 @@
              门槛规则见父工程 <build> 中 jacoco-maven-plugin 的 check 执行。 -->
         <jacoco.version>0.8.15</jacoco.version>
 
+        <!-- ===== Maven Enforcer：构建前置校验（JDK 版本门禁） =====
+             校验「运行 Maven 的 JDK」本身——它同时也是 spring-boot:run 派生 JVM 的来源，
+             故必须为 JDK 21；失效场景与拦截理由见 <build> 中该插件的注释。 -->
+        <maven-enforcer-plugin.version>3.6.3</maven-enforcer-plugin.version>
+
         <!-- 说明：Spring Boot 自身（3.5.14）与 spring-boot-starter-* 全家桶仍由
              spring-boot-starter-parent BOM 统一锁定，业务模块无需重复指定版本；
              其余被直接依赖的第三方 artifact 均已在 properties + dependencyManagement 中字面收敛。 -->
@@ -302,6 +307,50 @@
          继承自父工程的各 at-* 子模块将在 verify 阶段自动执行 spotless:check。 -->
     <build>
         <plugins>
+            <!-- ===================== 环境前置校验：JDK 版本门禁（maven-enforcer） =====================
+                 为什么必须拦在「最早」：本工程编译目标是 Java 21（properties.java.version=21 由
+                 spring-boot-starter-parent 换算为 maven.compiler.release=21），而 spring-boot:run
+                 派生的那个 JVM 取的是 ${java.home} —— 即「跑 Maven 的 JDK」本身。
+                 若 JAVA_HOME 指向 JDK 17，会撞上一种极隐蔽的失败：
+                   · javac 增量检查认为 target/classes 已是最新（日志打印 "Nothing to compile"），
+                     跳过重编译，构建日志一路全绿；
+                   · 直到启动那一刻才抛 java.lang.UnsupportedClassVersionError
+                     （class file version 65.0 无法被只认到 61.0 的 JDK 17 加载）——
+                     报错落在运行期，根因却在 JAVA_HOME 环境变量，排查成本极高。
+                 故把校验绑到最早的生命周期阶段 validate：JDK 不对则构建一开始即失败并点名原因。
+                 注 1：校验的就是「运行 Maven 的 JDK」，它与 spring-boot:run 派生 JVM 天然一致，
+                       不存在「只校验编译 JDK、启动仍错」的空档；
+                 注 2：下界取 21、不设上界——JDK 22/25 等更高版本照常放行（javac 以 release 21 编译，向下兼容）；
+                 注 3：仅覆盖走生命周期的调用（compile / test / package / verify / spring-boot:run…）；
+                       纯 goal 直调（如 spotless:check）不经过 validate，不受本闸约束。
+                 注 4：下方 <message> 的续行是故意顶格的——XML 缩进会被原样带进报错输出，
+                       每行都会被 [ERROR] 前缀顶起来，顶格排版才能让终端里的提示保持整齐。 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>${maven-enforcer-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <!-- enforce 目标默认绑定 validate 阶段，无需显式声明 <phase> -->
+                        <id>enforce-jdk-21</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireJavaVersion>
+                                    <version>[21,)</version>
+                                    <message>JDK 版本不符：本工程要求 JDK 21 及以上，但当前运行 Maven 的 JDK 版本过低。
+spring-boot:run 派生的 JVM 取「跑 Maven 的那个 JDK」，JDK 不对时编译期不会有任何报错，
+而是在启动那一刻抛 UnsupportedClassVersionError（class file version 65.0 / 61.0），故在此提前拦截。
+请把 JAVA_HOME 指向 JDK 21 后重新执行（mvnw -v 可查看当前 JVM）。</message>
+                                </requireJavaVersion>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
             <!-- ===================== 覆盖率：JaCoCo =====================
                  统计口径：各 at-* 模块独立统计，报告产物 target/site/jacoco/（HTML / jacoco.xml / jacoco.csv）。
                  DoD 门槛（见 docs/development/dod.md）：
