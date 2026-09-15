@@ -1,0 +1,33 @@
+# ==============================================================================
+# AntTransfer CE — 仓库级换行符与文本/二进制判定
+# ==============================================================================
+# 为什么需要这个文件：
+#   本仓库索引中的文本文件统一以 LF 存储，CI 运行在 ubuntu-latest，
+#   web/.editorconfig 亦声明 end_of_line = lf。
+#   若仅依赖 core.autocrlf 这类「本机配置」，Windows 侧检出会得到 CRLF，
+#   文件一旦被编辑器或脚本重写，就会产生
+#     「git status 显示 M，但 git diff 为空」的伪改动，反复污染工作区。
+#   把换行符策略固化进仓库，才能让各平台与 CI 的行为保持一致。
+
+# 默认：自动识别文本文件，仓库存储与工作区检出统一使用 LF
+* text=auto eol=lf
+
+# Windows 批处理脚本必须保留 CRLF：
+# cmd.exe 对 LF 行尾的 goto/label 解析会异常，故单独锁定
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 显式声明二进制，避免被 text=auto 误判后参与换行转换
+*.jar   binary
+*.zip   binary
+*.gz    binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.eot   binary
