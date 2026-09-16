@@ -23,6 +23,7 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 站内 / 离线消息数据访问（{@code sys_notify_message}，本模块表族）。
@@ -97,6 +98,46 @@ public interface NotifyMessageMapper extends BaseMapper<NotifyMessage> {
               and deleted = 0
             """)
     long countUnreadChat(@Param("userId") Long userId);
+
+    /**
+     * 会话列表聚合：按 {@code (chat_scope, chat_target_id)} 分组，取每组最后一条消息 ID 与未读数。
+     *
+     * <p><b>为什么「最后一条」用 {@code max(id)} 而不是 {@code max(create_time)}：</b>
+     * {@code id} 是自增主键，与插入顺序同序，且不存在「同一秒内的多条消息谁更新」的并列问题；
+     * {@code create_time} 受应用时钟与 DB 时钟差异影响，一旦回拨就会让刚发的消息排到旧消息之后，
+     * 会话列表的顺序会肉眼可见地跳。</p>
+     *
+     * <p><b>这条 SQL 正是 {@code idx_session} 的用武之地</b>：索引列序
+     * {@code (recipient_user_id, chat_scope, chat_target_id, id)} 恰好匹配
+     * 「接收人等值 + 按会话分组 + 取最大 id」，可在索引内顺序完成；
+     * 若改成「先拉回全部会话消息再在内存分组」，开销会随历史消息总量线性增长。</p>
+     *
+     * <p>未读数用 {@code count(case when ... then 1 end)} 而非 {@code sum(read_status = 0)}：
+     * 前者返回 BIGINT，与 {@code Long unreadCount} 天然对齐；{@code sum()} 在 MySQL 返回 DECIMAL，
+     * 要依赖 JDBC 的隐式数值转换，属无谓的风险。</p>
+     *
+     * <p>条数上限由调用方先按 {@code notify.chat-conversation-limit} 收敛再传入——
+     * 只有把 {@code limit} 下推到 SQL，才能真正省掉「查出来再丢掉」的开销。</p>
+     *
+     * @param userId 接收人（会话列表的归属者）
+     * @param limit  返回的会话数上限
+     * @return 按最后一条消息 ID 倒序的会话摘要（最新活跃的排在前）
+     */
+    @Select("""
+            select chat_scope                                  as chatScope,
+                   chat_target_id                              as chatTargetId,
+                   max(id)                                     as lastMessageId,
+                   count(case when read_status = 0 then 1 end) as unreadCount
+            from sys_notify_message
+            where recipient_user_id = #{userId}
+              and notify_type in (6, 7)
+              and deleted = 0
+            group by chat_scope, chat_target_id
+            order by lastMessageId desc
+            limit #{limit}
+            """)
+    List<ConversationSummary> selectConversationSummaries(@Param("userId") Long userId,
+                                                          @Param("limit") int limit);
 
     /**
      * 一键已读（清零红点）：只翻转系统通知，<b>不动</b>会话消息未读——

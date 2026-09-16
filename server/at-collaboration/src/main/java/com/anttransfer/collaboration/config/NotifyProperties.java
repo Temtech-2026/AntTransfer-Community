@@ -51,6 +51,15 @@ public class NotifyProperties {
     /** 会话历史单次返回条数上限（聊天记录向上翻页的硬上限，防一次性拉爆响应体） */
     private int chatHistoryLimit = 50;
 
+    /**
+     * 会话列表单次返回条数上限（聊天页左侧栏的硬上限）。
+     *
+     * <p>与 {@link #chatHistoryLimit} 分开配置而非共用一个值：两者的「合适的量级」不同——
+     * 历史消息是「一次翻页」，50 条已足够；会话列表是「一眼总览」，活跃用户可能有上百个会话，
+     * 调大它不该顺带把单次翻页的响应体一起放大。</p>
+     */
+    private int chatConversationLimit = 50;
+
     /** 通知正文长度上限（对齐 {@code sys_notify_message.content} 的 varchar(1000)，超出截断） */
     private int contentMaxLength = 1000;
 

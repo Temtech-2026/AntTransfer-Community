@@ -16,6 +16,7 @@
 package com.anttransfer.collaboration.controller;
 
 import com.anttransfer.collaboration.model.dto.ChatSendDTO;
+import com.anttransfer.collaboration.model.vo.ConversationVO;
 import com.anttransfer.collaboration.model.vo.NotifyMessageVO;
 import com.anttransfer.collaboration.security.CurrentUserContext;
 import com.anttransfer.collaboration.service.ChatService;
@@ -86,5 +87,23 @@ public class ChatController {
     @PostMapping("/read")
     public Result<Integer> markRead(@RequestParam Integer scope, @RequestParam Long targetId) {
         return Result.ok(chatService.markRead(CurrentUserContext.currentUserId(), scope, targetId));
+    }
+
+    /**
+     * 会话列表（聊天页左侧栏）。
+     *
+     * <p><b>为什么需要这个端点：</b>「发送 / 历史 / 已读」都以「已知 scope + targetId」为前提，
+     * 而前端最初的困境恰恰是<b>不知道有哪些会话</b>——收件箱分页按产品口径排除了会话消息，
+     * 离线补拉只给纯提醒类。本端点补上这一环，聊天页才可能落地。</p>
+     *
+     * <p><b>不挂权限点、登录即用</b>：查询维度写死为登录人本人（{@code CurrentUserContext}），
+     * 调用方无法指定别人的收件人 ID，因此不存在「越权读他人会话」的入参面；
+     * 这与 {@code /notifications}、{@code /messages} 的「只看得到自己的」口径一致。</p>
+     *
+     * @param limit 条数（服务端按 {@code notify.chat-conversation-limit} 收敛上限）
+     */
+    @GetMapping("/conversations")
+    public Result<List<ConversationVO>> conversations(@RequestParam(required = false) Integer limit) {
+        return Result.ok(chatService.conversations(CurrentUserContext.currentUserId(), limit));
     }
 }

@@ -18,7 +18,9 @@ package com.anttransfer.collaboration.service;
 import com.anttransfer.collaboration.config.NotifyProperties;
 import com.anttransfer.collaboration.model.dto.ChatSendDTO;
 import com.anttransfer.collaboration.model.entity.NotifyMessage;
+import com.anttransfer.collaboration.model.vo.ConversationVO;
 import com.anttransfer.collaboration.model.vo.NotifyMessageVO;
+import com.anttransfer.collaboration.repository.ConversationSummary;
 import com.anttransfer.collaboration.repository.GroupMemberMapper;
 import com.anttransfer.collaboration.repository.NotifyMessageMapper;
 import com.anttransfer.collaboration.support.AfterCommitExecutor;
@@ -43,6 +45,9 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 单聊 / 群聊服务：路由、成员校验、写扩散落库、提交后推送。
@@ -190,6 +195,75 @@ public class ChatService {
         return notifyMessageService.markSessionRead(userId, effectiveScope, targetId);
     }
 
+    /**
+     * 会话列表（聊天页左侧栏）。
+     *
+     * <p><b>为什么必须由服务端聚合：</b>写扩散让「某会话的历史」退化为单表等值查询，
+     * 却让「我有哪些会话」成了单点推不出的信息——收件箱分页按产品口径排除了会话消息
+     * （{@code notify_type not in (6,7)}），离线补拉只覆盖纯提醒类。
+     * 若不在这里聚合，前端只能记住「用户点过谁」，刷新即残缺，
+     * 且永远列不出「别人发过但我没回过」的会话。</p>
+     *
+     * <p><b>三次查询，全程无 N+1</b>：
+     * <ol>
+     *   <li>聚合：按 {@code (scope, target)} 分组取最后一条 ID 与未读数（走 {@code idx_session}）；</li>
+     *   <li>明细：按上一步的 ID 集合批量取最后一条消息（走主键）；</li>
+     *   <li>昵称：只对<b>单聊</b>的 targetId 批量反查 {@code UserLookupPort}（群聊不查，见下）。</li>
+     * </ol></p>
+     *
+     * <p><b>群聊不解析群名</b>：群名属 {@code sys_group}，而本模块接管该表族的收口动作仍挂在
+     * architecture.md D-11。为多显示一个名字而越过表族边界取数不划算，故群聊的
+     * {@code targetName} 返回 {@code null}，由前端回落为「群聊 #id」；
+     * 待群组管理面落地后，只需在此补一次批量查名，对外契约与前端都无需改动。</p>
+     *
+     * @param userId 会话归属者（取自登录态，不从入参取）
+     * @param limit  条数（按 {@code notify.chat-conversation-limit} 收敛上限）
+     * @return 按最后活跃倒序的会话列表；没有会话时返回空列表
+     */
+    public List<ConversationVO> conversations(Long userId, Integer limit) {
+        int size = normalizeConversationLimit(limit);
+        List<ConversationSummary> summaries = notifyMessageMapper.selectConversationSummaries(userId, size);
+        if (summaries.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> lastIds = summaries.stream().map(ConversationSummary::getLastMessageId).toList();
+        Map<Long, NotifyMessage> lastById = notifyMessageMapper.selectByIds(lastIds).stream()
+                .collect(Collectors.toMap(NotifyMessage::getId, message -> message));
+
+        Set<Long> peerIds = summaries.stream()
+                .filter(summary -> isPrivateChat(summary.getChatScope()))
+                .map(ConversationSummary::getChatTargetId)
+                .collect(Collectors.toSet());
+        Map<Long, UserLookupPort.UserContact> contacts = peerIds.isEmpty()
+                ? Map.of()
+                : userLookupPort.findContacts(peerIds);
+
+        List<ConversationVO> conversations = new ArrayList<>(summaries.size());
+        for (ConversationSummary summary : summaries) {
+            NotifyMessage last = lastById.get(summary.getLastMessageId());
+            if (last == null) {
+                // 聚合结果与明细不一致（该行刚被逻辑删除 / 清理任务收走）：跳过这条会话即可，
+                // 不该因为一条脏数据让整个聊天页打不开
+                log.debug("会话最后一条消息已不可见，跳过该会话：user={}, scope={}, target={}",
+                        userId, summary.getChatScope(), summary.getChatTargetId());
+                continue;
+            }
+            conversations.add(new ConversationVO(
+                    summary.getChatScope(),
+                    summary.getChatTargetId(),
+                    resolveTargetName(summary, contacts),
+                    summary.getLastMessageId(),
+                    last.getContent(),
+                    last.getMessageType(),
+                    last.getSenderUserId(),
+                    isSelfSent(last),
+                    last.getCreateTime(),
+                    summary.getUnreadCount() == null ? 0L : summary.getUnreadCount()));
+        }
+        return conversations;
+    }
+
     /* ------------------------------------------------------------------ 内部实现 */
 
     /** 入参形状校验：范围 / 消息体类型 / 正文字数（对齐列宽与配置上限）。 */
@@ -320,5 +394,46 @@ public class ChatService {
             return max;
         }
         return Math.min(limit, max);
+    }
+
+    /** 会话列表条数收敛：与历史翻页同一套「缺省取上限、超出即截断」口径。 */
+    private int normalizeConversationLimit(Integer limit) {
+        int max = properties.getChatConversationLimit();
+        if (limit == null || limit <= 0) {
+            return max;
+        }
+        return Math.min(limit, max);
+    }
+
+    /** 是否单聊——决定「要不要反查用户展示名」（群名不在本模块取数范围，见 conversations 注释）。 */
+    private static boolean isPrivateChat(Integer scope) {
+        return scope != null && !ChatScope.isGroup(scope);
+    }
+
+    /**
+     * 会话名解析：单聊取对端展示名（查不到返回 {@code null}，前端回落「用户 #id」）；
+     * 群聊恒为 {@code null}（群名属 {@code sys_group}，D-11 未收口，本模块不越界取数）。
+     */
+    private static String resolveTargetName(ConversationSummary summary,
+                                            Map<Long, UserLookupPort.UserContact> contacts) {
+        if (!isPrivateChat(summary.getChatScope())) {
+            return null;
+        }
+        UserLookupPort.UserContact contact = contacts.get(summary.getChatTargetId());
+        return contact == null ? null : contact.displayName();
+    }
+
+    /**
+     * 这条消息是不是「我本人发出的」——会话列表据此决定摘要前缀与未读口径。
+     *
+     * <p><b>为什么只比 {@code sender} 与 {@code recipient}，不比对「当前用户 ID」：</b>
+     * 写扩散下「我发出的每一行」都是 {@code recipient = sender = 我}（单聊落两行、群聊落 N 行，
+     * 我的那一行只发给我自己），这个等式在单聊与群聊里同样成立；而登录态里并没有可信的
+     * 用户主键可拿来比较。把判定收敛到这一行数据自身，也顺带避免了「拿错 userId」这类
+     * 只会表现为「自己的消息显示在左边」的隐蔽错位。</p>
+     */
+    private static boolean isSelfSent(NotifyMessage message) {
+        Long sender = message.getSenderUserId();
+        return sender != null && sender.equals(message.getRecipientUserId());
     }
 }
