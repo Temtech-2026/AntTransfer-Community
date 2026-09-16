@@ -15,6 +15,7 @@
 import {
   EMPTY_UNREAD,
   applyIncomingMessage,
+  isSelfSentMessage,
   normalizeUnread,
   type NotifyMessage,
   type UnreadCount,
@@ -284,7 +285,11 @@ export class WsClient {
           break;
         }
         this.emit('message', message, frame);
-        this.setUnread(applyIncomingMessage(this.unread, message.notifyType));
+        // 自己发的消息会被推回给自己（推送覆盖该用户的全部连接，多端同步所需），
+        // 但它不是未读——不传这个标记的话，每发一条消息角标就 +1 且只能等刷新才纠正
+        this.setUnread(
+          applyIncomingMessage(this.unread, message.notifyType, isSelfSentMessage(message)),
+        );
         break;
       }
       case WsFrameType.PING: {

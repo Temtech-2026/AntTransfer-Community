@@ -55,12 +55,24 @@ export const ChatScope = {
   GROUP: 2,
 } as const;
 
-/** 消息体类型（与后端 {@code MessageType} 对齐，CE 目前透传不做差异化渲染）。 */
+/**
+ * 消息体类型（与后端 {@code MessageType} 逐值对齐）。
+ *
+ * <p><b>修正说明：</b>此前此处写的是 {@code IMAGE:3 / SYSTEM:4}，与后端不符——
+ * 后端口径为 {@code SYSTEM:0 / CHAT_TEXT:1 / FILE_TRANSFER:2 / APPROVAL_RESULT:3}
+ * （见 at-common {@code MessageType}；会话消息禁止取 0，由 ChatService 校验）。
+ * 因当时前端只做透传、不按类型差异化渲染，偏差一直没被暴露；
+ * 聊天页要按类型渲染「[文件]」这类摘要，必须以后端为准。</p>
+ */
 export const MessageType = {
+  /** 非会话消息（系统通知 / 待办）——不会出现在会话流里。 */
+  SYSTEM: 0,
+  /** 文本（单聊 / 群聊）。 */
   TEXT: 1,
+  /** 文件传输通知（文件卡片）。 */
   FILE: 2,
-  IMAGE: 3,
-  SYSTEM: 4,
+  /** 审批结果通知（结论卡片）。 */
+  APPROVAL: 3,
 } as const;
 
 /**
@@ -115,12 +127,39 @@ export function normalizeUnread(raw?: Partial<UnreadCount> | null): UnreadCount 
 }
 
 /**
+ * 这条消息是否由收件人自己发出。
+ *
+ * <p>写扩散（见后端 {@code NotifyMessage} 类注）下，「我发的」那一行的
+ * {@code recipientUserId} 就是我，因此比较 sender 与 recipient 即可判定方向。
+ * 这个判据<b>不依赖调用方知道自己的 userId</b>——前端登录态里恰恰没有可信的用户主键
+ * （见 {@code pages/system/users} 的文件头说明），所以不能改用「当前用户 ID 比对」。</p>
+ *
+ * <p>为什么必须能判定方向：WS 推送覆盖该用户的<b>全部连接</b>（多端同步所需），
+ * 自己发的消息也会原样推回给自己。若不拦住，每发一条消息导航栏的会话角标就 +1。</p>
+ */
+export function isSelfSentMessage(
+  message: Pick<NotifyMessage, 'senderUserId' | 'recipientUserId'>,
+): boolean {
+  return message.senderUserId != null && message.senderUserId === message.recipientUserId;
+}
+
+/**
  * 实时增量：把一条新消息折算到三口径上。
  *
- * <p>口径说明见文件头——这里刻意做成纯函数，是整套红点逻辑里最容易算错的 5 行。
+ * <p>口径说明见文件头——这里刻意做成纯函数，是整套红点逻辑里最容易算错的几行。</p>
+ *
+ * @param selfSent 是否为「自己发出」的消息（由 {@link isSelfSentMessage} 判定）。
+ *                 为 `true` 时三口径一律不动：它不是未读，只是自己的一次写入回声。
  */
-export function applyIncomingMessage(current: UnreadCount, notifyType: number): UnreadCount {
+export function applyIncomingMessage(
+  current: UnreadCount,
+  notifyType: number,
+  selfSent = false,
+): UnreadCount {
   const base = normalizeUnread(current);
+  if (selfSent) {
+    return base;
+  }
   if (isChatNotify(notifyType)) {
     return { ...base, chat: base.chat + 1 };
   }
