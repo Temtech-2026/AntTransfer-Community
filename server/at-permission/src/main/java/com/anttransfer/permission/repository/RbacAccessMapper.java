@@ -46,7 +46,23 @@ public interface RbacAccessMapper {
     List<RoleGrant> selectRoles(@Param("userId") Long userId);
 
     /**
-     * 用户可达权限点（操作点 type=2）并集：多角色授权 UNION（distinct）。
+     * 用户可达权限点并集：多角色授权 UNION（distinct）。
+     *
+     * <p><b>为什么必须同时取 type=1 菜单节点，而不是只取 type=2 操作点：</b>
+     * {@code sys_role_permission} 里的授权本来就分两类——菜单节点（type=1，如
+     * {@code file} / {@code audit} / {@code system}）与操作点（type=2，如 {@code file:download}）。
+     * CE 的只读页 {@code /system/depts} / {@code /system/groups} / {@code /system/menus}
+     * <b>没有</b>对应的原子权限点（V9 只建了 {@code system:user:*} / {@code system:role:*}），
+     * 按 docs/development/frontend-permission-map.md 的口径，它们的菜单显隐与路由守卫
+     * 都以菜单根节点 {@code system}（V9 id=102，且 V9 已显式授给 SUPER_ADMIN）为准。</p>
+     *
+     * <p>本方法此前写死 {@code p.type = 2}，而 {@code system} 的 type=1 会被直接过滤掉，
+     * 快照里便永远不含 {@code system} —— 表现为「V9 明明授了权，前端却判无权限」：
+     * 侧边栏三项消失、直连路由被 PermGuard 拦成 403。取 {@code type in (1, 2)} 后，
+     * 授权数据与权限判定口径重新一致。type=3（数据范围）是独立维度，不并入。</p>
+     *
+     * <p>安全性：{@code @RequiresPerm} 全部使用含 {@code :} 的原子权限点编码，
+     * 注入菜单节点不会放行任何接口；菜单节点仅用于前端菜单显隐与无原子点的只读页守卫。</p>
      */
     @Select("""
             select distinct p.perm_code
@@ -55,7 +71,7 @@ public interface RbacAccessMapper {
                      join sys_role r on r.id = rp.role_id
                      join sys_user_role ur on ur.role_id = r.id
             where ur.user_id = #{userId}
-              and p.type = 2
+              and p.type in (1, 2)
               and p.deleted = 0
               and rp.deleted = 0
               and r.deleted = 0

@@ -220,7 +220,12 @@ class ManagementApiPermissionMatrixTest {
         scanner.addIncludeFilter(new AnnotationTypeFilter(RestController.class));
         return scanner.findCandidateComponents(CONTROLLER_PACKAGE).stream()
                 .map(BeanDefinition::getBeanClassName)
-                .map(ManagementApiPermissionMatrixTest::loadClass)
+                // 显式类型见证：loadClass 返回 Class<?>，若交给推导，ECJ 会把通配捕获成
+                // Class<capture#N-of ?>，导致 toList() 无法赋给 List<Class<?>>（javac 则能通过）。
+                // 两个编译器口径不一致时，IDE 后台构建会往 target/test-classes 写入带
+                // "Unresolved compilation problem" 的坏 class，Maven 增量编译又会跳过重编，
+                // 最终由 surefire 在运行期抛错——故此处显式固定为 Class<?>。
+                .<Class<?>>map(ManagementApiPermissionMatrixTest::loadClass)
                 .sorted(Comparator.comparing(Class::getSimpleName))
                 .toList();
     }
