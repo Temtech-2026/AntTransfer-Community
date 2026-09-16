@@ -101,7 +101,7 @@ const SharesPage: React.FC = () => {
       width: 560,
       okText: '我知道了',
       content: (
-        <Space direction="vertical" size="small" style={{ width: '100%' }}>
+        <Space orientation="vertical" size="small" style={{ width: '100%' }}>
           <Typography.Text copyable={{ text: url }}>{url}</Typography.Text>
           <Typography.Text>
             提取码：

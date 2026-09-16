@@ -20,8 +20,21 @@
 
 import { LockOutlined, PictureOutlined, UserOutlined } from '@ant-design/icons';
 import { useSearchParams } from '@umijs/max';
-import { Alert, Button, Checkbox, Form, Input, Space, Typography, theme } from 'antd';
+import type { ThemeConfig } from 'antd';
+import {
+  Alert,
+  Button,
+  Checkbox,
+  ConfigProvider,
+  Form,
+  Input,
+  Space,
+  Typography,
+  theme,
+} from 'antd';
 import React, { useEffect, useMemo, useState } from 'react';
+
+import FlyingFilesBackground from '@/components/FlyingFilesBackground';
 
 import {
   formatCountdown,
@@ -36,6 +49,8 @@ import { BizError } from '@/services/request';
 import { safeRedirectPath } from '@/utils/redirect';
 import { ACCOUNT_LOCKED_CODE, DEFAULT_ERROR_MESSAGE } from '@/utils/result';
 
+import useStyles from './index.style';
+
 /** 登录表单字段。 */
 interface LoginFormValues {
   username: string;
@@ -44,8 +59,37 @@ interface LoginFormValues {
   remember?: boolean;
 }
 
+/**
+ * 登录页局部暗色主题。
+ *
+ * <p>用暗色算法把 antd 组件（输入框、告警、复选框、按钮）整体切到深色，
+ * 再补齐品牌色；这里只覆盖 token，组件形状仍由 antd 统一给出，
+ * 避免逐条覆盖 `.ant-*` 内部类名——那类写法会随 antd 改版静默失效。</p>
+ *
+ * <p>仅作用于登录页：登录页是独立入口（路由 `layout: false`），与全站亮色布局不同屏。</p>
+ */
+const DARK_THEME: ThemeConfig = {
+  algorithm: theme.darkAlgorithm,
+  token: {
+    // 控件底色比卡片更暗，压出内凹层次，也让磨砂卡片透出背景流光
+    colorBgContainer: 'rgba(0, 0, 0, 0.25)',
+    colorBorder: 'rgba(0, 212, 255, 0.15)',
+    colorPrimary: '#00d68f',
+    colorPrimaryHover: '#00d68f',
+    colorLink: '#00d68f',
+    colorIcon: '#80c8a0',
+    colorText: '#e0e8f5',
+    colorTextHeading: '#ffffff',
+    colorTextSecondary: '#b8c8e0',
+    colorTextPlaceholder: '#8899bb',
+    // 实心主按钮：青绿底(#00d68f)配白字对比度只有约 1.8:1，远低于 WCAG AA 的 4.5:1；
+    // 换成深墨绿字后可达 9:1 以上。若想还原白字，删掉这一行即可。
+    colorTextLightSolid: '#04241a',
+  },
+};
+
 const LoginPage: React.FC = () => {
-  const { token } = theme.useToken();
+  const { styles } = useStyles();
   const [searchParams] = useSearchParams();
   const redirect = searchParams.get('redirect');
 
@@ -100,114 +144,139 @@ const LoginPage: React.FC = () => {
         // 解析不到分钟数时只展示原文案：不臆造一个可能早已过期的倒计时
         setLockUntil(minutes ? lockDeadline(minutes) : null);
       }
-      setErrorText(biz?.message || (error as Error)?.message || DEFAULT_ERROR_MESSAGE);
+      setErrorText(
+        biz?.message || (error as Error)?.message || DEFAULT_ERROR_MESSAGE,
+      );
       setSubmitting(false);
     }
   };
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        padding: '24px 16px',
-        background: token.colorBgLayout,
-      }}
-    >
-      <div
-        style={{
-          width: 380,
-          maxWidth: '100%',
-          padding: 32,
-          background: token.colorBgContainer,
-          borderRadius: token.borderRadiusLG,
-          boxShadow: token.boxShadowSecondary,
-        }}
-      >
-        <div style={{ marginBottom: 24, textAlign: 'center' }}>
-          <Typography.Title level={3} style={{ marginBottom: 8 }}>
-            AntTransfer
-          </Typography.Title>
-          <Typography.Text type="secondary">企业文件传输与协作平台</Typography.Text>
-        </div>
+    <div className={styles.container}>
+      <FlyingFilesBackground />
 
-        {locked ? (
-          <Alert
-            type="warning"
-            showIcon
-            style={{ marginBottom: 16 }}
-            title="账号已锁定"
-            description={`${lockMessage || '登录失败次数过多'}（剩余 ${formatCountdown(remaining)}）`}
-          />
-        ) : null}
+      <div className={styles.contentWrapper}>
+        {/* 只在登录页内切换暗色，不影响全站亮色布局 */}
+        <ConfigProvider theme={DARK_THEME}>
+          <div className={styles.formCard}>
+            <div className={styles.brand}>
+              {/* 装饰性图片：品牌名由下方标题承担，alt 留空避免读屏重复播报 */}
+              <img className={styles.logo} src="/logo.svg" alt="" />
+              <Typography.Title level={3} style={{ marginBottom: 8 }}>
+                AntTransfer
+              </Typography.Title>
+              <Typography.Text type="secondary">
+                企业文件传输与协作平台
+              </Typography.Text>
+            </div>
 
-        {!locked && errorText ? (
-          <Alert type="error" showIcon style={{ marginBottom: 16 }} title={errorText} />
-        ) : null}
+            {locked ? (
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginBottom: 16 }}
+                title="账号已锁定"
+                description={`${lockMessage || '登录失败次数过多'}（剩余 ${formatCountdown(remaining)}）`}
+              />
+            ) : null}
 
-        <Form
-          layout="vertical"
-          size="large"
-          requiredMark={false}
-          initialValues={{
-            username: rememberedUsername,
-            remember: Boolean(rememberedUsername),
-          }}
-          onFinish={handleFinish}
-        >
-          <Form.Item
-            name="username"
-            label="账号"
-            rules={[{ required: true, message: '请输入账号' }]}
-          >
-            <Input
-              prefix={<UserOutlined />}
-              placeholder="请输入账号"
-              autoComplete="username"
-              disabled={locked}
-            />
-          </Form.Item>
+            {!locked && errorText ? (
+              <Alert
+                type="error"
+                showIcon
+                style={{ marginBottom: 16 }}
+                title={errorText}
+              />
+            ) : null}
 
-          <Form.Item
-            name="password"
-            label="密码"
-            rules={[{ required: true, message: '请输入密码' }]}
-          >
-            <Input.Password
-              prefix={<LockOutlined />}
-              placeholder="请输入密码"
-              autoComplete="current-password"
-              disabled={locked}
-            />
-          </Form.Item>
+            <Form
+              layout="vertical"
+              size="large"
+              requiredMark={false}
+              initialValues={{
+                username: rememberedUsername,
+                remember: Boolean(rememberedUsername),
+              }}
+              onFinish={handleFinish}
+            >
+              <Form.Item
+                name="username"
+                label="账号"
+                rules={[{ required: true, message: '请输入账号' }]}
+              >
+                <Input
+                  className={styles.inputField}
+                  prefix={<UserOutlined />}
+                  placeholder="请输入账号"
+                  autoComplete="username"
+                  disabled={locked}
+                />
+              </Form.Item>
 
-          <Form.Item label="图形验证码" tooltip="图形验证码服务尚未接入，当前登录不做校验（仅 UI 预留）">
-            <Space.Compact style={{ width: '100%' }}>
-              <Input placeholder="服务接入后启用" disabled />
-              <Button icon={<PictureOutlined />} disabled style={{ width: 104 }}>
-                验证码
+              <Form.Item
+                name="password"
+                label="密码"
+                rules={[{ required: true, message: '请输入密码' }]}
+              >
+                <Input.Password
+                  className={styles.inputField}
+                  prefix={<LockOutlined />}
+                  placeholder="请输入密码"
+                  autoComplete="current-password"
+                  disabled={locked}
+                />
+              </Form.Item>
+
+              <Form.Item
+                label="图形验证码"
+                tooltip="图形验证码服务尚未接入，当前登录不做校验（仅 UI 预留）"
+              >
+                <Space.Compact style={{ width: '100%' }}>
+                  <Input placeholder="服务接入后启用" disabled />
+                  <Button
+                    icon={<PictureOutlined />}
+                    disabled
+                    style={{ width: 104 }}
+                  >
+                    验证码
+                  </Button>
+                </Space.Compact>
+              </Form.Item>
+
+              <Form.Item
+                name="remember"
+                valuePropName="checked"
+                style={{ marginBottom: 16 }}
+              >
+                <Checkbox disabled={locked}>
+                  记住我（仅记住账号，不保存密码）
+                </Checkbox>
+              </Form.Item>
+
+              <Button
+                type="primary"
+                htmlType="submit"
+                block
+                loading={submitting}
+                disabled={locked}
+              >
+                {locked ? `请 ${formatCountdown(remaining)} 后重试` : '登录'}
               </Button>
-            </Space.Compact>
-          </Form.Item>
+            </Form>
 
-          <Form.Item name="remember" valuePropName="checked" style={{ marginBottom: 16 }}>
-            <Checkbox disabled={locked}>记住我（仅记住账号，不保存密码）</Checkbox>
-          </Form.Item>
-
-          <Button type="primary" htmlType="submit" block loading={submitting} disabled={locked}>
-            {locked ? `请 ${formatCountdown(remaining)} 后重试` : '登录'}
-          </Button>
-        </Form>
-
-        <Typography.Paragraph
-          type="secondary"
-          style={{ marginTop: 16, marginBottom: 0, fontSize: 12, textAlign: 'center' }}
-        >
-          账号由管理员统一分配，如需开通请联系管理员
-        </Typography.Paragraph>
+            <Typography.Paragraph
+              type="secondary"
+              style={{
+                marginTop: 16,
+                marginBottom: 0,
+                fontSize: 12,
+                textAlign: 'center',
+              }}
+            >
+              账号由管理员统一分配，如需开通请联系管理员
+            </Typography.Paragraph>
+          </div>
+        </ConfigProvider>
       </div>
     </div>
   );

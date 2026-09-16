@@ -253,7 +253,7 @@ export function ChunkUpload(props: ChunkUploadProps) {
           style={{ marginBottom: token.marginMD }}
           title={`检测到 ${resumable.length} 个未完成的上传`}
           description={
-            <Space direction="vertical" size={4} style={{ width: '100%' }}>
+            <Space orientation="vertical" size={4} style={{ width: '100%' }}>
               <Text type="secondary">
                 为避免重复传输，请重新选择同一文件，系统将跳过服务端已收到的分片继续上传。
               </Text>
@@ -361,7 +361,7 @@ export function ChunkUpload(props: ChunkUploadProps) {
       ) : null}
 
       <Space
-        direction="vertical"
+        orientation="vertical"
         size={token.marginSM}
         style={{ width: '100%' }}
       >
@@ -378,7 +378,7 @@ export function ChunkUpload(props: ChunkUploadProps) {
               style={{ width: '100%', justifyContent: 'space-between' }}
               align="start"
             >
-              <Space direction="vertical" size={2} style={{ minWidth: 0 }}>
+              <Space orientation="vertical" size={2} style={{ minWidth: 0 }}>
                 <Space size={8}>
                   <Text strong ellipsis style={{ maxWidth: 360 }}>
                     {task.fileName}

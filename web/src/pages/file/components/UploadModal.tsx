@@ -20,8 +20,8 @@ import {
   Tag,
   Tooltip,
   Typography,
-  Upload,
   theme,
+  Upload,
 } from 'antd';
 import { useCallback, useRef } from 'react';
 
@@ -97,7 +97,10 @@ function TaskRow({
         borderBottom: `1px solid ${token.colorSplit}`,
       }}
     >
-      <Space style={{ width: '100%', justifyContent: 'space-between' }} align="start">
+      <Space
+        style={{ width: '100%', justifyContent: 'space-between' }}
+        align="start"
+      >
         <Space size={4} wrap>
           <Text ellipsis style={{ maxWidth: 260 }}>
             {task.fileName}
@@ -108,38 +111,66 @@ function TaskRow({
           <Text type="secondary" style={{ fontSize: 12 }}>
             {formatBytes(task.size)}
             {task.chunkCount > 0 ? ` · ${received}/${task.chunkCount} 片` : ''}
-            {task.status === 'uploading' ? ` · ${formatBytes(task.speed)}/s` : ''}
+            {task.status === 'uploading'
+              ? ` · ${formatBytes(task.speed)}/s`
+              : ''}
           </Text>
         </Space>
 
         <Space size={4}>
           {running ? (
-            <Button size="small" type="link" onClick={() => uploader.pause(task.id)}>
+            <Button
+              size="small"
+              type="link"
+              onClick={() => uploader.pause(task.id)}
+            >
               暂停
             </Button>
           ) : null}
           {task.status === 'paused' ? (
-            <Button size="small" type="link" onClick={() => uploader.resume(task.id)}>
+            <Button
+              size="small"
+              type="link"
+              onClick={() => uploader.resume(task.id)}
+            >
               继续
             </Button>
           ) : null}
           {task.status === 'error' ? (
             <>
-              <Button size="small" type="link" onClick={() => uploader.retry(task.id)}>
+              <Button
+                size="small"
+                type="link"
+                onClick={() => uploader.retry(task.id)}
+              >
                 重试
               </Button>
-              <Button size="small" type="link" danger onClick={() => uploader.remove(task.id)}>
+              <Button
+                size="small"
+                type="link"
+                danger
+                onClick={() => uploader.remove(task.id)}
+              >
                 移除
               </Button>
             </>
           ) : null}
           {running || task.status === 'paused' ? (
-            <Button size="small" type="link" danger onClick={() => uploader.cancel(task.id)}>
+            <Button
+              size="small"
+              type="link"
+              danger
+              onClick={() => uploader.cancel(task.id)}
+            >
               取消
             </Button>
           ) : null}
           {finished || task.status === 'canceled' ? (
-            <Button size="small" type="link" onClick={() => uploader.remove(task.id)}>
+            <Button
+              size="small"
+              type="link"
+              onClick={() => uploader.remove(task.id)}
+            >
               移除
             </Button>
           ) : null}
@@ -150,10 +181,16 @@ function TaskRow({
         percent={task.progress}
         size="small"
         status={
-          task.status === 'error' ? 'exception' : finished ? 'success' : 'active'
+          task.status === 'error'
+            ? 'exception'
+            : finished
+              ? 'success'
+              : 'active'
         }
         // 哈希 / 预检阶段进度条不动，用 status 文案说明，避免进度条来回抖动
-        format={(percent) => (task.status === 'hashing' ? '校验中' : `${percent}%`)}
+        format={(percent) =>
+          task.status === 'hashing' ? '校验中' : `${percent}%`
+        }
       />
 
       {showStrip ? (
@@ -167,7 +204,10 @@ function TaskRow({
                   width: 6,
                   height: 6,
                   borderRadius: 1,
-                  background: chunkStripColor(task.status, receivedSet.has(index)),
+                  background: chunkStripColor(
+                    task.status,
+                    receivedSet.has(index),
+                  ),
                 }}
               />
             </Tooltip>
@@ -191,11 +231,18 @@ function TaskRow({
   );
 }
 
-export default function UploadModal({ open, folderId, uploader, onClose }: UploadModalProps) {
+export default function UploadModal({
+  open,
+  folderId,
+  uploader,
+  onClose,
+}: UploadModalProps) {
   const reselectRef = useRef<HTMLInputElement | null>(null);
 
   const { tasks, resumable } = uploader;
-  const uploading = tasks.filter((task) => RUNNING_STATUSES.includes(task.status)).length;
+  const uploading = tasks.filter((task) =>
+    RUNNING_STATUSES.includes(task.status),
+  ).length;
   const finished = tasks.filter((task) => task.status === 'success').length;
 
   /** 选中文件即入队：返回 false 阻止 antd 内置上传器（传输由控制器接管）。 */
@@ -228,10 +275,18 @@ export default function UploadModal({ open, folderId, uploader, onClose }: Uploa
       onCancel={onClose}
       maskClosable={false}
       footer={[
-        <Text key="summary" type="secondary" style={{ float: 'left', lineHeight: '32px' }}>
+        <Text
+          key="summary"
+          type="secondary"
+          style={{ float: 'left', lineHeight: '32px' }}
+        >
           进行中 {uploading} · 已完成 {finished} · 共 {tasks.length}
         </Text>,
-        <Button key="pauseAll" onClick={uploader.pauseAll} disabled={uploading === 0}>
+        <Button
+          key="pauseAll"
+          onClick={uploader.pauseAll}
+          disabled={uploading === 0}
+        >
           全部暂停
         </Button>,
         <Button key="resumeAll" onClick={uploader.resumeAll}>
@@ -265,7 +320,7 @@ export default function UploadModal({ open, folderId, uploader, onClose }: Uploa
           showIcon
           title="检测到上次未完成的上传"
           description={
-            <Space direction="vertical" size={4} style={{ width: '100%' }}>
+            <Space orientation="vertical" size={4} style={{ width: '100%' }}>
               {/* 关键口径：本地缓存只用于提示，真正从第几片开始传由服务端分片清单决定 */}
               <Text type="secondary" style={{ fontSize: 12 }}>
                 下面进度来自本地缓存，仅供参考；实际续传位置以服务端分片清单为准。
@@ -276,13 +331,21 @@ export default function UploadModal({ open, folderId, uploader, onClose }: Uploa
                     {record.fileName}（{formatBytes(record.size)}，已完成{' '}
                     {record.receivedCount}/{record.chunkCount} 片）
                   </Text>
-                  <Button size="small" type="link" onClick={() => uploader.discardRecord(record.key)}>
+                  <Button
+                    size="small"
+                    type="link"
+                    onClick={() => uploader.discardRecord(record.key)}
+                  >
                     忽略
                   </Button>
                 </Space>
               ))}
               <Space>
-                <Button size="small" type="primary" onClick={() => reselectRef.current?.click()}>
+                <Button
+                  size="small"
+                  type="primary"
+                  onClick={() => reselectRef.current?.click()}
+                >
                   选择文件续传
                 </Button>
                 <Text type="secondary" style={{ fontSize: 12 }}>
@@ -307,7 +370,9 @@ export default function UploadModal({ open, folderId, uploader, onClose }: Uploa
         {tasks.length === 0 ? (
           <Text type="secondary">暂无上传任务</Text>
         ) : (
-          tasks.map((task) => <TaskRow key={task.id} task={task} uploader={uploader} />)
+          tasks.map((task) => (
+            <TaskRow key={task.id} task={task} uploader={uploader} />
+          ))
         )}
       </div>
     </Modal>

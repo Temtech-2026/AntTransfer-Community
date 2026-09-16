@@ -3,9 +3,10 @@ import type { Settings as LayoutSettings } from '@ant-design/pro-components';
 import { SettingDrawer } from '@ant-design/pro-components';
 import type { RequestConfig, RunTimeLayoutConfig } from '@umijs/max';
 import { history, Link } from '@umijs/max';
+import { ConfigProvider, theme } from 'antd';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
 // Initialize dayjs plugins globally
 dayjs.extend(relativeTime);
@@ -22,18 +23,28 @@ import {
   VersionDropdown,
 } from '@/components';
 import {
-  DENY_ALL_PERMISSION,
   buildMenuTree,
+  DENY_ALL_PERMISSION,
   fetchMyMenus,
   fetchMyPermission,
   filterMenuByPerm,
   filterProMenuByPerm,
-  toMenuData,
-  toProMenuItems,
   type MenuNode,
   type MyPermission,
+  toMenuData,
+  toProMenuItems,
 } from '@/services/access';
 import { fetchProfile, toCurrentUser } from '@/services/auth';
+import {
+  BRAND_ON_PRIMARY,
+  BRAND_PRIMARY_ACTIVE,
+  BRAND_PRIMARY_BG,
+  DARK_LAYOUT_COLORS,
+  DARK_TOKENS,
+  persistThemePreference,
+  resolveIsDark,
+  THEME_CHANGE_EVENT,
+} from '@/theme/tokens';
 import defaultSettings from '../config/defaultSettings';
 import { errorConfig } from './requestErrorConfig';
 
@@ -88,6 +99,17 @@ export async function getInitialState(): Promise<{
       return { permissions: DENY_ALL_PERMISSION, menus: [] };
     }
   };
+  /**
+   * 恢复用户上次选择的主题偏好（与源项目 at-admin 同构）。
+   *
+   * <p>只覆盖 `navTheme` 一个字段：`auto` 在这里就解析成确定的明 / 暗，
+   * 避免 ProLayout 自己按系统偏好渲染、而 ConfigProvider 按 localStorage 渲染导致两边不一致。
+   */
+  const baseSettings: Partial<LayoutSettings> = {
+    ...(defaultSettings as Partial<LayoutSettings>),
+    navTheme: resolveIsDark() ? 'realDark' : 'light',
+  };
+
   // 如果不是登录页面，执行
   const { location } = history;
   if (location.pathname !== loginPath) {
@@ -98,7 +120,7 @@ export async function getInitialState(): Promise<{
       currentUser,
       permissions,
       menus,
-      settings: defaultSettings as Partial<LayoutSettings>,
+      settings: baseSettings,
       settingDrawerOpen: false,
     };
   }
@@ -106,7 +128,7 @@ export async function getInitialState(): Promise<{
     fetchUserInfo,
     permissions: DENY_ALL_PERMISSION,
     menus: [],
-    settings: defaultSettings as Partial<LayoutSettings>,
+    settings: baseSettings,
     settingDrawerOpen: false,
   };
 }
@@ -117,6 +139,8 @@ export const layout: RunTimeLayoutConfig = ({
   setInitialState,
 }) => {
   const permSet = new Set(initialState?.permissions?.permCodes ?? []);
+  // 暗色模式下顶栏 / 侧栏换深色底；明亮模式保持白底 + 浅绿选中
+  const isDark = initialState?.settings?.navTheme === 'realDark';
   return {
     /**
      * 动态菜单：优先用后端菜单（`/api/v1/permission/menus`，D-9 未落地时为 []），
@@ -126,7 +150,10 @@ export const layout: RunTimeLayoutConfig = ({
      */
     menuDataRender: (menuData) => {
       const dynamic = toProMenuItems(
-        filterMenuByPerm(toMenuData(buildMenuTree(initialState?.menus)), permSet),
+        filterMenuByPerm(
+          toMenuData(buildMenuTree(initialState?.menus)),
+          permSet,
+        ),
       );
       if (dynamic.length > 0) {
         return dynamic;
@@ -177,26 +204,6 @@ export const layout: RunTimeLayoutConfig = ({
         );
       }
     },
-    bgLayoutImgList: [
-      {
-        src: 'https://mdn.alipayobjects.com/yuyan_qk0oxh/afts/img/D2LWSqNny4sAAAAAAAAAAAAAFl94AQBr',
-        left: 85,
-        bottom: 100,
-        height: '303px',
-      },
-      {
-        src: 'https://mdn.alipayobjects.com/yuyan_qk0oxh/afts/img/C2TWRpJpiC0AAAAAAAAAAAAAFl94AQBr',
-        bottom: -68,
-        right: -45,
-        height: '303px',
-      },
-      {
-        src: 'https://mdn.alipayobjects.com/yuyan_qk0oxh/afts/img/F6vSTbj8KpYAAAAAAAAAAAAAFl94AQBr',
-        bottom: 0,
-        left: 0,
-        width: '331px',
-      },
-    ],
     links: isDev
       ? [
           <Link key="openapi" to="/umi/plugin/openapi" target="_blank">
@@ -211,34 +218,64 @@ export const layout: RunTimeLayoutConfig = ({
     menuHeaderRender: undefined,
     // 自定义 403 页面
     // unAccessible: <div>unAccessible</div>,
-    // 增加一个 loading 的状态
-    childrenRender: (children) => {
-      // if (initialState?.loading) return <PageLoading />;
+    /**
+     * 主题设置抽屉：只在开发态渲染，避免把「改主色 / 换布局」这类调试面板带到生产。
+     *
+     * <p>改动后把 navTheme 持久化并广播事件，rootContainer 据此切换 darkAlgorithm，
+     * 否则 ProLayout 变暗了、antd 组件还停在亮色。
+     */
+    settingDrawerRender: () => {
+      if (!isDev) {
+        return null;
+      }
       return (
-        <>
-          {children}
-          <SettingDrawer
-            disableUrlParams
-            enableDarkTheme
-            collapse={initialState?.settingDrawerOpen}
-            onCollapseChange={(open) => {
-              setInitialState((s) => ({
-                ...s,
-                settingDrawerOpen: open,
-              }));
-            }}
-            settings={initialState?.settings}
-            onSettingChange={(settings) => {
-              setInitialState((s) => ({
-                ...s,
-                settings,
-              }));
-            }}
-          />
-        </>
+        <SettingDrawer
+          disableUrlParams
+          enableDarkTheme
+          collapse={initialState?.settingDrawerOpen}
+          onCollapseChange={(open) => {
+            setInitialState((s) => ({
+              ...s,
+              settingDrawerOpen: open,
+            }));
+          }}
+          settings={initialState?.settings}
+          onSettingChange={(settings) => {
+            persistThemePreference(settings.navTheme);
+            setInitialState((s) => ({
+              ...s,
+              settings,
+            }));
+          }}
+        />
       );
     },
     ...initialState?.settings,
+    /**
+     * 按明暗态覆盖结构色。
+     *
+     * <p>必须放在 `...initialState?.settings` **之后**：对象展开是整体替换 `token` 键，
+     * 所以这里要把明亮态的取值一并补全，不能只写暗色分支。
+     */
+    token: {
+      header: {
+        colorBgHeader: isDark ? DARK_LAYOUT_COLORS.headerBg : '#fff',
+      },
+      sider: {
+        colorBgMenuItemSelected: isDark
+          ? DARK_LAYOUT_COLORS.siderSelectedBg
+          : BRAND_PRIMARY_BG,
+        colorBgMenuItemHover: isDark ? undefined : '#f2fdf8',
+        colorTextMenuSelected: isDark ? BRAND_ON_PRIMARY : BRAND_PRIMARY_ACTIVE,
+        colorTextMenuItemHover: isDark ? undefined : BRAND_PRIMARY_ACTIVE,
+        colorMenuBackground: isDark
+          ? DARK_LAYOUT_COLORS.siderMenuBg
+          : undefined,
+        colorBgMenuItemCollapsedElevated: isDark
+          ? DARK_LAYOUT_COLORS.siderElevatedBg
+          : undefined,
+      },
+    } as Record<string, unknown>,
   };
 };
 
@@ -258,10 +295,39 @@ export const request: RequestConfig = {
 };
 
 export function rootContainer(container: React.ReactNode) {
-  return (
-    <>
-      <OfflineBanner />
-      <ErrorBoundary>{container}</ErrorBoundary>
-    </>
-  );
+  /**
+   * 主题容器。
+   *
+   * <p>这里刻意**不**走 `useModel` —— Model Context 在本阶段尚未初始化。
+   * 改为直接读持久化偏好，并监听 SettingDrawer 广播的事件来触发重渲染。
+   *
+   * <p>`ConfigProvider` 与 umi antd 插件注入的那层是嵌套关系，antd 会把父级 token 与
+   * 本层合并、以本层为准，因此 `darkAlgorithm` 能覆盖到全部 antd / pro 组件。
+   */
+  const ThemeContainer = (props: { children?: React.ReactNode }) => {
+    const [, forceUpdate] = useState(0);
+
+    useEffect(() => {
+      const handleThemeChange = () => forceUpdate((n) => n + 1);
+      window.addEventListener(THEME_CHANGE_EVENT, handleThemeChange);
+      return () =>
+        window.removeEventListener(THEME_CHANGE_EVENT, handleThemeChange);
+    }, []);
+
+    const isDark = resolveIsDark();
+
+    return (
+      <ConfigProvider
+        theme={{
+          algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,
+          ...(isDark ? { token: { ...DARK_TOKENS } } : {}),
+        }}
+      >
+        <OfflineBanner />
+        <ErrorBoundary>{props.children}</ErrorBoundary>
+      </ConfigProvider>
+    );
+  };
+
+  return React.createElement(ThemeContainer, null, container);
 }

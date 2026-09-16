@@ -10,13 +10,24 @@
  * <p>另外这是一条「到期轴」而非「起止区间轴」：授权落库即生效，后端不下发生效时间。
  */
 
-import { PageContainer, ProTable, type ProColumns } from '@ant-design/pro-components';
+import {
+  ClockCircleOutlined,
+  SafetyCertificateOutlined,
+  TeamOutlined,
+  UserSwitchOutlined,
+} from '@ant-design/icons';
+import {
+  PageContainer,
+  type ProColumns,
+  ProTable,
+} from '@ant-design/pro-components';
 import {
   Alert,
   Button,
-  Card,
+  Col,
   Descriptions,
   Empty,
+  Row,
   Space,
   Spin,
   Tag,
@@ -25,6 +36,8 @@ import {
 } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import SectionCard from '@/components/SectionCard';
+import StatCard from '@/components/StatCard';
 import {
   type ApprovalGrant,
   fetchPermissionMap,
@@ -91,7 +104,10 @@ const PermissionMapPage = () => {
   }, [load]);
 
   const grants = useMemo(() => data?.approvalGrants ?? [], [data]);
-  const timeline = useMemo(() => buildGrantTimeline(grants, now), [grants, now]);
+  const timeline = useMemo(
+    () => buildGrantTimeline(grants, now),
+    [grants, now],
+  );
   const summary = useMemo(() => summarizeGrants(timeline), [timeline]);
   // 预建索引：列渲染不重复 find，避免 O(行数 × 授权数)
   const entryByGrantId = useMemo(() => {
@@ -126,7 +142,8 @@ const PermissionMapPage = () => {
     {
       title: '来源申请单',
       width: 120,
-      render: (_, grant) => (grant.applicationId ? `#${grant.applicationId}` : '—'),
+      render: (_, grant) =>
+        grant.applicationId ? `#${grant.applicationId}` : '—',
     },
     {
       title: '到期时间',
@@ -143,7 +160,9 @@ const PermissionMapPage = () => {
             <Tag color={grantStateColor(entry?.state ?? 'active')}>
               {grantStateText(entry?.state ?? 'active')}
             </Tag>
-            <Text type="secondary">{remainDaysText(entry?.remainDays ?? null)}</Text>
+            <Text type="secondary">
+              {remainDaysText(entry?.remainDays ?? null)}
+            </Text>
           </Space>
         );
       },
@@ -160,15 +179,66 @@ const PermissionMapPage = () => {
       ]}
     >
       {error ? (
-        <Alert style={{ marginBottom: 16 }} type="error" showIcon title={error} />
+        <Alert
+          style={{ marginBottom: 16 }}
+          type="error"
+          showIcon
+          title={error}
+        />
       ) : null}
 
       <Spin spinning={loading}>
-        <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          <Card title="权限概览" size="small">
+        <Space orientation="vertical" size={16} style={{ width: '100%' }}>
+          <Row gutter={[16, 16]}>
+            <Col xs={24} sm={12} xl={6}>
+              <StatCard
+                title="权限点"
+                value={data?.permCodes?.length ?? 0}
+                icon={<SafetyCertificateOutlined />}
+                footer="后端只提供「是否持有」"
+              />
+            </Col>
+            <Col xs={24} sm={12} xl={6}>
+              <StatCard
+                title="角色"
+                value={data?.roleCodes?.length ?? 0}
+                tone="blue"
+                icon={<TeamOutlined />}
+                footer="权限点的已知来源之一"
+              />
+            </Col>
+            <Col xs={24} sm={12} xl={6}>
+              <StatCard
+                title="审批授权"
+                value={summary.total}
+                tone="purple"
+                icon={<UserSwitchOutlined />}
+                footer={`其中 ${summary.expired} 条已过期`}
+              />
+            </Col>
+            <Col xs={24} sm={12} xl={6}>
+              <StatCard
+                title="即将到期"
+                value={summary.expiring}
+                tone="orange"
+                icon={<ClockCircleOutlined />}
+                footer="7 天内到期"
+              />
+            </Col>
+          </Row>
+
+          <SectionCard
+            title="权限概览"
+            subTitle="用户、数据范围与权限点"
+            icon={<SafetyCertificateOutlined />}
+          >
             <Descriptions column={2} size="small" bordered>
-              <Descriptions.Item label="用户 ID">{data?.userId ?? '—'}</Descriptions.Item>
-              <Descriptions.Item label="数据范围">{data?.dataScope || '—'}</Descriptions.Item>
+              <Descriptions.Item label="用户 ID">
+                {data?.userId ?? '—'}
+              </Descriptions.Item>
+              <Descriptions.Item label="数据范围">
+                {data?.dataScope || '—'}
+              </Descriptions.Item>
               <Descriptions.Item label="角色" span={2}>
                 {data?.roleCodes?.length ? (
                   <Space size={4} wrap>
@@ -184,14 +254,19 @@ const PermissionMapPage = () => {
               </Descriptions.Item>
               <Descriptions.Item label="审批授权" span={2}>
                 共 {summary.total} 条
-                {summary.expiring > 0 ? ` · ${summary.expiring} 条即将到期` : ''}
+                {summary.expiring > 0
+                  ? ` · ${summary.expiring} 条即将到期`
+                  : ''}
                 {summary.expired > 0 ? ` · ${summary.expired} 条已过期` : ''}
               </Descriptions.Item>
             </Descriptions>
 
             <div style={{ marginTop: 16 }}>
               <Text strong>权限点（{data?.permCodes?.length ?? 0}）</Text>
-              <Paragraph type="secondary" style={{ marginTop: 4, marginBottom: 8 }}>
+              <Paragraph
+                type="secondary"
+                style={{ marginTop: 4, marginBottom: 8 }}
+              >
                 后端只提供「是否持有」，逐点来源需等后续接口；下方角色与审批授权是两条已知来源。
               </Paragraph>
               {data?.permCodes?.length ? (
@@ -201,12 +276,19 @@ const PermissionMapPage = () => {
                   ))}
                 </Space>
               ) : (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无权限点" />
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="暂无权限点"
+                />
               )}
             </div>
-          </Card>
+          </SectionCard>
 
-          <Card title={`授权来源（${grants.length}）`} size="small">
+          <SectionCard
+            title="授权来源"
+            subTitle={`共 ${grants.length} 条审批授权`}
+            bodyPadding={false}
+          >
             <ProTable<ApprovalGrant>
               rowKey="grantId"
               columns={columns}
@@ -217,15 +299,15 @@ const PermissionMapPage = () => {
               size="small"
               locale={{ emptyText: <Empty description="暂无审批授权" /> }}
             />
-          </Card>
+          </SectionCard>
 
-          <Card title="有效期时间轴" size="small">
+          <SectionCard title="有效期时间轴" subTitle="到期轴：授权落库即生效">
             {timeline.length ? (
               <Timeline
                 items={timeline.map((entry) => ({
                   color: timelineColorOf(entry.state),
                   children: (
-                    <Space direction="vertical" size={2}>
+                    <Space orientation="vertical" size={2}>
                       <Space size={6}>
                         <Text strong>{actionLabel(entry.grant.grantType)}</Text>
                         <Tag color={grantStateColor(entry.state)}>
@@ -233,20 +315,26 @@ const PermissionMapPage = () => {
                         </Tag>
                       </Space>
                       <Text type="secondary">
-                        {resourceText(entry.grant)} · 到期 {entry.grant.expireAt || '长期有效'} ·{' '}
+                        {resourceText(entry.grant)} · 到期{' '}
+                        {entry.grant.expireAt || '长期有效'} ·{' '}
                         {remainDaysText(entry.remainDays)}
                       </Text>
                       {entry.grant.applicationId ? (
-                        <Text type="secondary">来源申请单 #{entry.grant.applicationId}</Text>
+                        <Text type="secondary">
+                          来源申请单 #{entry.grant.applicationId}
+                        </Text>
                       ) : null}
                     </Space>
                   ),
                 }))}
               />
             ) : (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无带有效期的授权" />
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="暂无带有效期的授权"
+              />
             )}
-          </Card>
+          </SectionCard>
         </Space>
       </Spin>
     </PageContainer>

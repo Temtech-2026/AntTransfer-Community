@@ -11,17 +11,39 @@
  */
 
 import { PageContainer } from '@ant-design/pro-components';
-import { Alert, Card, Descriptions, Space, Table, Tag, Typography } from 'antd';
+import { Alert, Descriptions, Space, Table, Tag, Typography } from 'antd';
+
+import SectionCard from '@/components/SectionCard';
 
 /** 补齐群组管理所需的接口（现状全部未实现，列在此处作为排期清单）。 */
-const MISSING_ENDPOINTS: readonly { method: string; path: string; purpose: string }[] = [
-  { method: 'GET', path: '/api/v1/system/groups', purpose: '群组分页 / 关键字检索' },
+const MISSING_ENDPOINTS: readonly {
+  method: string;
+  path: string;
+  purpose: string;
+}[] = [
+  {
+    method: 'GET',
+    path: '/api/v1/system/groups',
+    purpose: '群组分页 / 关键字检索',
+  },
   { method: 'GET', path: '/api/v1/system/groups/{id}', purpose: '群组详情' },
   { method: 'POST', path: '/api/v1/system/groups', purpose: '创建群组' },
-  { method: 'PUT', path: '/api/v1/system/groups/{id}', purpose: '编辑群组（名称 / 备注 / 负责人）' },
+  {
+    method: 'PUT',
+    path: '/api/v1/system/groups/{id}',
+    purpose: '编辑群组（名称 / 备注 / 负责人）',
+  },
   { method: 'DELETE', path: '/api/v1/system/groups/{id}', purpose: '删除群组' },
-  { method: 'GET', path: '/api/v1/system/groups/{id}/members', purpose: '成员列表' },
-  { method: 'PUT', path: '/api/v1/system/groups/{id}/members', purpose: '整集替换成员' },
+  {
+    method: 'GET',
+    path: '/api/v1/system/groups/{id}/members',
+    purpose: '成员列表',
+  },
+  {
+    method: 'PUT',
+    path: '/api/v1/system/groups/{id}/members',
+    purpose: '整集替换成员',
+  },
 ];
 
 const GroupPage = () => {
@@ -34,14 +56,19 @@ const GroupPage = () => {
         title="CE 版未提供群组管理接口，本页暂为占位说明"
         description={
           <span>
-            数据表 <code>sys_group</code> / <code>sys_group_member</code> 已存在，
+            数据表 <code>sys_group</code> / <code>sys_group_member</code>{' '}
+            已存在，
             但服务端没有对应的管理控制器与权限点。为避免给出「点了必然失败」的入口，
             这里不提供增删改操作，也不渲染模拟数据。
           </span>
         }
       />
 
-      <Card size="small" title="现状" style={{ marginBottom: 16 }}>
+      <SectionCard
+        title="现状"
+        subTitle="数据表、服务端实体与权限点"
+        style={{ marginBottom: 16 }}
+      >
         <Descriptions column={1} size="small" bordered>
           <Descriptions.Item label="数据表">
             <Space size={6}>
@@ -57,16 +84,17 @@ const GroupPage = () => {
           </Descriptions.Item>
           <Descriptions.Item label="权限点">
             <Typography.Text type="secondary">
-              无 <code>system:group:*</code> 权限点（V9 只定义了 system:user:* 与 system:role:*）
+              无 <code>system:group:*</code> 权限点（V9 只定义了 system:user:*
+              与 system:role:*）
             </Typography.Text>
           </Descriptions.Item>
           <Descriptions.Item label="当前可用性">
             <Tag color="default">只读不可用（无接口）</Tag>
           </Descriptions.Item>
         </Descriptions>
-      </Card>
+      </SectionCard>
 
-      <Card size="small" title="补齐所需接口（排期清单）">
+      <SectionCard title="补齐所需接口" subTitle="排期清单">
         <Table
           rowKey="path"
           size="small"
@@ -82,12 +110,14 @@ const GroupPage = () => {
             {
               title: '路径',
               dataIndex: 'path',
-              render: (path: string) => <Typography.Text code>{path}</Typography.Text>,
+              render: (path: string) => (
+                <Typography.Text code>{path}</Typography.Text>
+              ),
             },
             { title: '用途', dataIndex: 'purpose' },
           ]}
         />
-      </Card>
+      </SectionCard>
     </PageContainer>
   );
 };

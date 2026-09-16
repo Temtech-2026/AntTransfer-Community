@@ -1,11 +1,15 @@
 import { Link, useIntl } from '@umijs/max';
-import { Button, Card, Result } from 'antd';
+import { Button, Result } from 'antd';
 import React from 'react';
 
+import SectionCard from '@/components/SectionCard';
+
+/** 404：路由未命中（含 `/user/*` 兜底与顶层 `/*` 兜底）。 */
 const Exception404: React.FC = () => {
   const intl = useIntl();
+
   return (
-    <Card variant="borderless">
+    <SectionCard bordered={false} bodyPadding="56px 24px">
       <Result
         status="404"
         title="404"
@@ -18,7 +22,7 @@ const Exception404: React.FC = () => {
           </Link>
         }
       />
-    </Card>
+    </SectionCard>
   );
 };
 

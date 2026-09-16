@@ -53,7 +53,7 @@ export const ApprovalDetailDrawer = ({
   return (
     <Drawer open={open} title="审批单详情" width={560} onClose={onClose}>
       {application ? (
-        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+        <Space orientation="vertical" size={16} style={{ width: '100%' }}>
           <Descriptions column={1} size="small" bordered>
             <Descriptions.Item label="申请单号">
               {text(application.applicationNo || `#${application.id}`)}
@@ -100,7 +100,7 @@ export const ApprovalDetailDrawer = ({
                 key: entry.key,
                 color: timelineColor(entry.state),
                 children: (
-                  <Space direction="vertical" size={2}>
+                  <Space orientation="vertical" size={2}>
                     <Text strong={entry.state === 'active'}>{entry.label}</Text>
                     <Text type="secondary">{text(entry.at)}</Text>
                     {entry.detail ? <Text>{entry.detail}</Text> : null}

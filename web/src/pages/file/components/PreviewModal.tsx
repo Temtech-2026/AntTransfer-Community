@@ -8,10 +8,25 @@
  * 因此不能复用普通请求层，直接交给浏览器加载。</p>
  */
 
-import { Alert, Button, Empty, Modal, Skeleton, Space, Tag, Typography } from 'antd';
+import {
+  Alert,
+  Button,
+  Empty,
+  Modal,
+  Skeleton,
+  Space,
+  Tag,
+  Typography,
+  theme,
+} from 'antd';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { fetchPreview, resolveAssetUrl, type FileNode, type PreviewInfo } from '@/services/file';
+import {
+  type FileNode,
+  fetchPreview,
+  type PreviewInfo,
+  resolveAssetUrl,
+} from '@/services/file';
 
 const { Text } = Typography;
 
@@ -32,7 +47,13 @@ const STRATEGY_TEXT: Record<PreviewInfo['strategy'], string> = {
   none: '不支持',
 };
 
-export default function PreviewModal({ open, node, onClose, onDownload }: PreviewModalProps) {
+export default function PreviewModal({
+  open,
+  node,
+  onClose,
+  onDownload,
+}: PreviewModalProps) {
+  const { token } = theme.useToken();
   const [loading, setLoading] = useState(false);
   const [info, setInfo] = useState<PreviewInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -99,7 +120,7 @@ export default function PreviewModal({ open, node, onClose, onDownload }: Previe
     switch (strategy) {
       case 'text':
         return (
-          <Space direction="vertical" style={{ width: '100%' }} size={8}>
+          <Space orientation="vertical" style={{ width: '100%' }} size={8}>
             {info.truncated ? (
               <Alert
                 type="info"
@@ -113,8 +134,8 @@ export default function PreviewModal({ open, node, onClose, onDownload }: Previe
                 overflow: 'auto',
                 margin: 0,
                 padding: 12,
-                background: 'rgba(0,0,0,0.03)',
-                borderRadius: 4,
+                background: token.colorFillQuaternary,
+                borderRadius: token.borderRadius,
                 fontSize: 13,
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-all',
@@ -134,7 +155,9 @@ export default function PreviewModal({ open, node, onClose, onDownload }: Previe
         );
       case 'image':
         return (
-          <div style={{ textAlign: 'center', maxHeight: 520, overflow: 'auto' }}>
+          <div
+            style={{ textAlign: 'center', maxHeight: 520, overflow: 'auto' }}
+          >
             <img
               alt={info.name}
               src={resolveAssetUrl(info.thumbnailUrl)}
@@ -151,7 +174,11 @@ export default function PreviewModal({ open, node, onClose, onDownload }: Previe
             description="为降低泄露风险，此格式不做服务端转码，请下载后在本地打开。"
             action={
               node && onDownload ? (
-                <Button size="small" type="primary" onClick={() => onDownload(node)}>
+                <Button
+                  size="small"
+                  type="primary"
+                  onClick={() => onDownload(node)}
+                >
                   下载文件
                 </Button>
               ) : null

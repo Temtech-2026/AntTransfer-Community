@@ -16,19 +16,19 @@
  * </ol>
  */
 
-import { App } from 'antd';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { App } from 'antd';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import access, { type AccessModel } from '@/access';
 import { formatBytes } from '@/components/ChunkUpload';
 import { DataScope } from '@/services/access';
 import {
+  type FileNode,
   fetchFolderTree,
   levelText,
   pageFiles,
   pageRecycleFiles,
-  type FileNode,
 } from '@/services/file';
 
 import FileWorkbenchPage from './index';
@@ -97,11 +97,12 @@ const ALL_PERMS = [
   'file:destroy',
 ];
 
-const renderPage = () => render(
-  <App>
-    <FileWorkbenchPage />
-  </App>,
-);
+const renderPage = () =>
+  render(
+    <App>
+      <FileWorkbenchPage />
+    </App>,
+  );
 
 /** 等到首屏数据行渲染出来 */
 const waitForRow = async (name = '季度报告.pdf') => {
@@ -115,7 +116,10 @@ beforeEach(() => {
   grant(ALL_PERMS);
   mockedFolderTree.mockResolvedValue([]);
   mockedPageFiles.mockResolvedValue({ records: [node()], total: 1 } as never);
-  mockedPageRecycle.mockResolvedValue({ records: [node({ id: 202 })], total: 1 } as never);
+  mockedPageRecycle.mockResolvedValue({
+    records: [node({ id: 202 })],
+    total: 1,
+  } as never);
 });
 
 describe('文件列表渲染', () => {

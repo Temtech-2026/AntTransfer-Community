@@ -142,7 +142,7 @@ export const ApprovalDecisionModal = ({
       width={560}
     >
       {application ? (
-        <Space direction="vertical" size={4} style={{ marginBottom: 12 }}>
+        <Space orientation="vertical" size={4} style={{ marginBottom: 12 }}>
           <Text type="secondary">申请单号：{application.applicationNo || `#${application.id}`}</Text>
           <Space size={6} wrap>
             <Tag color="blue">申请：{actionLabel(application.applyType)}</Tag>

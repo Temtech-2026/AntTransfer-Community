@@ -127,7 +127,7 @@ const AssignRoleDrawer = ({ open, record, roleOptions, onClose, onSuccess }: Ass
           onChange={(values) => setSelected(values as number[])}
           style={{ width: '100%' }}
         >
-          <Space direction="vertical" style={{ width: '100%' }} size={4}>
+          <Space orientation="vertical" style={{ width: '100%' }} size={4}>
             {visibleRoles.map((role) => (
               <Checkbox key={role.id} value={role.id} style={{ width: '100%' }}>
                 <Space size={6} wrap>

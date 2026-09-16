@@ -35,7 +35,7 @@ const NotificationBell: FC = () => {
   };
 
   const content = (
-    <Space direction="vertical" size={4} style={{ width: 200 }}>
+    <Space orientation="vertical" size={4} style={{ width: 200 }}>
       <Typography.Text>通知 {unread.inbox}</Typography.Text>
       <Typography.Text>待办 {unread.todo}</Typography.Text>
       <Typography.Text>私信 {unread.chat}</Typography.Text>

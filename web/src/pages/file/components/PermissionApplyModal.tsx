@@ -10,30 +10,30 @@
 import {
   Alert,
   Button,
+  DatePicker,
   Descriptions,
   Form,
   Input,
   Modal,
-  DatePicker,
+  message,
   Radio,
   Result,
   Space,
   Tag,
   Typography,
-  message,
 } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useState } from 'react';
 
 import {
   APPLY_TYPE_OPTIONS,
+  type ApplyType,
+  type ApprovalRequest,
+  type FileNode,
   levelApplyHint,
   levelColor,
   levelText,
   submitPermissionApplication,
-  type ApplyType,
-  type ApprovalRequest,
-  type FileNode,
 } from '@/services/file';
 
 const { Text } = Typography;
@@ -61,7 +61,9 @@ export default function PermissionApplyModal({
 
   /** 权限类型跟随表单实时变化：不同权限的风险与上限不同，提示要跟着变。 */
   const [applyType, setApplyType] = useState<ApplyType>('ACCESS');
-  const activeHint = APPLY_TYPE_OPTIONS.find((item) => item.value === applyType)?.hint;
+  const activeHint = APPLY_TYPE_OPTIONS.find(
+    (item) => item.value === applyType,
+  )?.hint;
 
   const handleSubmit = async () => {
     if (!node) {
@@ -114,7 +116,12 @@ export default function PermissionApplyModal({
               <Button key="cancel" onClick={onClose}>
                 取消
               </Button>,
-              <Button key="submit" type="primary" loading={submitting} onClick={handleSubmit}>
+              <Button
+                key="submit"
+                type="primary"
+                loading={submitting}
+                onClick={handleSubmit}
+              >
                 提交申请
               </Button>,
             ]
@@ -132,7 +139,11 @@ export default function PermissionApplyModal({
           }
         />
       ) : (
-        <Form form={form} layout="vertical" initialValues={{ applyType: 'ACCESS' }}>
+        <Form
+          form={form}
+          layout="vertical"
+          initialValues={{ applyType: 'ACCESS' }}
+        >
           <Descriptions column={1} size="small" style={{ marginBottom: 12 }}>
             <Descriptions.Item label="申请文件">
               <Text ellipsis style={{ maxWidth: 320 }}>
@@ -140,23 +151,40 @@ export default function PermissionApplyModal({
               </Text>
             </Descriptions.Item>
             <Descriptions.Item label="文件密级">
-              <Tag color={levelColor(node?.level)}>{levelText(node?.level)}</Tag>
+              <Tag color={levelColor(node?.level)}>
+                {levelText(node?.level)}
+              </Tag>
             </Descriptions.Item>
           </Descriptions>
 
           {/* 密级提示：把「这个密级能批到什么程度」提前说清楚 */}
           <Alert
             style={{ marginBottom: 12 }}
-            type={node?.level === 3 ? 'error' : node?.level === 2 ? 'warning' : 'info'}
+            type={
+              node?.level === 3
+                ? 'error'
+                : node?.level === 2
+                  ? 'warning'
+                  : 'info'
+            }
             showIcon
             title="敏感等级提示"
             description={levelApplyHint(node?.level)}
           />
 
-          <Form.Item name="applyType" label="权限类型" rules={[{ required: true, message: '请选择权限类型' }]}>
+          <Form.Item
+            name="applyType"
+            label="权限类型"
+            rules={[{ required: true, message: '请选择权限类型' }]}
+          >
             <Radio.Group
-              onChange={(event) => setApplyType(event.target.value as ApplyType)}
-              options={APPLY_TYPE_OPTIONS.map((item) => ({ label: item.label, value: item.value }))}
+              onChange={(event) =>
+                setApplyType(event.target.value as ApplyType)
+              }
+              options={APPLY_TYPE_OPTIONS.map((item) => ({
+                label: item.label,
+                value: item.value,
+              }))}
             />
           </Form.Item>
           {activeHint ? (
@@ -193,7 +221,9 @@ export default function PermissionApplyModal({
               showTime
               style={{ width: 260 }}
               // 不允许选过去时间：服务端会以参数非法拒绝
-              disabledDate={(current) => current && current < dayjs().startOf('day')}
+              disabledDate={(current) =>
+                current && current < dayjs().startOf('day')
+              }
               placeholder="选择到期时间"
             />
           </Form.Item>

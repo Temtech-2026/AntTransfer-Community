@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { FolderNode } from '@/services/file';
 
-import { findFolder, folderChildren, folderPath, folderPathText } from './folder-tree';
+import {
+  findFolder,
+  folderChildren,
+  folderPath,
+  folderPathText,
+} from './folder-tree';
 
 const TREE: FolderNode[] = [
   {

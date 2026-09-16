@@ -8,12 +8,17 @@
  * 页面本身不承载业务：真正的文件列表/空间归属随后端 at-transfer 接口落地再接。
  */
 
-import { CloudUploadOutlined, LinkOutlined } from '@ant-design/icons';
+import {
+  CloudUploadOutlined,
+  LinkOutlined,
+  UnorderedListOutlined,
+} from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
-import { Alert, Card, Space, Steps, Table, Tag, Typography, theme } from 'antd';
+import { Alert, Space, Steps, Table, Tag, Typography, theme } from 'antd';
 import { useMemo, useState } from 'react';
 
 import { ChunkUpload, formatBytes } from '@/components/ChunkUpload';
+import SectionCard from '@/components/SectionCard';
 import type { UploadTaskView } from '@/services/upload/types';
 
 const { Paragraph, Text } = Typography;
@@ -114,17 +119,14 @@ export default function UploadDemoPage() {
       }}
     >
       <Space
-        direction="vertical"
+        orientation="vertical"
         size={token.marginMD}
         style={{ width: '100%' }}
       >
-        <Card
-          title={
-            <Space>
-              <CloudUploadOutlined />
-              <span>上传链路</span>
-            </Space>
-          }
+        <SectionCard
+          title="上传链路"
+          subTitle="摘要 → 秒传 → 补传 → 合并"
+          icon={<CloudUploadOutlined />}
         >
           <Steps
             size="small"
@@ -136,7 +138,7 @@ export default function UploadDemoPage() {
             大文件先在本机算出摘要，服务端据此判定能否秒传；未命中则只补传缺失分片，
             任意时刻刷新页面，重新选择同一文件即可从服务端已收位置继续。
           </Paragraph>
-        </Card>
+        </SectionCard>
 
         <ChunkUpload
           id={DEMO_ID}
@@ -148,7 +150,11 @@ export default function UploadDemoPage() {
         />
 
         {finished.length > 0 ? (
-          <Card title="已完成文件">
+          <SectionCard
+            title="已完成文件"
+            subTitle={`最多保留最近 ${MAX_FINISHED} 条`}
+            icon={<UnorderedListOutlined />}
+          >
             <Table<FinishedItem>
               size="small"
               rowKey="key"
@@ -156,10 +162,10 @@ export default function UploadDemoPage() {
               dataSource={finished}
               pagination={false}
             />
-          </Card>
+          </SectionCard>
         ) : null}
 
-        <Card title="接入方式">
+        <SectionCard title="接入方式" subTitle="组件与 Hook 两种用法">
           <Paragraph type="secondary">
             组件已内置队列与进度展示；若要在业务页自己控制布局，可直接用 Hook
             <Text code>useChunkUpload()</Text>，它返回
@@ -185,7 +191,7 @@ export default function UploadDemoPage() {
             showIcon
             title="如何试跑"
             description={
-              <Space direction="vertical" size={2}>
+              <Space orientation="vertical" size={2}>
                 <Text>
                   本页自带本地 mock（
                   <Text code>src/pages/upload/_mock.ts</Text>，umi
@@ -209,7 +215,7 @@ export default function UploadDemoPage() {
               </Space>
             }
           />
-        </Card>
+        </SectionCard>
       </Space>
     </PageContainer>
   );

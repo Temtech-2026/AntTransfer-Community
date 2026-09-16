@@ -14,24 +14,24 @@ import {
   Input,
   InputNumber,
   Modal,
+  message,
   Radio,
   Result,
   Space,
   Typography,
-  message,
 } from 'antd';
 import dayjs from 'dayjs';
 import { useState } from 'react';
 
 import {
-  SHARE_EXPIRE_PRESETS,
-  SHARE_LIMITS,
   buildShareCopyText,
   buildShareUrl,
   createShare,
+  type FileNode,
   isValidExtractCode,
   randomExtractCode,
-  type FileNode,
+  SHARE_EXPIRE_PRESETS,
+  SHARE_LIMITS,
   type ShareLink,
 } from '@/services/file';
 
@@ -104,7 +104,9 @@ export default function ShareModal({ open, node, onClose }: ShareModalProps) {
     }
     const values = await form.validateFields();
     // 到期时间用「当前时刻 + N 天」而非当天 23:59:59：避免用户 23:58 选 1 天却只剩 1 分钟
-    const expireAt = dayjs().add(values.expireDays, 'day').format('YYYY-MM-DD HH:mm:ss');
+    const expireAt = dayjs()
+      .add(values.expireDays, 'day')
+      .format('YYYY-MM-DD HH:mm:ss');
     setSubmitting(true);
     try {
       const link = await createShare({
@@ -131,7 +133,11 @@ export default function ShareModal({ open, node, onClose }: ShareModalProps) {
     if (!result) {
       return;
     }
-    const text = buildShareCopyText(result.url, result.extractCode, result.expireAt);
+    const text = buildShareCopyText(
+      result.url,
+      result.extractCode,
+      result.expireAt,
+    );
     const ok = await copyText(text);
     if (ok) {
       message.success('链接与提取码已复制');
@@ -167,7 +173,12 @@ export default function ShareModal({ open, node, onClose }: ShareModalProps) {
               <Button key="cancel" onClick={onClose}>
                 取消
               </Button>,
-              <Button key="submit" type="primary" loading={submitting} onClick={handleSubmit}>
+              <Button
+                key="submit"
+                type="primary"
+                loading={submitting}
+                onClick={handleSubmit}
+              >
                 生成链接
               </Button>,
             ]
@@ -179,7 +190,11 @@ export default function ShareModal({ open, node, onClose }: ShareModalProps) {
           title="外发链接已生成"
           subTitle="提取码不会再次显示，请立即复制并转达给对方"
           extra={
-            <Space direction="vertical" size={8} style={{ width: '100%', textAlign: 'left' }}>
+            <Space
+              orientation="vertical"
+              size={8}
+              style={{ width: '100%', textAlign: 'left' }}
+            >
               <Descriptions column={1} size="small" bordered>
                 <Descriptions.Item label="分享链接">
                   <Paragraph copyable={false} style={{ marginBottom: 0 }}>
@@ -191,9 +206,14 @@ export default function ShareModal({ open, node, onClose }: ShareModalProps) {
                     {result.extractCode}
                   </Text>
                 </Descriptions.Item>
-                <Descriptions.Item label="有效期至">{result.expireAt}</Descriptions.Item>
+                <Descriptions.Item label="有效期至">
+                  {result.expireAt}
+                </Descriptions.Item>
                 <Descriptions.Item label="可下载次数">
-                  {result.link.remainingCount ?? result.link.downloadLimit ?? '-'} 次
+                  {result.link.remainingCount ??
+                    result.link.downloadLimit ??
+                    '-'}{' '}
+                  次
                 </Descriptions.Item>
               </Descriptions>
               <Button type="primary" block onClick={handleCopy}>
@@ -261,7 +281,9 @@ export default function ShareModal({ open, node, onClose }: ShareModalProps) {
                   <Button
                     type="link"
                     size="small"
-                    onClick={() => form.setFieldValue('extractCode', randomExtractCode())}
+                    onClick={() =>
+                      form.setFieldValue('extractCode', randomExtractCode())
+                    }
                   >
                     随机
                   </Button>

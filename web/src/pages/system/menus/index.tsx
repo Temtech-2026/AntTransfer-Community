@@ -10,14 +10,34 @@
  * 挂在哪个菜单下、属于哪个维度。</p>
  */
 
-import { ReloadOutlined } from '@ant-design/icons';
+import {
+  AppstoreOutlined,
+  BarsOutlined,
+  DatabaseOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons';
 import type { ProColumns } from '@ant-design/pro-components';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import { useAccess } from '@umijs/max';
-import { Alert, Button, Card, Col, Empty, Input, Row, Space, Statistic, Tag, Typography } from 'antd';
+import {
+  Alert,
+  Button,
+  Col,
+  Empty,
+  Input,
+  Row,
+  Space,
+  Tag,
+  Typography,
+} from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { SYSTEM_PERM, fetchPermissionPointTree, type PermissionPointVO } from '@/services/system';
+import StatCard from '@/components/StatCard';
+import {
+  fetchPermissionPointTree,
+  type PermissionPointVO,
+  SYSTEM_PERM,
+} from '@/services/system';
 
 /** 权限点维度（1-菜单 2-操作 3-数据范围）。 */
 const TYPE_META: Readonly<Record<number, { text: string; color: string }>> = {
@@ -68,7 +88,8 @@ function filterTree(
   const walk = (list: readonly PermissionPointVO[]): PermissionPointVO[] =>
     list.flatMap((node) => {
       const hit =
-        node.permName.toLowerCase().includes(kw) || node.permCode.toLowerCase().includes(kw);
+        node.permName.toLowerCase().includes(kw) ||
+        node.permCode.toLowerCase().includes(kw);
       if (hit) {
         // 命中：整棵子树都保留，便于看清它带了哪些下级权限
         return [node];
@@ -79,9 +100,12 @@ function filterTree(
   return walk(nodes);
 }
 
-function countByType(
-  nodes: readonly PermissionPointVO[],
-): { total: number; menu: number; action: number; scope: number } {
+function countByType(nodes: readonly PermissionPointVO[]): {
+  total: number;
+  menu: number;
+  action: number;
+  scope: number;
+} {
   const result = { total: 0, menu: 0, action: 0, scope: 0 };
   const walk = (list: readonly PermissionPointVO[]) => {
     for (const node of list) {
@@ -107,7 +131,10 @@ const MenuPage = () => {
   const [loading, setLoading] = useState(false);
 
   // 端点允许 role:list 或 role:assign-perm 任一权限点
-  const canRead = access.canAny([SYSTEM_PERM.ROLE_LIST, SYSTEM_PERM.ROLE_ASSIGN_PERM]);
+  const canRead = access.canAny([
+    SYSTEM_PERM.ROLE_LIST,
+    SYSTEM_PERM.ROLE_ASSIGN_PERM,
+  ]);
 
   const load = useCallback(async () => {
     if (!canRead) {
@@ -144,7 +171,9 @@ const MenuPage = () => {
       dataIndex: 'permCode',
       search: false,
       copyable: true,
-      render: (_, row) => <Typography.Text code>{row.permCode}</Typography.Text>,
+      render: (_, row) => (
+        <Typography.Text code>{row.permCode}</Typography.Text>
+      ),
     },
     {
       title: '维度',
@@ -153,7 +182,11 @@ const MenuPage = () => {
       width: 110,
       render: (_, row) => {
         const meta = TYPE_META[row.type];
-        return meta ? <Tag color={meta.color}>{meta.text}</Tag> : <Tag>未知({row.type})</Tag>;
+        return meta ? (
+          <Tag color={meta.color}>{meta.text}</Tag>
+        ) : (
+          <Tag>未知({row.type})</Tag>
+        );
       },
     },
     {
@@ -179,34 +212,48 @@ const MenuPage = () => {
         title="只读页：权限点的增删改由 SQL 迁移脚本维护"
         description={
           <span>
-            本项目把「菜单」与「操作」统一建模为<b>权限点</b>（
-            <code>type</code>：1-菜单 2-操作 3-数据范围）。当前只有目录读取端点（
+            本项目把「菜单」与「操作」统一建模为<b>权限点</b>（<code>type</code>
+            ：1-菜单 2-操作 3-数据范围）。当前只有目录读取端点（
             <code>GET /api/v1/permission-points</code>），没有权限点维护接口。
             要给某个角色勾选权限，请到「角色管理 → 分配权限」。
           </span>
         }
       />
 
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={6}>
-          <Card size="small">
-            <Statistic title="权限点总数" value={stats.total} />
-          </Card>
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} sm={12} xl={6}>
+          <StatCard
+            title="权限点总数"
+            value={stats.total}
+            icon={<AppstoreOutlined />}
+          />
         </Col>
-        <Col span={6}>
-          <Card size="small">
-            <Statistic title="菜单节点" value={stats.menu} />
-          </Card>
+        <Col xs={24} sm={12} xl={6}>
+          <StatCard
+            title="菜单节点"
+            value={stats.menu}
+            tone="blue"
+            icon={<BarsOutlined />}
+            footer="type = 1"
+          />
         </Col>
-        <Col span={6}>
-          <Card size="small">
-            <Statistic title="操作节点" value={stats.action} />
-          </Card>
+        <Col xs={24} sm={12} xl={6}>
+          <StatCard
+            title="操作节点"
+            value={stats.action}
+            tone="cyan"
+            icon={<DatabaseOutlined />}
+            footer="type = 2"
+          />
         </Col>
-        <Col span={6}>
-          <Card size="small">
-            <Statistic title="数据范围节点" value={stats.scope} />
-          </Card>
+        <Col xs={24} sm={12} xl={6}>
+          <StatCard
+            title="数据范围节点"
+            value={stats.scope}
+            tone="purple"
+            icon={<DatabaseOutlined />}
+            footer="type = 3"
+          />
         </Col>
       </Row>
 

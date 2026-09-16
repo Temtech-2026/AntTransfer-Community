@@ -35,16 +35,20 @@ import {
   UploadOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons';
-import { type ActionType, ProTable, type ProColumns } from '@ant-design/pro-components';
+import {
+  type ActionType,
+  PageContainer,
+  type ProColumns,
+  ProTable,
+} from '@ant-design/pro-components';
 import {
   Alert,
   Breadcrumb,
   Button,
-  Card,
+  message,
   Space,
   Tag,
   Typography,
-  message,
   theme,
 } from 'antd';
 import type { Dayjs } from 'dayjs';
@@ -54,24 +58,25 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Access } from '@/components/Access';
 import { formatBytes } from '@/components/ChunkUpload';
 import { useDangerConfirm } from '@/components/DangerConfirm';
+import SectionCard from '@/components/SectionCard';
 import { useChunkUpload } from '@/hooks/useChunkUpload';
 import {
-  EXT_SELECT_OPTIONS,
-  LEVEL_OPTIONS,
   buildFileQuery,
   destroyNode,
   downloadNode,
+  EXT_SELECT_OPTIONS,
   emptyRecycle,
+  type FileNode,
+  type FileTableParams,
+  type FolderNode,
   fetchFolderTree,
+  LEVEL_OPTIONS,
   levelColor,
   levelText,
   pageFiles,
   pageRecycleFiles,
   recycleNode,
   restoreNode,
-  type FileNode,
-  type FileTableParams,
-  type FolderNode,
   type TableSorter,
 } from '@/services/file';
 
@@ -80,6 +85,7 @@ import PreviewModal from './components/PreviewModal';
 import ShareModal from './components/ShareModal';
 import UploadModal from './components/UploadModal';
 import { folderChildren, folderPath } from './folder-tree';
+import useStyles from './index.style';
 
 const { Text } = Typography;
 
@@ -97,40 +103,41 @@ const TEXT_EXTS = ['txt', 'md', 'log', 'json', 'xml', 'yml', 'yaml'];
 
 /** 按扩展名给出图标（纯展示，不参与任何判定）。 */
 function FileIcon({ ext }: { ext?: string | null }) {
+  const { styles } = useStyles();
   const name = (ext ?? '').toLowerCase();
-  const style = { color: 'rgba(0,0,0,0.45)' };
   if (IMAGE_EXTS.includes(name)) {
-    return <FileImageOutlined style={style} />;
+    return <FileImageOutlined className={styles.iconImage} />;
   }
   if (VIDEO_EXTS.includes(name)) {
-    return <VideoCameraOutlined style={style} />;
+    return <VideoCameraOutlined className={styles.iconVideo} />;
   }
   if (AUDIO_EXTS.includes(name)) {
-    return <AudioOutlined style={style} />;
+    return <AudioOutlined className={styles.iconAudio} />;
   }
   if (ZIP_EXTS.includes(name)) {
-    return <FileZipOutlined style={style} />;
+    return <FileZipOutlined className={styles.iconZip} />;
   }
   if (name === 'pdf') {
-    return <FilePdfOutlined style={style} />;
+    return <FilePdfOutlined className={styles.iconPdf} />;
   }
   if (WORD_EXTS.includes(name)) {
-    return <FileWordOutlined style={style} />;
+    return <FileWordOutlined className={styles.iconWord} />;
   }
   if (EXCEL_EXTS.includes(name)) {
-    return <FileExcelOutlined style={style} />;
+    return <FileExcelOutlined className={styles.iconExcel} />;
   }
   if (PPT_EXTS.includes(name)) {
-    return <FilePptOutlined style={style} />;
+    return <FilePptOutlined className={styles.iconPpt} />;
   }
   if (TEXT_EXTS.includes(name)) {
-    return <FileTextOutlined style={style} />;
+    return <FileTextOutlined className={styles.iconText} />;
   }
-  return <FileUnknownOutlined style={style} />;
+  return <FileUnknownOutlined className={styles.iconUnknown} />;
 }
 
 export default function FileWorkbenchPage() {
   const { token } = theme.useToken();
+  const { styles } = useStyles();
   const actionRef = useRef<ActionType>(null);
 
   /** 当前目录；undefined = 根目录 */
@@ -178,8 +185,14 @@ export default function FileWorkbenchPage() {
     };
   }, []);
 
-  const folders = useMemo(() => folderChildren(folderTree, folderId), [folderTree, folderId]);
-  const path = useMemo(() => folderPath(folderTree, folderId), [folderTree, folderId]);
+  const folders = useMemo(
+    () => folderChildren(folderTree, folderId),
+    [folderTree, folderId],
+  );
+  const path = useMemo(
+    () => folderPath(folderTree, folderId),
+    [folderTree, folderId],
+  );
   const uploading = uploader.tasks.filter(
     (task) => !['success', 'error', 'canceled'].includes(task.status),
   ).length;
@@ -187,7 +200,12 @@ export default function FileWorkbenchPage() {
   /** 下载：换票 → 取件 → 落盘，全程用一条可更新的 toast 反馈进度 */
   const handleDownload = useCallback(async (node: FileNode) => {
     const key = `download-${node.id}`;
-    message.open({ key, type: 'loading', content: `正在准备下载 ${node.name}`, duration: 0 });
+    message.open({
+      key,
+      type: 'loading',
+      content: `正在准备下载 ${node.name}`,
+      duration: 0,
+    });
     try {
       await downloadNode(node, {
         onProgress: (progress) => {
@@ -216,7 +234,8 @@ export default function FileWorkbenchPage() {
     (node: FileNode) => {
       confirm({
         title: `把「${node.name}」移入回收站？`,
-        content: '移入回收站后它不再出现在「我的文件」中，但可以随时还原，不会丢失数据。',
+        content:
+          '移入回收站后它不再出现在「我的文件」中，但可以随时还原，不会丢失数据。',
         level: 'danger',
         okText: '移入回收站',
         onOk: async () => {
@@ -233,7 +252,8 @@ export default function FileWorkbenchPage() {
     (node: FileNode) => {
       confirm({
         title: `彻底销毁「${node.name}」？`,
-        content: '文件实体与其所有分片会被永久删除，回收站不再保留，此操作无法撤销。',
+        content:
+          '文件实体与其所有分片会被永久删除，回收站不再保留，此操作无法撤销。',
         level: 'critical',
         okText: '彻底销毁',
         onOk: async () => {
@@ -258,12 +278,15 @@ export default function FileWorkbenchPage() {
   const handleEmptyRecycle = useCallback(() => {
     confirm({
       title: '清空回收站？',
-      content: '回收站里的全部文件将被彻底销毁，无法恢复。若只是暂时不用，建议先留在回收站。',
+      content:
+        '回收站里的全部文件将被彻底销毁，无法恢复。若只是暂时不用，建议先留在回收站。',
       level: 'critical',
       okText: '清空回收站',
       onOk: async () => {
         const count = await emptyRecycle();
-        message.success(count > 0 ? `已销毁 ${count} 个条目` : '回收站本来就是空的');
+        message.success(
+          count > 0 ? `已销毁 ${count} 个条目` : '回收站本来就是空的',
+        );
         actionRef.current?.reload();
       },
     });
@@ -309,11 +332,16 @@ export default function FileWorkbenchPage() {
         width: 100,
         valueType: 'select',
         fieldProps: {
-          options: LEVEL_OPTIONS.map((item) => ({ label: item.label, value: item.value })),
+          options: LEVEL_OPTIONS.map((item) => ({
+            label: item.label,
+            value: item.value,
+          })),
           allowClear: true,
           placeholder: '全部密级',
         },
-        render: (_, node) => <Tag color={levelColor(node.level)}>{levelText(node.level)}</Tag>,
+        render: (_, node) => (
+          <Tag color={levelColor(node.level)}>{levelText(node.level)}</Tag>
+        ),
       },
       {
         title: '大小',
@@ -359,7 +387,10 @@ export default function FileWorkbenchPage() {
                   <a onClick={() => void handleRestore(node)}>还原</a>
                 </Access>,
                 <Access key="destroy" perm="file:destroy">
-                  <a onClick={() => handleDestroy(node)} style={{ color: token.colorError }}>
+                  <a
+                    onClick={() => handleDestroy(node)}
+                    style={{ color: token.colorError }}
+                  >
                     彻底销毁
                   </a>
                 </Access>,
@@ -379,7 +410,10 @@ export default function FileWorkbenchPage() {
                   申请权限
                 </a>,
                 <Access key="recycle" perm="file:edit">
-                  <a onClick={() => handleRecycle(node)} style={{ color: token.colorError }}>
+                  <a
+                    onClick={() => handleRecycle(node)}
+                    style={{ color: token.colorError }}
+                  >
                     删除
                   </a>
                 </Access>,
@@ -397,169 +431,206 @@ export default function FileWorkbenchPage() {
   );
 
   return (
-    <Space direction="vertical" size={token.marginSM} style={{ width: '100%' }}>
-      {recycleMode ? (
-        <Alert
-          type="warning"
-          showIcon
-          title="回收站"
-          description="回收站里的文件不再出现在「我的文件」中。可在此还原，或彻底销毁（不可恢复）；销毁需 file:destroy 权限。"
-        />
-      ) : (
-        <Card
-          size="small"
-          styles={{ body: { padding: token.paddingSM } }}
-          title={
-            <Breadcrumb
-              items={[
-                {
-                  title: (
-                    <a onClick={() => setFolderId(undefined)}>
-                      <FolderOutlined /> 全部文件
-                    </a>
-                  ),
-                },
-                ...path.map((folder) => ({
-                  title: <a onClick={() => setFolderId(folder.id)}>{folder.name}</a>,
-                })),
-              ]}
-            />
-          }
-          extra={
-            <Space>
-              {uploading > 0 ? (
-                <Tag
-                  color="processing"
-                  onClick={() => setUploadOpen(true)}
-                  style={{ cursor: 'pointer' }}
-                >
-                  上传中 {uploading}
-                </Tag>
-              ) : null}
-              <Button icon={<ReloadOutlined />} onClick={() => actionRef.current?.reload()}>
-                刷新
-              </Button>
-            </Space>
-          }
-        >
-          {folders.length > 0 ? (
-            <Space size={6} wrap>
-              <Text type="secondary">子目录：</Text>
-              {folders.map((folder) => (
+    <PageContainer
+      header={{
+        title: '文件',
+        subTitle: '目录、密级与类型筛选',
+      }}
+    >
+      <Space
+        orientation="vertical"
+        size={token.marginSM}
+        style={{ width: '100%' }}
+      >
+        {recycleMode ? (
+          <Alert
+            type="warning"
+            showIcon
+            title="回收站"
+            description="回收站里的文件不再出现在「我的文件」中。可在此还原，或彻底销毁（不可恢复）；销毁需 file:destroy 权限。"
+          />
+        ) : (
+          <SectionCard
+            bodyPadding="12px 24px"
+            title={
+              <Breadcrumb
+                items={[
+                  {
+                    title: (
+                      <a onClick={() => setFolderId(undefined)}>
+                        <FolderOutlined /> 全部文件
+                      </a>
+                    ),
+                  },
+                  ...path.map((folder) => ({
+                    title: (
+                      <a onClick={() => setFolderId(folder.id)}>
+                        {folder.name}
+                      </a>
+                    ),
+                  })),
+                ]}
+              />
+            }
+            extra={
+              <Space>
+                {uploading > 0 ? (
+                  <Tag
+                    onClick={() => setUploadOpen(true)}
+                    style={{
+                      cursor: 'pointer',
+                      marginInlineEnd: 0,
+                      color: token.colorPrimary,
+                      background: token.colorPrimaryBg,
+                      borderColor: token.colorPrimaryBorder,
+                    }}
+                  >
+                    上传中 {uploading}
+                  </Tag>
+                ) : null}
                 <Button
-                  key={folder.id}
-                  size="small"
-                  icon={<FolderOutlined />}
-                  onClick={() => setFolderId(folder.id)}
+                  icon={<ReloadOutlined />}
+                  onClick={() => actionRef.current?.reload()}
                 >
-                  {folder.name}
+                  刷新
                 </Button>
-              ))}
-            </Space>
-          ) : (
-            <Text type="secondary">当前目录下没有子目录</Text>
-          )}
-        </Card>
-      )}
+              </Space>
+            }
+          >
+            {folders.length > 0 ? (
+              <div className={styles.folderBar}>
+                <Text type="secondary">子目录：</Text>
+                {folders.map((folder) => (
+                  <Button
+                    key={folder.id}
+                    size="small"
+                    icon={<FolderOutlined />}
+                    onClick={() => setFolderId(folder.id)}
+                  >
+                    {folder.name}
+                  </Button>
+                ))}
+              </div>
+            ) : (
+              <Text type="secondary">当前目录下没有子目录</Text>
+            )}
+          </SectionCard>
+        )}
 
-      <ProTable<FileNode, FileTableParams>
-        rowKey="id"
-        actionRef={actionRef}
-        columns={columns}
-        cardBordered
-        headerTitle={recycleMode ? '回收站' : '我的文件'}
-        scroll={{ x: 960 }}
-        // 回收站的筛选语义与我的文件不同（无目录、无密级过滤），宁可不给搜索框也不给假筛选
-        search={recycleMode ? false : { labelWidth: 'auto', defaultCollapsed: false }}
-        options={{ density: false, reload: true, setting: true }}
-        pagination={{ defaultPageSize: 20, showSizeChanger: true }}
-        // 目录 / 回收站视角变化都必须触发重新请求：ProTable 只在 params 变化时重新发起
-        params={{ folderId, recycle: recycleMode }}
-        request={async (params, sorter) => {
-          if (recycleMode) {
-            const page = await pageRecycleFiles({
-              current: params.current,
-              pageSize: params.pageSize,
-            });
-            return { data: page.records, total: page.total, success: true };
+        <ProTable<FileNode, FileTableParams>
+          rowKey="id"
+          actionRef={actionRef}
+          columns={columns}
+          cardBordered
+          headerTitle={recycleMode ? '回收站' : '我的文件'}
+          scroll={{ x: 960 }}
+          // 回收站的筛选语义与我的文件不同（无目录、无密级过滤），宁可不给搜索框也不给假筛选
+          search={
+            recycleMode
+              ? false
+              : { labelWidth: 'auto', defaultCollapsed: false }
           }
-          const query = buildFileQuery(params, {
-            folderId,
-            sorter: sorter as TableSorter,
-          });
-          const page = await pageFiles(query);
-          return { data: page.records, total: page.total, success: true };
-        }}
-        toolBarRender={() => {
-          const actions: ReactNode[] = [];
-          if (recycleMode) {
+          options={{ density: false, reload: true, setting: true }}
+          pagination={{ defaultPageSize: 20, showSizeChanger: true }}
+          // 目录 / 回收站视角变化都必须触发重新请求：ProTable 只在 params 变化时重新发起
+          params={{ folderId, recycle: recycleMode }}
+          request={async (params, sorter) => {
+            if (recycleMode) {
+              const page = await pageRecycleFiles({
+                current: params.current,
+                pageSize: params.pageSize,
+              });
+              return { data: page.records, total: page.total, success: true };
+            }
+            const query = buildFileQuery(params, {
+              folderId,
+              sorter: sorter as TableSorter,
+            });
+            const page = await pageFiles(query);
+            return { data: page.records, total: page.total, success: true };
+          }}
+          toolBarRender={() => {
+            const actions: ReactNode[] = [];
+            if (recycleMode) {
+              actions.push(
+                <Button
+                  key="back"
+                  icon={<RollbackOutlined />}
+                  onClick={() => setRecycleMode(false)}
+                >
+                  返回我的文件
+                </Button>,
+              );
+              actions.push(
+                <Access key="empty" perm="file:destroy">
+                  <Button
+                    danger
+                    icon={<ClearOutlined />}
+                    onClick={handleEmptyRecycle}
+                  >
+                    清空回收站
+                  </Button>
+                </Access>,
+              );
+              return actions;
+            }
             actions.push(
-              <Button
-                key="back"
-                icon={<RollbackOutlined />}
-                onClick={() => setRecycleMode(false)}
-              >
-                返回我的文件
-              </Button>,
+              // 权限点取自 docs/development/frontend-permission-map.md（单一事实源）：
+              // 「上传 / 秒传 → file:upload」。缺这道门禁时无上传权的用户仍会看到入口，
+              // 点进去到预检才吃 403 —— 属于「按钮可见但必然失败」，必须在渲染层就藏掉。
+              <Access key="upload" perm="file:upload">
+                <Button
+                  type="primary"
+                  icon={<UploadOutlined />}
+                  onClick={() => setUploadOpen(true)}
+                >
+                  上传文件
+                </Button>
+              </Access>,
             );
             actions.push(
-              <Access key="empty" perm="file:destroy">
-                <Button danger icon={<ClearOutlined />} onClick={handleEmptyRecycle}>
-                  清空回收站
+              <Access key="recycle" perm="file:preview">
+                <Button
+                  icon={<DeleteOutlined />}
+                  onClick={() => setRecycleMode(true)}
+                >
+                  回收站
                 </Button>
               </Access>,
             );
             return actions;
-          }
-          actions.push(
-            // 权限点取自 docs/development/frontend-permission-map.md（单一事实源）：
-            // 「上传 / 秒传 → file:upload」。缺这道门禁时无上传权的用户仍会看到入口，
-            // 点进去到预检才吃 403 —— 属于「按钮可见但必然失败」，必须在渲染层就藏掉。
-            <Access key="upload" perm="file:upload">
-              <Button
-                type="primary"
-                icon={<UploadOutlined />}
-                onClick={() => setUploadOpen(true)}
-              >
-                上传文件
-              </Button>
-            </Access>,
-          );
-          actions.push(
-            <Access key="recycle" perm="file:preview">
-              <Button icon={<DeleteOutlined />} onClick={() => setRecycleMode(true)}>
-                回收站
-              </Button>
-            </Access>,
-          );
-          return actions;
-        }}
-      />
+          }}
+        />
 
-      <UploadModal
-        open={uploadOpen}
-        folderId={folderId}
-        uploader={uploader}
-        onClose={() => setUploadOpen(false)}
-      />
+        <UploadModal
+          open={uploadOpen}
+          folderId={folderId}
+          uploader={uploader}
+          onClose={() => setUploadOpen(false)}
+        />
 
-      <PreviewModal
-        open={Boolean(previewNode)}
-        node={previewNode}
-        onClose={() => setPreviewNode(null)}
-        onDownload={(node) => {
-          setPreviewNode(null);
-          void handleDownload(node);
-        }}
-      />
+        <PreviewModal
+          open={Boolean(previewNode)}
+          node={previewNode}
+          onClose={() => setPreviewNode(null)}
+          onDownload={(node) => {
+            setPreviewNode(null);
+            void handleDownload(node);
+          }}
+        />
 
-      <ShareModal open={Boolean(shareNode)} node={shareNode} onClose={() => setShareNode(null)} />
+        <ShareModal
+          open={Boolean(shareNode)}
+          node={shareNode}
+          onClose={() => setShareNode(null)}
+        />
 
-      <PermissionApplyModal
-        open={Boolean(applyNode)}
-        node={applyNode}
-        onClose={() => setApplyNode(null)}
-      />
-    </Space>
+        <PermissionApplyModal
+          open={Boolean(applyNode)}
+          node={applyNode}
+          onClose={() => setApplyNode(null)}
+        />
+      </Space>
+    </PageContainer>
   );
 }

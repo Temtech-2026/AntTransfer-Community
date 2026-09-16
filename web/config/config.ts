@@ -2,6 +2,7 @@
 
 import { join } from 'node:path';
 import { defineConfig } from '@umijs/max';
+import { RADIUS_CARD } from '../src/theme/tokens';
 import defaultSettings from './defaultSettings';
 import proxy from './proxy';
 
@@ -151,6 +152,8 @@ export default defineConfig({
       theme: {
         token: {
           fontFamily: 'AlibabaSans, sans-serif',
+          // 全局圆角对齐源模板的卡片 / 面板观感
+          borderRadius: RADIUS_CARD,
         },
       },
     },

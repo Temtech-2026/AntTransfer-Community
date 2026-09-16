@@ -10,14 +10,24 @@
  * 脏数据（父不存在 / 自引 / 成环）在纯函数里已兜底，不会把表格递归打挂。</p>
  */
 
-import { ReloadOutlined } from '@ant-design/icons';
+import {
+  ApartmentOutlined,
+  ClusterOutlined,
+  NodeIndexOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons';
 import type { ProColumns } from '@ant-design/pro-components';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import { useAccess } from '@umijs/max';
-import { Alert, App, Button, Card, Col, Row, Statistic, Tag } from 'antd';
+import { Alert, App, Button, Col, Row, Tag } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { SYSTEM_PERM, fetchDeptOptions, type DeptOptionVO } from '@/services/system';
+import StatCard from '@/components/StatCard';
+import {
+  type DeptOptionVO,
+  fetchDeptOptions,
+  SYSTEM_PERM,
+} from '@/services/system';
 
 import { buildDeptTree, type DeptTreeNode } from './dept-tree';
 
@@ -47,7 +57,10 @@ function toRows(nodes: readonly DeptTreeNode[]): DeptRow[] {
   });
 }
 
-function collectStats(nodes: readonly DeptTreeNode[], depth = 0): { total: number; maxDepth: number } {
+function collectStats(
+  nodes: readonly DeptTreeNode[],
+  depth = 0,
+): { total: number; maxDepth: number } {
   let total = 0;
   let maxDepth = depth;
   for (const node of nodes) {
@@ -151,28 +164,41 @@ const DeptPage = () => {
         title="只读页：CE 版未提供部门增删改接口"
         description={
           <span>
-            当前可用的部门端点只有 <code>GET /api/v1/system/users/dept-options</code>
+            当前可用的部门端点只有{' '}
+            <code>GET /api/v1/system/users/dept-options</code>
             （供用户表单下拉与数据范围判定）。本页如实呈现组织架构，不提供无法落地的写操作。
             部门 ID 同时用于「用户调岗」与数据范围计算，调整前请先确认影响面。
           </span>
         }
       />
 
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={8}>
-          <Card size="small">
-            <Statistic title="部门总数" value={stats.total} suffix="个" />
-          </Card>
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} sm={8}>
+          <StatCard
+            title="部门总数"
+            value={stats.total}
+            suffix="个"
+            icon={<ApartmentOutlined />}
+          />
         </Col>
-        <Col span={8}>
-          <Card size="small">
-            <Statistic title="根部门" value={tree.length} suffix="个" />
-          </Card>
+        <Col xs={24} sm={8}>
+          <StatCard
+            title="根部门"
+            value={tree.length}
+            suffix="个"
+            tone="blue"
+            icon={<ClusterOutlined />}
+            footer="无上级部门的顶层节点"
+          />
         </Col>
-        <Col span={8}>
-          <Card size="small">
-            <Statistic title="最大层级" value={stats.total === 0 ? 0 : stats.maxDepth + 1} suffix="层" />
-          </Card>
+        <Col xs={24} sm={8}>
+          <StatCard
+            title="最大层级"
+            value={stats.total === 0 ? 0 : stats.maxDepth + 1}
+            suffix="层"
+            tone="purple"
+            icon={<NodeIndexOutlined />}
+          />
         </Col>
       </Row>
 

@@ -9,11 +9,16 @@
  * <p>SLA 倒计时是「提醒」而非「放行条件」：超时的单子仍要人工决策。
  */
 
-import { PageContainer, ProTable, type ActionType, type ProColumns } from '@ant-design/pro-components';
+import {
+  type ActionType,
+  PageContainer,
+  type ProColumns,
+  ProTable,
+} from '@ant-design/pro-components';
 import { history } from '@umijs/max';
-import { Alert, App, Tabs, Tag } from 'antd';
+import { Alert, App, Tabs, Tag, theme } from 'antd';
 import { useMemo, useRef, useState } from 'react';
-
+import type { ApprovalApplication, ApprovalView } from '@/services/approval';
 import {
   actionLabel,
   approvalStatusColor,
@@ -22,11 +27,9 @@ import {
   pageMyApprovals,
   pagePendingApprovals,
 } from '@/services/approval';
-import type { ApprovalApplication, ApprovalView } from '@/services/approval';
 import { levelColor, levelText } from '@/services/file';
-
-import ApprovalDecisionModal from './components/ApprovalDecisionModal';
 import type { DecisionMode } from './components/ApprovalDecisionModal';
+import ApprovalDecisionModal from './components/ApprovalDecisionModal';
 import ApprovalDetailDrawer from './components/ApprovalDetailDrawer';
 import SlaCountdown from './components/SlaCountdown';
 
@@ -50,6 +53,7 @@ function readViewFromLocation(): ApprovalView {
 
 const ApprovalCenterPage = () => {
   const { message } = App.useApp();
+  const { token } = theme.useToken();
   const actionRef = useRef<ActionType | null>(null);
   const [view, setView] = useState<ApprovalView>(readViewFromLocation);
   const [decision, setDecision] = useState<{
@@ -71,7 +75,9 @@ const ApprovalCenterPage = () => {
         title: '申请动作',
         dataIndex: 'applyType',
         width: 110,
-        render: (_, record) => <Tag color="blue">{actionLabel(record.applyType)}</Tag>,
+        render: (_, record) => (
+          <Tag color="blue">{actionLabel(record.applyType)}</Tag>
+        ),
       },
       {
         title: '敏感等级',
@@ -86,7 +92,9 @@ const ApprovalCenterPage = () => {
         width: 130,
         ellipsis: true,
         render: (_, record) =>
-          record.resourceType ? `${record.resourceType} / ${record.resourceId ?? '-'}` : '—',
+          record.resourceType
+            ? `${record.resourceType} / ${record.resourceId ?? '-'}`
+            : '—',
       },
       {
         title: '申请人',
@@ -156,13 +164,20 @@ const ApprovalCenterPage = () => {
           ];
           if (canDecide(record, view)) {
             actions.push(
-              <a key="approve" onClick={() => setDecision({ mode: 'approve', application: record })}>
+              <a
+                key="approve"
+                onClick={() =>
+                  setDecision({ mode: 'approve', application: record })
+                }
+              >
                 通过
               </a>,
               <a
                 key="reject"
-                style={{ color: '#ff4d4f' }}
-                onClick={() => setDecision({ mode: 'reject', application: record })}
+                style={{ color: token.colorError }}
+                onClick={() =>
+                  setDecision({ mode: 'reject', application: record })
+                }
               >
                 驳回
               </a>,
@@ -174,10 +189,12 @@ const ApprovalCenterPage = () => {
     );
 
     return base;
-  }, [view]);
+  }, [view, token.colorError]);
 
   return (
-    <PageContainer header={{ title: '审批中心', subTitle: '待我审批与我发起的权限申请' }}>
+    <PageContainer
+      header={{ title: '审批中心', subTitle: '待我审批与我发起的权限申请' }}
+    >
       <Tabs
         activeKey={view}
         onChange={(key) => {

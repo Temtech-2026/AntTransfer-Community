@@ -1,25 +1,40 @@
 import type { ProLayoutProps } from '@ant-design/pro-components';
 
+import {
+  BRAND_PRIMARY,
+  BRAND_PRIMARY_ACTIVE,
+  BRAND_PRIMARY_BG,
+} from '../src/theme/tokens';
+
 /**
- * @name
+ * @name 布局默认配置
+ * @description 视觉体系对齐 `0719-AntTransfer/at-admin` 的「Qoder 黑绿」风格。
+ * 品牌色请从 `src/theme/tokens.ts` 取，不要在此处散写十六进制值。
  */
 const Settings: ProLayoutProps & {
   logo?: string;
 } = {
   navTheme: 'light',
-  colorPrimary: '#1677ff',
+  // 主色：Qoder 黑绿。暗色模式的算法切换见 src/app.tsx 的 rootContainer
+  colorPrimary: BRAND_PRIMARY,
   layout: 'mix',
   contentWidth: 'Fluid',
-  fixedHeader: false,
+  // 与源项目一致：固定顶栏，长列表滚动时操作区（搜索、新建）始终可见
+  fixedHeader: true,
   fixSiderbar: true,
   colorWeak: false,
   title: 'AntTransfer CE',
-  // TODO: 品牌 Logo 占位，正式上线前替换为自有图标
-  logo: 'https://gw.alipayobjects.com/zos/rmsportal/KDpgvguMpGfqaHPjicRK.svg',
+  // 使用本地 Logo，去掉对 antd 官方演示图床的依赖
+  logo: '/logo.svg',
   iconfontUrl: '',
   token: {
-    // 参见ts声明，demo 见文档，通过token 修改样式
-    //https://procomponents.ant.design/components/layout#%E9%80%9A%E8%BF%87-token-%E4%BF%AE%E6%94%B9%E6%A0%B7%E5%BC%8F
+    // 侧栏选中态：浅绿底 + 深绿字，对齐源模板 `.nav-item.active`
+    sider: {
+      colorBgMenuItemSelected: BRAND_PRIMARY_BG,
+      colorBgMenuItemHover: '#f2fdf8',
+      colorTextMenuSelected: BRAND_PRIMARY_ACTIVE,
+      colorTextMenuItemHover: BRAND_PRIMARY_ACTIVE,
+    },
   },
 };
 

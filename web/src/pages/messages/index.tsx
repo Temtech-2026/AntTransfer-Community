@@ -44,14 +44,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import EmptyState from '@/components/EmptyState';
 import PageSkeleton from '@/components/PageSkeleton';
+import SectionCard from '@/components/SectionCard';
 import useWebSocket from '@/hooks/useWebSocket';
 import {
-  NotifyType,
   isChatNotify,
   isTodoNotify,
   markNotificationRead,
-  pageNotifications,
   type NotifyMessage,
+  NotifyType,
+  pageNotifications,
 } from '@/services/notify';
 import {
   fetchTodoCount,
@@ -60,7 +61,7 @@ import {
   type TodoItem,
   type TodoPendingFilter,
 } from '@/services/todo';
-import { wsStore, type WsStatus } from '@/services/ws';
+import { type WsStatus, wsStore } from '@/services/ws';
 
 import { resolveTodoTargetWithAccess } from './todoTarget';
 
@@ -170,7 +171,10 @@ const MessagesPage = () => {
     setNotifyLoading(true);
     setNotifyError(false);
     try {
-      const data = await pageNotifications({ current: targetPage, pageSize: PAGE_SIZE });
+      const data = await pageNotifications({
+        current: targetPage,
+        pageSize: PAGE_SIZE,
+      });
       setNotifications(data.records);
       setNotifyTotal(data.total);
       setNotifyPage(targetPage);
@@ -183,21 +187,28 @@ const MessagesPage = () => {
     }
   }, []);
 
-  const loadTodos = useCallback(async (targetPage: number, filter: TodoPendingFilter) => {
-    setTodoLoading(true);
-    setTodoError(false);
-    try {
-      const data = await pageTodos({ pending: filter, current: targetPage, pageSize: PAGE_SIZE });
-      setTodos(data.records);
-      setTodoTotal(data.total);
-      setTodoPage(targetPage);
-      setTodoLoaded(true);
-    } catch {
-      setTodoError(true);
-    } finally {
-      setTodoLoading(false);
-    }
-  }, []);
+  const loadTodos = useCallback(
+    async (targetPage: number, filter: TodoPendingFilter) => {
+      setTodoLoading(true);
+      setTodoError(false);
+      try {
+        const data = await pageTodos({
+          pending: filter,
+          current: targetPage,
+          pageSize: PAGE_SIZE,
+        });
+        setTodos(data.records);
+        setTodoTotal(data.total);
+        setTodoPage(targetPage);
+        setTodoLoaded(true);
+      } catch {
+        setTodoError(true);
+      } finally {
+        setTodoLoading(false);
+      }
+    },
+    [],
+  );
 
   /** 重载当前页签（切 Tab / 翻页 / 写操作后统一走这里）。 */
   const reloadActive = useCallback(() => {
@@ -214,7 +225,9 @@ const MessagesPage = () => {
     if (!isChatNotify(incoming.notifyType)) {
       const fresh = notifyPageRef.current === 1;
       setNotifications((prev) =>
-        prev.some((item) => item.id === incoming.id) || !fresh ? prev : [incoming, ...prev],
+        prev.some((item) => item.id === incoming.id) || !fresh
+          ? prev
+          : [incoming, ...prev],
       );
       if (fresh) {
         setNotifyTotal((prev) => prev + 1);
@@ -260,7 +273,12 @@ const MessagesPage = () => {
   useEffect(
     () =>
       wsStore.subscribeBackfill((count) => {
-        toast.info(intl.formatMessage({ id: 'message.connection.backfilled' }, { count }));
+        toast.info(
+          intl.formatMessage(
+            { id: 'message.connection.backfilled' },
+            { count },
+          ),
+        );
       }),
     [toast, intl],
   );
@@ -305,7 +323,9 @@ const MessagesPage = () => {
     try {
       await markNotificationRead(record.id);
       setNotifications((prev) =>
-        prev.map((item) => (item.id === record.id ? { ...item, readStatus: 1 } : item)),
+        prev.map((item) =>
+          item.id === record.id ? { ...item, readStatus: 1 } : item,
+        ),
       );
       toast.success(intl.formatMessage({ id: 'message.action.markedRead' }));
       await wsStore.refresh();
@@ -322,7 +342,10 @@ const MessagesPage = () => {
         return;
       }
       toast.success(
-        intl.formatMessage({ id: 'message.action.allMarkedRead' }, { count: affected }),
+        intl.formatMessage(
+          { id: 'message.action.allMarkedRead' },
+          { count: affected },
+        ),
       );
       // 已读态变了，当前列表整体作废：重载而不是就地改，避免漏改其它分组
       setTodoUnread(0);
@@ -336,7 +359,9 @@ const MessagesPage = () => {
     try {
       await markTodoHandled(record.id);
       setTodos((prev) =>
-        prev.map((item) => (item.id === record.id ? { ...item, pending: false } : item)),
+        prev.map((item) =>
+          item.id === record.id ? { ...item, pending: false } : item,
+        ),
       );
       setTodoUnread((prev) => Math.max(0, prev - 1));
       toast.success(intl.formatMessage({ id: 'message.action.handled' }));
@@ -388,9 +413,13 @@ const MessagesPage = () => {
           type={reconnecting ? 'warning' : 'error'}
           showIcon
           title={intl.formatMessage({
-            id: reconnecting ? 'message.connection.reconnecting' : 'message.connection.closed',
+            id: reconnecting
+              ? 'message.connection.reconnecting'
+              : 'message.connection.closed',
           })}
-          description={intl.formatMessage({ id: 'message.connection.offlineHint' })}
+          description={intl.formatMessage({
+            id: 'message.connection.offlineHint',
+          })}
           action={
             <Button size="small" onClick={reconnectNow}>
               {intl.formatMessage({ id: 'message.connection.reconnectNow' })}
@@ -411,7 +440,8 @@ const MessagesPage = () => {
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: 8,
-        background: tone === 'blue' ? 'rgba(22,119,255,0.08)' : 'rgba(250,173,20,0.12)',
+        background:
+          tone === 'blue' ? 'rgba(22,119,255,0.08)' : 'rgba(250,173,20,0.12)',
         color: tone === 'blue' ? '#1677ff' : '#faad14',
       }}
     >
@@ -448,20 +478,29 @@ const MessagesPage = () => {
           title={
             <Space size={8} wrap>
               <Text strong={unreadFlag}>
-                {record.title || intl.formatMessage({ id: notifyTypeLabelId(record.notifyType) })}
+                {record.title ||
+                  intl.formatMessage({
+                    id: notifyTypeLabelId(record.notifyType),
+                  })}
               </Text>
               <Tag color="blue">
-                {intl.formatMessage({ id: notifyTypeLabelId(record.notifyType) })}
+                {intl.formatMessage({
+                  id: notifyTypeLabelId(record.notifyType),
+                })}
               </Tag>
               {unreadFlag ? (
-                <Tag color="red">{intl.formatMessage({ id: 'message.state.new' })}</Tag>
+                <Tag color="red">
+                  {intl.formatMessage({ id: 'message.state.new' })}
+                </Tag>
               ) : null}
             </Space>
           }
           description={
-            <Space direction="vertical" size={2} style={{ display: 'flex' }}>
+            <Space orientation="vertical" size={2} style={{ display: 'flex' }}>
               {record.content ? (
-                <Paragraph style={{ marginBottom: 0 }}>{record.content}</Paragraph>
+                <Paragraph style={{ marginBottom: 0 }}>
+                  {record.content}
+                </Paragraph>
               ) : null}
               <Text type="secondary" style={{ fontSize: 12 }}>
                 {timeText(record.createTime)}
@@ -481,9 +520,18 @@ const MessagesPage = () => {
         actions={[
           <Tooltip
             key="jump"
-            title={target ? undefined : intl.formatMessage({ id: 'message.todo.jumpMissing' })}
+            title={
+              target
+                ? undefined
+                : intl.formatMessage({ id: 'message.todo.jumpMissing' })
+            }
           >
-            <Button type="link" size="small" disabled={!target} onClick={() => handleJump(record)}>
+            <Button
+              type="link"
+              size="small"
+              disabled={!target}
+              onClick={() => handleJump(record)}
+            >
               {intl.formatMessage({ id: 'message.action.jump' })}
             </Button>
           </Tooltip>,
@@ -508,20 +556,31 @@ const MessagesPage = () => {
           title={
             <Space size={8} wrap>
               <Text strong={record.pending}>
-                {record.title || intl.formatMessage({ id: notifyTypeLabelId(record.notifyType) })}
+                {record.title ||
+                  intl.formatMessage({
+                    id: notifyTypeLabelId(record.notifyType),
+                  })}
               </Text>
-              <Tag>{intl.formatMessage({ id: todoSourceLabelId(record.notifyType) })}</Tag>
+              <Tag>
+                {intl.formatMessage({
+                  id: todoSourceLabelId(record.notifyType),
+                })}
+              </Tag>
               <Tag color={record.pending ? 'red' : 'default'}>
                 {intl.formatMessage({
-                  id: record.pending ? 'message.todo.filter.pending' : 'message.todo.filter.done',
+                  id: record.pending
+                    ? 'message.todo.filter.pending'
+                    : 'message.todo.filter.done',
                 })}
               </Tag>
             </Space>
           }
           description={
-            <Space direction="vertical" size={2} style={{ display: 'flex' }}>
+            <Space orientation="vertical" size={2} style={{ display: 'flex' }}>
               {record.content ? (
-                <Paragraph style={{ marginBottom: 0 }}>{record.content}</Paragraph>
+                <Paragraph style={{ marginBottom: 0 }}>
+                  {record.content}
+                </Paragraph>
               ) : null}
               <Text type="secondary" style={{ fontSize: 12 }}>
                 {timeText(record.createTime)}
@@ -581,7 +640,10 @@ const MessagesPage = () => {
     todoLoaded,
     todos.length === 0,
     todoFilter === 'done'
-      ? { title: 'message.todo.empty.doneTitle', desc: 'message.todo.empty.doneDesc' }
+      ? {
+          title: 'message.todo.empty.doneTitle',
+          desc: 'message.todo.empty.doneDesc',
+        }
       : { title: 'message.todo.empty.title', desc: 'message.todo.empty.desc' },
     () => void loadTodos(todoPage, todoFilter),
   );
@@ -589,7 +651,9 @@ const MessagesPage = () => {
   const tabLabel = (count: number, textId: string) => (
     <Space size={6}>
       <span>{intl.formatMessage({ id: textId })}</span>
-      {count > 0 ? <Badge count={count} size="small" overflowCount={99} /> : null}
+      {count > 0 ? (
+        <Badge count={count} size="small" overflowCount={99} />
+      ) : null}
     </Space>
   );
 
@@ -608,18 +672,18 @@ const MessagesPage = () => {
         </Space>
       }
     >
-      <Space direction="vertical" size={16} style={{ display: 'flex' }}>
+      <Space orientation="vertical" size={16} style={{ display: 'flex' }}>
         {connectionAlert}
 
-        <Tabs
-          activeKey={activeTab}
-          onChange={handleTabChange}
-          items={[
-            {
-              key: 'notifications',
-              label: tabLabel(unread.inbox, 'message.tab.notifications'),
-              children:
-                notificationsEmpty ?? (
+        <SectionCard bodyPadding="8px 24px 24px">
+          <Tabs
+            activeKey={activeTab}
+            onChange={handleTabChange}
+            items={[
+              {
+                key: 'notifications',
+                label: tabLabel(unread.inbox, 'message.tab.notifications'),
+                children: notificationsEmpty ?? (
                   <List<NotifyMessage>
                     itemLayout="horizontal"
                     dataSource={notifications}
@@ -634,50 +698,61 @@ const MessagesPage = () => {
                     }}
                   />
                 ),
-            },
-            {
-              key: 'todos',
-              label: tabLabel(todoUnread || unread.todo, 'message.tab.todos'),
-              children: (
-                <Space direction="vertical" size={12} style={{ display: 'flex' }}>
-                  <Segmented
-                    value={todoFilter}
-                    onChange={handleFilterChange}
-                    options={[
-                      {
-                        label: intl.formatMessage({ id: 'message.todo.filter.pending' }),
-                        value: 'pending',
-                      },
-                      {
-                        label: intl.formatMessage({ id: 'message.todo.filter.done' }),
-                        value: 'done',
-                      },
-                      {
-                        label: intl.formatMessage({ id: 'message.todo.filter.all' }),
-                        value: 'all',
-                      },
-                    ]}
-                  />
-                  {todosEmpty ?? (
-                    <List<TodoItem>
-                      itemLayout="horizontal"
-                      dataSource={todos}
-                      renderItem={renderTodo}
-                      loading={todoLoading}
-                      pagination={{
-                        current: todoPage,
-                        pageSize: PAGE_SIZE,
-                        total: todoTotal,
-                        showSizeChanger: false,
-                        onChange: (next) => void loadTodos(next, todoFilter),
-                      }}
+              },
+              {
+                key: 'todos',
+                label: tabLabel(todoUnread || unread.todo, 'message.tab.todos'),
+                children: (
+                  <Space
+                    orientation="vertical"
+                    size={12}
+                    style={{ display: 'flex' }}
+                  >
+                    <Segmented
+                      value={todoFilter}
+                      onChange={handleFilterChange}
+                      options={[
+                        {
+                          label: intl.formatMessage({
+                            id: 'message.todo.filter.pending',
+                          }),
+                          value: 'pending',
+                        },
+                        {
+                          label: intl.formatMessage({
+                            id: 'message.todo.filter.done',
+                          }),
+                          value: 'done',
+                        },
+                        {
+                          label: intl.formatMessage({
+                            id: 'message.todo.filter.all',
+                          }),
+                          value: 'all',
+                        },
+                      ]}
                     />
-                  )}
-                </Space>
-              ),
-            },
-          ]}
-        />
+                    {todosEmpty ?? (
+                      <List<TodoItem>
+                        itemLayout="horizontal"
+                        dataSource={todos}
+                        renderItem={renderTodo}
+                        loading={todoLoading}
+                        pagination={{
+                          current: todoPage,
+                          pageSize: PAGE_SIZE,
+                          total: todoTotal,
+                          showSizeChanger: false,
+                          onChange: (next) => void loadTodos(next, todoFilter),
+                        }}
+                      />
+                    )}
+                  </Space>
+                ),
+              },
+            ]}
+          />
+        </SectionCard>
       </Space>
     </PageContainer>
   );
