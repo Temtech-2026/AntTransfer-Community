@@ -5,6 +5,7 @@ export default {
   'menu.file': '文件工作台',
   'menu.shares': '分享管理',
   'menu.message': '消息中心',
+  'menu.chat': '聊天',
   'menu.approval': '审批中心',
   'menu.permissionMap': '权限地图',
   'menu.audit': '审计日志',

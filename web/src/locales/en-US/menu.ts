@@ -5,6 +5,7 @@ export default {
   'menu.file': 'File Workbench',
   'menu.shares': 'Shares',
   'menu.message': 'Messages',
+  'menu.chat': 'Chat',
   'menu.approval': 'Approvals',
   'menu.permissionMap': 'Permission Map',
   'menu.audit': 'Audit Log',

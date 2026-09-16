@@ -9,6 +9,7 @@
  *  - /file：文件工作台（列表 / 目录 / 上传 / 预览 / 分享 / 权限申请）
  *  - /shares：分享管理（我的外发链接，需 file:share）
  *  - /messages：消息中心（系统通知 + 待办，待办项可跳转到审批中心 / 文件工作台）
+ *  - /chat：聊天（单聊 / 群聊会话列表 + 聊天窗，支持 ?scope=&targetId= 深链）
  *  - /approval：审批中心（?view=pending 待我审批 / ?view=mine 我发起）
  *  - /permission-map：权限地图（我的权限点 / 角色 / 审批授权到期轴，登录即用）
  *  - /system/*：系统管理面（用户 / 角色 / 部门 / 群组 / 菜单权限，按权限点显隐到子项）
@@ -90,6 +91,15 @@ export default [
     name: 'message',
     icon: 'bell',
     component: './messages',
+    wrappers: ['@/components/PermGuard'],
+  },
+  {
+    // 聊天：登录即用（会话列表 / 历史 / 已读都只作用于本人），故不在 ROUTE_PERM_RULES 登记权限点。
+    // 支持深链 /chat?scope=1&targetId=7，打开即定位到某个会话。
+    path: '/chat',
+    name: 'chat',
+    icon: 'message',
+    component: './chat',
     wrappers: ['@/components/PermGuard'],
   },
   {

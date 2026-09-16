@@ -1,3 +1,4 @@
+import chat from './zh-CN/chat';
 import common from './zh-CN/common';
 import component from './zh-CN/component';
 import globalHeader from './zh-CN/globalHeader';
@@ -23,4 +24,5 @@ export default {
   ...component,
   ...common,
   ...message,
+  ...chat,
 };
