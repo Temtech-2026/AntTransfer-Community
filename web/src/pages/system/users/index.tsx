@@ -16,7 +16,7 @@
 import { PlusOutlined } from '@ant-design/icons';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
-import { useAccess } from '@umijs/max';
+import { useAccess, useIntl } from '@umijs/max';
 import { Alert, App, Button, Popconfirm, Space, Tag, Typography } from 'antd';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -30,6 +30,7 @@ import {
   fetchDeptOptions,
   fetchUserRoleOptions,
   pageUsers,
+  userStatusTextId,
   type DeptOptionVO,
   type RoleVO,
   type UserVO,
@@ -42,6 +43,7 @@ import UserFormModal from './components/UserFormModal';
 
 const UsersPage = () => {
   const access = useAccess();
+  const intl = useIntl();
   const { message } = App.useApp();
   const actionRef = useRef<ActionType | null>(null);
 
@@ -131,7 +133,12 @@ const UsersPage = () => {
   const handleStatus = async (row: UserVO, disabling: boolean) => {
     try {
       await changeUserStatus(row.id, disabling ? UserStatus.DISABLED : UserStatus.NORMAL);
-      message.success(disabling ? `已停用 ${row.username}` : `已启用 ${row.username}`);
+      message.success(
+        intl.formatMessage(
+          { id: disabling ? 'system.user.message.disabled' : 'system.user.message.enabled' },
+          { name: row.username },
+        ),
+      );
       reload();
     } catch {
       // 全局错误提示已给出
@@ -141,7 +148,7 @@ const UsersPage = () => {
   const handleDelete = async (row: UserVO) => {
     try {
       await deleteUser(row.id);
-      message.success(`已删除 ${row.username}`);
+      message.success(intl.formatMessage({ id: 'system.user.message.deleted' }, { name: row.username }));
       reload();
     } catch {
       // 全局错误提示已给出
@@ -154,13 +161,15 @@ const UsersPage = () => {
   const columns: ProColumns<UserVO>[] = [
     {
       // 仅用于搜索的列：后端以单个 keyword 同时模糊账号与昵称
-      title: '账号 / 昵称',
+      title: intl.formatMessage({ id: 'system.user.column.keyword' }),
       dataIndex: 'keyword',
       hideInTable: true,
-      fieldProps: { placeholder: '账号或昵称，模糊匹配' },
+      fieldProps: {
+        placeholder: intl.formatMessage({ id: 'system.user.column.keywordPlaceholder' }),
+      },
     },
     {
-      title: '账号',
+      title: intl.formatMessage({ id: 'system.user.column.username' }),
       dataIndex: 'username',
       search: false,
       copyable: true,
@@ -170,14 +179,14 @@ const UsersPage = () => {
           <Typography.Text>{row.username}</Typography.Text>
           {row.protectedUser && (
             <Tag color="gold" style={{ marginInlineEnd: 0 }}>
-              受保护
+              {intl.formatMessage({ id: 'system.user.protectedTag' })}
             </Tag>
           )}
         </Space>
       ),
     },
     {
-      title: '昵称',
+      title: intl.formatMessage({ id: 'system.user.column.nickname' }),
       dataIndex: 'nickname',
       search: false,
       width: 150,
@@ -186,7 +195,7 @@ const UsersPage = () => {
     },
     {
       // 仅用于搜索的列：筛选按部门 ID，展示走下面的 deptName
-      title: '部门',
+      title: intl.formatMessage({ id: 'system.user.column.dept' }),
       dataIndex: 'deptId',
       hideInTable: true,
       valueType: 'select',
@@ -195,11 +204,11 @@ const UsersPage = () => {
         allowClear: true,
         showSearch: true,
         optionFilterProp: 'label',
-        placeholder: '全部可见部门',
+        placeholder: intl.formatMessage({ id: 'system.user.column.deptPlaceholder' }),
       },
     },
     {
-      title: '部门',
+      title: intl.formatMessage({ id: 'system.user.column.dept' }),
       dataIndex: 'deptName',
       search: false,
       width: 180,
@@ -207,7 +216,7 @@ const UsersPage = () => {
       render: (_, row) => row.deptName || '--',
     },
     {
-      title: '角色',
+      title: intl.formatMessage({ id: 'system.user.column.roles' }),
       dataIndex: 'roleCodes',
       search: false,
       width: 220,
@@ -228,17 +237,26 @@ const UsersPage = () => {
       },
     },
     {
-      title: '状态',
+      title: intl.formatMessage({ id: 'system.column.status' }),
       dataIndex: 'status',
       width: 100,
       valueEnum: {
-        '0': { text: '正常', status: 'Success' },
-        '1': { text: '禁用', status: 'Default' },
-        '2': { text: '锁定', status: 'Warning' },
+        '0': {
+          text: intl.formatMessage({ id: userStatusTextId(UserStatus.NORMAL) }),
+          status: 'Success',
+        },
+        '1': {
+          text: intl.formatMessage({ id: userStatusTextId(UserStatus.DISABLED) }),
+          status: 'Default',
+        },
+        '2': {
+          text: intl.formatMessage({ id: userStatusTextId(UserStatus.LOCKED) }),
+          status: 'Warning',
+        },
       },
     },
     {
-      title: '最近登录',
+      title: intl.formatMessage({ id: 'system.user.column.lastLogin' }),
       dataIndex: 'lastLoginTime',
       search: false,
       valueType: 'dateTime',
@@ -246,7 +264,7 @@ const UsersPage = () => {
       render: (_, row) => row.lastLoginTime || '--',
     },
     {
-      title: '创建时间',
+      title: intl.formatMessage({ id: 'system.column.createTime' }),
       dataIndex: 'createTime',
       search: false,
       valueType: 'dateTime',
@@ -256,7 +274,7 @@ const UsersPage = () => {
 
   if (hasAnyRowAction) {
     columns.push({
-      title: '操作',
+      title: intl.formatMessage({ id: 'system.column.action' }),
       valueType: 'option',
       key: 'option',
       fixed: 'right',
@@ -275,7 +293,7 @@ const UsersPage = () => {
                 setFormOpen(true);
               }}
             >
-              编辑
+              {intl.formatMessage({ id: 'system.action.edit' })}
             </Button>,
           );
         }
@@ -292,7 +310,7 @@ const UsersPage = () => {
                 setRoleDrawerOpen(true);
               }}
             >
-              分配角色
+              {intl.formatMessage({ id: 'system.user.action.assignRole' })}
             </Button>,
           );
         }
@@ -308,7 +326,7 @@ const UsersPage = () => {
                 setPwdModalOpen(true);
               }}
             >
-              重置口令
+              {intl.formatMessage({ id: 'system.user.action.resetPassword' })}
             </Button>,
           );
         }
@@ -319,10 +337,18 @@ const UsersPage = () => {
           nodes.push(
             <Popconfirm
               key="status"
-              title={disabling ? '确认停用该账号？' : '确认启用该账号？'}
-              description={disabling ? '停用后该账号全部在途会话立即失效。' : undefined}
-              okText="确认"
-              cancelText="取消"
+              title={intl.formatMessage({
+                id: disabling
+                  ? 'system.user.confirm.disableTitle'
+                  : 'system.user.confirm.enableTitle',
+              })}
+              description={
+                disabling
+                  ? intl.formatMessage({ id: 'system.user.confirm.disableDesc' })
+                  : undefined
+              }
+              okText={intl.formatMessage({ id: 'common.action.confirm' })}
+              cancelText={intl.formatMessage({ id: 'common.action.cancel' })}
               disabled={row.protectedUser || locked}
               onConfirm={() => handleStatus(row, disabling)}
             >
@@ -332,7 +358,13 @@ const UsersPage = () => {
                 danger={disabling}
                 disabled={row.protectedUser || locked}
               >
-                {locked ? '已锁定' : disabling ? '停用' : '启用'}
+                {intl.formatMessage({
+                  id: locked
+                    ? 'system.user.action.locked'
+                    : disabling
+                      ? 'system.user.action.disable'
+                      : 'system.user.action.enable',
+                })}
               </Button>
             </Popconfirm>,
           );
@@ -342,16 +374,16 @@ const UsersPage = () => {
           nodes.push(
             <Popconfirm
               key="delete"
-              title="确认删除该用户？"
-              description="删除后不可恢复；受保护账号或仍被引用的账号会被服务端拒绝。"
-              okText="删除"
+              title={intl.formatMessage({ id: 'system.user.confirm.deleteTitle' })}
+              description={intl.formatMessage({ id: 'system.user.confirm.deleteDesc' })}
+              okText={intl.formatMessage({ id: 'system.action.delete' })}
               okButtonProps={{ danger: true }}
-              cancelText="取消"
+              cancelText={intl.formatMessage({ id: 'common.action.cancel' })}
               disabled={row.protectedUser}
               onConfirm={() => handleDelete(row)}
             >
               <Button type="link" size="small" danger disabled={row.protectedUser}>
-                删除
+                {intl.formatMessage({ id: 'system.action.delete' })}
               </Button>
             </Popconfirm>,
           );
@@ -363,18 +395,16 @@ const UsersPage = () => {
   }
 
   return (
-    <PageContainer title="用户管理" subTitle="账号、部门、状态与角色归属">
+    <PageContainer
+      title={intl.formatMessage({ id: 'system.user.title' })}
+      subTitle={intl.formatMessage({ id: 'system.user.subtitle' })}
+    >
       <Alert
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        title="操作边界"
-        description={
-          <span>
-            受保护账号不可停用 / 删除 / 变更角色；管理员<b>不能对自己</b>执行停用、重置口令、
-            分配角色、删除（后端会拒绝，含防自提权）。数据范围受限时，列表与角色下拉都会自动收敛。
-          </span>
-        }
+        title={intl.formatMessage({ id: 'system.alert.boundaryTitle' })}
+        description={intl.formatMessage({ id: 'system.user.alertBoundary' })}
       />
       <ProTable<UserVO>
         rowKey="id"
@@ -412,7 +442,7 @@ const UsersPage = () => {
                     setFormOpen(true);
                   }}
                 >
-                  新建用户
+                  {intl.formatMessage({ id: 'system.user.action.create' })}
                 </Button>,
               ]
             : []

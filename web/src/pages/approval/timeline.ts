@@ -16,9 +16,14 @@ export type ApprovalTimelineState = 'done' | 'active' | 'error';
 /** 时间轴节点。 */
 export interface ApprovalTimelineEntry {
   key: string;
-  label: string;
+  /** 节点标题 i18n id（本文件为纯函数，不内嵌任何语言文案） */
+  labelId: string;
   at?: string | null;
+  /** 后端下发的自由文本（审批意见），原样展示，无需翻译 */
   detail?: string;
+  /** 需要插值的节点说明（如「用途：{purpose}」），由调用方取值渲染 */
+  detailId?: string;
+  detailValues?: Record<string, string | number>;
   state: ApprovalTimelineState;
 }
 
@@ -44,9 +49,10 @@ export function buildApprovalTimeline(
   const entries: ApprovalTimelineEntry[] = [
     {
       key: 'submit',
-      label: '提交申请',
+      labelId: 'approval.timeline.submit',
       at: application.createdAt,
-      detail: application.purpose ? `用途：${application.purpose}` : undefined,
+      detailId: application.purpose ? 'approval.timeline.purpose' : undefined,
+      detailValues: application.purpose ? { purpose: application.purpose } : undefined,
       state: 'done',
     },
   ];
@@ -55,7 +61,7 @@ export function buildApprovalTimeline(
     case APPROVAL_STATUS.approved:
       entries.push({
         key: 'decide',
-        label: '审批通过',
+        labelId: 'approval.timeline.approved',
         at: application.decidedAt,
         detail: application.opinion || undefined,
         state: 'done',
@@ -64,7 +70,7 @@ export function buildApprovalTimeline(
     case APPROVAL_STATUS.rejected:
       entries.push({
         key: 'decide',
-        label: '审批驳回',
+        labelId: 'approval.timeline.rejected',
         at: application.decidedAt,
         detail: application.opinion || undefined,
         state: 'error',
@@ -73,7 +79,7 @@ export function buildApprovalTimeline(
     case APPROVAL_STATUS.transferred:
       entries.push({
         key: 'decide',
-        label: '转审他人',
+        labelId: 'approval.timeline.transferred',
         at: application.decidedAt,
         detail: application.opinion || undefined,
         state: 'done',
@@ -82,13 +88,13 @@ export function buildApprovalTimeline(
     case APPROVAL_STATUS.cancelled:
       entries.push({
         key: 'decide',
-        label: '申请人撤销',
+        labelId: 'approval.timeline.cancelled',
         at: application.decidedAt,
         state: 'done',
       });
       break;
     default:
-      entries.push({ key: 'decide', label: '等待审批', state: 'active' });
+      entries.push({ key: 'decide', labelId: 'approval.timeline.pending', state: 'active' });
   }
   return entries;
 }

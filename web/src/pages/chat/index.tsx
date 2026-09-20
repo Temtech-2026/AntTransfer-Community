@@ -454,7 +454,7 @@ const ChatPage = () => {
 
   const handleCreate = async () => {
     if (!newTargetId) {
-      toast.warning(intl.formatMessage({ id: 'chat.new.targetRequired' }));
+      toast.warning(intl.formatMessage({ id: 'chat.new.target.required' }));
       return;
     }
     const session: ChatSession = { chatScope: newScope, targetId: newTargetId };
@@ -968,7 +968,13 @@ const ChatPage = () => {
                 }
                 options={newUsers.map((user) => ({
                   value: user.id,
-                  label: `${user.nickname || user.username}（${user.username}）`,
+                  label: intl.formatMessage(
+                    { id: 'chat.new.user.optionLabel' },
+                    {
+                      name: user.nickname || user.username,
+                      username: user.username,
+                    },
+                  ),
                 }))}
               />
             ) : (

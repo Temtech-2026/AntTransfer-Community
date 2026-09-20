@@ -17,15 +17,13 @@
 import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
-import { useAccess } from '@umijs/max';
+import { useAccess, useIntl } from '@umijs/max';
 import { Alert, App, Button, Result, Space, Tag, Typography } from 'antd';
 import { useRef, useState } from 'react';
 
 import {
   SYSTEM_PERM,
-  auditResultText,
   exportAuditLogs,
-  operatorText,
   pageAuditLogs,
   type AuditLogQuery,
   type AuditLogVO,
@@ -37,11 +35,12 @@ import {
   AUDIT_ACTION_GROUPS,
   AUDIT_MODULE_ENUM,
   AUDIT_TARGET_TYPE_OPTIONS,
-  actionText,
+  actionTextId,
 } from './constants';
 
 const AuditPage = () => {
   const access = useAccess();
+  const intl = useIntl();
   const { message } = App.useApp();
   const actionRef = useRef<ActionType | null>(null);
   /** 最近一次实际生效的检索条件（导出与列表必须同源，否则「列表能筛、导出筛不了」）。 */
@@ -55,7 +54,7 @@ const AuditPage = () => {
     try {
       const saved = await exportAuditLogs(lastQueryRef.current);
       if (saved) {
-        message.success('导出已开始下载');
+        message.success(intl.formatMessage({ id: 'audit.export.success' }));
       }
     } catch {
       // 全局错误提示已给出
@@ -66,19 +65,27 @@ const AuditPage = () => {
 
   if (!canRead) {
     return (
-      <PageContainer title="审计日志">
+      <PageContainer title={intl.formatMessage({ id: 'audit.page.title' })}>
         <Result
           status="403"
-          title="仅审计员可访问"
-          subTitle="本页需要 audit:log:read 权限点，该权限点只授予审计员角色。"
+          title={intl.formatMessage({ id: 'audit.denied.title' })}
+          subTitle={intl.formatMessage({ id: 'audit.denied.subTitle' })}
         />
       </PageContainer>
     );
   }
 
+  /** 操作人展示：有展示名用展示名，否则按已注销用户 / 系统兜底。 */
+  const operatorTextOf = (row: AuditLogVO): string =>
+    row.operatorName
+      ? row.operatorName
+      : row.userId
+        ? intl.formatMessage({ id: 'audit.operator.deletedUser' }, { userId: row.userId })
+        : intl.formatMessage({ id: 'audit.operator.system' });
+
   const columns: ProColumns<AuditLogVO>[] = [
     {
-      title: '时间',
+      title: intl.formatMessage({ id: 'audit.column.logTime' }),
       dataIndex: 'logTime',
       search: false,
       valueType: 'dateTime',
@@ -86,82 +93,104 @@ const AuditPage = () => {
       fixed: 'left',
     },
     {
-      title: '时间区间',
+      title: intl.formatMessage({ id: 'audit.column.timeRange' }),
       dataIndex: 'startTime',
       hideInTable: true,
       valueType: 'dateTime',
-      fieldProps: { placeholder: '起（含）' },
+      fieldProps: { placeholder: intl.formatMessage({ id: 'audit.column.timeRangeStart' }) },
       // 列级 search.transform：日期组件交出 Date / 'yyyy-MM-dd HH:mm:ss'，后端要 ISO 本地时间
       search: { transform: (value: unknown) => toBackendDateTime(value) },
     },
     {
-      title: '结束时间',
+      title: intl.formatMessage({ id: 'audit.column.endTime' }),
       dataIndex: 'endTime',
       hideInTable: true,
       valueType: 'dateTime',
-      fieldProps: { placeholder: '止（含）' },
+      fieldProps: { placeholder: intl.formatMessage({ id: 'audit.column.timeRangeEnd' }) },
       search: { transform: (value: unknown) => toBackendDateTime(value) },
     },
     {
-      title: '操作人',
+      title: intl.formatMessage({ id: 'audit.column.operator' }),
       dataIndex: 'userId',
       hideInTable: true,
       valueType: 'digit',
-      fieldProps: { placeholder: '用户 ID（精确匹配）', precision: 0 },
+      fieldProps: {
+        placeholder: intl.formatMessage({ id: 'audit.column.operatorIdPlaceholder' }),
+        precision: 0,
+      },
     },
     {
-      title: '操作人',
+      title: intl.formatMessage({ id: 'audit.column.operator' }),
       dataIndex: 'operatorName',
       search: false,
       width: 140,
-      render: (_, row) => operatorText(row),
+      render: (_, row) => operatorTextOf(row),
     },
     {
-      title: '操作类型',
+      title: intl.formatMessage({ id: 'audit.column.action' }),
       dataIndex: 'action',
       valueType: 'select',
       width: 150,
       fieldProps: {
-        options: AUDIT_ACTION_GROUPS,
+        options: AUDIT_ACTION_GROUPS.map((group) => ({
+          label: intl.formatMessage({ id: group.labelId }),
+          options: group.options.map((option) => ({
+            label: intl.formatMessage({ id: option.labelId }),
+            value: option.value,
+          })),
+        })),
         showSearch: true,
         optionFilterProp: 'label',
-        placeholder: '全部动作',
+        placeholder: intl.formatMessage({ id: 'audit.filter.allActions' }),
       },
-      render: (_, row) => actionText(row.action),
+      render: (_, row) => {
+        if (!row.action) {
+          return '--';
+        }
+        const labelId = actionTextId(row.action);
+        return labelId ? intl.formatMessage({ id: labelId }) : row.action;
+      },
     },
     {
-      title: '所属域',
+      title: intl.formatMessage({ id: 'audit.column.module' }),
       dataIndex: 'module',
       valueType: 'select',
       width: 120,
       fieldProps: {
         options: Object.entries(AUDIT_MODULE_ENUM).map(([value, meta]) => ({
-          label: meta.text,
+          label: intl.formatMessage({ id: meta.labelId }),
           value,
         })),
         allowClear: true,
-        placeholder: '全部',
+        placeholder: intl.formatMessage({ id: 'audit.filter.all' }),
       },
       render: (_, row) => {
         const meta = AUDIT_MODULE_ENUM[row.module];
-        return meta ? <Tag>{meta.text}</Tag> : <Tag>{row.module || '--'}</Tag>;
+        return meta ? (
+          <Tag>{intl.formatMessage({ id: meta.labelId })}</Tag>
+        ) : (
+          <Tag>{row.module || '--'}</Tag>
+        );
       },
     },
     {
-      title: '对象类型',
+      title: intl.formatMessage({ id: 'audit.column.targetType' }),
       dataIndex: 'targetType',
       hideInTable: true,
       valueType: 'select',
       fieldProps: {
-        options: AUDIT_TARGET_TYPE_OPTIONS,
+        options: AUDIT_TARGET_TYPE_OPTIONS.map((option) => ({
+          label: intl.formatMessage({ id: option.labelId }),
+          value: option.value,
+        })),
         showSearch: true,
         optionFilterProp: 'label',
         allowClear: true,
-        placeholder: '全部',
+        placeholder: intl.formatMessage({ id: 'audit.filter.all' }),
       },
     },
     {
-      title: '操作对象',
+      title: intl.formatMessage({ id: 'audit.column.target' }),
       dataIndex: 'targetType',
       search: false,
       width: 170,
@@ -169,36 +198,36 @@ const AuditPage = () => {
         row.targetType ? `${row.targetType}${row.targetId ? ` #${row.targetId}` : ''}` : '--',
     },
     {
-      title: '结果',
+      title: intl.formatMessage({ id: 'audit.column.result' }),
       dataIndex: 'result',
       valueType: 'select',
       width: 90,
       fieldProps: {
         options: [
-          { label: '成功', value: 0 },
-          { label: '失败', value: 1 },
+          { label: intl.formatMessage({ id: 'audit.result.success' }), value: 0 },
+          { label: intl.formatMessage({ id: 'audit.result.failed' }), value: 1 },
         ],
         allowClear: true,
-        placeholder: '全部',
+        placeholder: intl.formatMessage({ id: 'audit.filter.all' }),
       },
       render: (_, row) =>
         row.result === 0 ? (
-          <Tag color="success">成功</Tag>
+          <Tag color="success">{intl.formatMessage({ id: 'audit.result.success' })}</Tag>
         ) : row.result === 1 ? (
-          <Tag color="error">失败</Tag>
+          <Tag color="error">{intl.formatMessage({ id: 'audit.result.failed' })}</Tag>
         ) : (
-          <Tag>{auditResultText(row.result)}</Tag>
+          <Tag>{intl.formatMessage({ id: 'audit.result.unknown' })}</Tag>
         ),
     },
     {
-      title: 'IP',
+      title: intl.formatMessage({ id: 'audit.column.ip' }),
       dataIndex: 'ip',
       search: false,
       width: 140,
       render: (_, row) => row.ip || '--',
     },
     {
-      title: '链路 ID',
+      title: intl.formatMessage({ id: 'audit.column.traceId' }),
       dataIndex: 'traceId',
       search: false,
       copyable: true,
@@ -207,7 +236,7 @@ const AuditPage = () => {
       render: (_, row) => row.traceId || '--',
     },
     {
-      title: '详情',
+      title: intl.formatMessage({ id: 'audit.column.detail' }),
       dataIndex: 'detail',
       search: false,
       ellipsis: true,
@@ -217,17 +246,24 @@ const AuditPage = () => {
   ];
 
   return (
-    <PageContainer title="审计日志" subTitle="只读检索（写入侧已脱敏）">
+    <PageContainer
+      title={intl.formatMessage({ id: 'audit.page.title' })}
+      subTitle={intl.formatMessage({ id: 'audit.page.subTitle' })}
+    >
       <Alert
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        title="检索口径"
+        title={intl.formatMessage({ id: 'audit.criteria.title' })}
         description={
           <span>
-            操作人只支持按<b>用户 ID 精确匹配</b>（后端不提供按展示名模糊）；
-            时间区间为闭区间，按事件时间（<code>logTime</code>）过滤；
-            导出沿用当前检索条件，上限由服务端控制。
+            {intl.formatMessage({ id: 'audit.criteria.operatorPrefix' })}
+            <b>{intl.formatMessage({ id: 'audit.criteria.operatorStrong' })}</b>
+            {intl.formatMessage({ id: 'audit.criteria.operatorSuffix' })}
+            {intl.formatMessage({ id: 'audit.criteria.timePrefix' })}
+            <code>logTime</code>
+            {intl.formatMessage({ id: 'audit.criteria.timeSuffix' })}
+            {intl.formatMessage({ id: 'audit.criteria.export' })}
           </span>
         }
       />
@@ -270,7 +306,7 @@ const AuditPage = () => {
                 actionRef.current?.reload();
               }}
             >
-              刷新
+              {intl.formatMessage({ id: 'common.action.refresh' })}
             </Button>
             <Button
               type="primary"
@@ -278,7 +314,7 @@ const AuditPage = () => {
               loading={exporting}
               onClick={handleExport}
             >
-              导出 CSV
+              {intl.formatMessage({ id: 'audit.toolbar.export' })}
             </Button>
           </Space>,
         ]}

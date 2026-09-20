@@ -21,6 +21,7 @@
  * 而 {@code selectPermissionIdsByRoleId} 回填的正是整棵含父节点的集合，两者一致。</p>
  */
 
+import { useIntl } from '@umijs/max';
 import { Alert, App, Button, Drawer, Empty, Space, Spin, Tag, Tooltip, Tree, Typography } from 'antd';
 import type { TreeDataNode } from 'antd';
 import type { Key } from 'react';
@@ -28,20 +29,15 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { DataScope } from '@/services/access';
 import {
+  PERM_TYPE_META,
   SUPER_ADMIN_REQUIRED_PERMS,
   assignRolePermissions,
   fetchPermissionPointTree,
   fetchRolePermissionIds,
+  permTypeTextId,
   type PermissionPointVO,
   type RoleVO,
 } from '@/services/system';
-
-/** 权限点维度标签（1-菜单 2-操作 3-数据范围）。 */
-const TYPE_META: Readonly<Record<number, { text: string; color: string }>> = {
-  1: { text: '菜单', color: 'blue' },
-  2: { text: '操作', color: 'geekblue' },
-  3: { text: '数据范围', color: 'purple' },
-};
 
 export interface RolePermissionDrawerProps {
   open: boolean;
@@ -75,6 +71,7 @@ const RolePermissionDrawer = ({
   onClose,
   onSuccess,
 }: RolePermissionDrawerProps) => {
+  const intl = useIntl();
   const { message } = App.useApp();
   const [tree, setTree] = useState<PermissionPointVO[]>([]);
   const [checkedKeys, setCheckedKeys] = useState<number[]>([]);
@@ -147,7 +144,7 @@ const RolePermissionDrawer = ({
         const required = requiredIds.has(node.id);
         // 防提权：非全量数据范围时，自己没持有的叶子节点不可勾选
         const notHeld = narrowScope && isLeaf && !permSet.has(node.permCode);
-        const typeMeta = TYPE_META[node.type];
+        const typeMeta = PERM_TYPE_META[node.type];
         return {
           key: node.id,
           disabled: readOnly || required || notHeld,
@@ -159,19 +156,21 @@ const RolePermissionDrawer = ({
               </Typography.Text>
               {typeMeta && (
                 <Tag color={typeMeta.color} style={{ marginInlineEnd: 0 }}>
-                  {typeMeta.text}
+                  {intl.formatMessage({ id: permTypeTextId(node.type) }, { type: node.type })}
                 </Tag>
               )}
               {required && (
-                <Tooltip title="防自锁：超级管理员必须保留这枚「管理能力的入口」，服务端会拒绝对它的摘除">
+                <Tooltip title={intl.formatMessage({ id: 'system.rolePerm.tooltip.required' })}>
                   <Tag color="gold" style={{ marginInlineEnd: 0 }}>
-                    必留
+                    {intl.formatMessage({ id: 'system.rolePerm.tag.required' })}
                   </Tag>
                 </Tooltip>
               )}
               {notHeld && (
-                <Tooltip title="你的数据范围不是「全部」，不能授予自己未持有的权限点（服务端防提权）">
-                  <Tag style={{ marginInlineEnd: 0 }}>不可授</Tag>
+                <Tooltip title={intl.formatMessage({ id: 'system.rolePerm.tooltip.notHeld' })}>
+                  <Tag style={{ marginInlineEnd: 0 }}>
+                    {intl.formatMessage({ id: 'system.rolePerm.tag.notHeld' })}
+                  </Tag>
                 </Tooltip>
               )}
             </Space>
@@ -181,7 +180,7 @@ const RolePermissionDrawer = ({
       });
 
     return build(tree);
-  }, [tree, requiredIds, narrowScope, permSet, readOnly]);
+  }, [tree, requiredIds, narrowScope, permSet, readOnly, intl]);
 
   const handleCheck = (
     checked: Key[] | { checked: Key[]; halfChecked: Key[] },
@@ -207,7 +206,9 @@ const RolePermissionDrawer = ({
         const codes = missing
           .map((id) => pointById.get(id)?.permCode ?? `#${id}`)
           .join('、');
-        message.error(`超级管理员角色必须保留这些权限点：${codes}`);
+        message.error(
+          intl.formatMessage({ id: 'system.rolePerm.message.mustKeep' }, { codes }),
+        );
         return;
       }
     }
@@ -215,7 +216,7 @@ const RolePermissionDrawer = ({
     setSubmitting(true);
     try {
       await assignRolePermissions(record.id, desired);
-      message.success('角色权限已更新');
+      message.success(intl.formatMessage({ id: 'system.rolePerm.message.done' }));
       onSuccess();
     } catch {
       // 全局错误提示已给出
@@ -230,14 +231,19 @@ const RolePermissionDrawer = ({
     <Drawer
       open={open}
       width={560}
-      title={`分配权限 · ${record?.name ?? ''}`}
+      title={intl.formatMessage(
+        { id: 'system.rolePerm.title' },
+        { name: record?.name ?? '' },
+      )}
       onClose={onClose}
       footer={
         readOnly ? null : (
           <Space style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <Button onClick={onClose}>取消</Button>
+            <Button onClick={onClose}>
+              {intl.formatMessage({ id: 'common.action.cancel' })}
+            </Button>
             <Button type="primary" loading={submitting} onClick={handleSubmit}>
-              保存
+              {intl.formatMessage({ id: 'common.action.save' })}
             </Button>
           </Space>
         )
@@ -248,8 +254,8 @@ const RolePermissionDrawer = ({
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
-          title="审计员角色的权限集被锁定"
-          description="服务层拒绝对该角色的权限集做任何变更（1021），本抽屉只读。"
+          title={intl.formatMessage({ id: 'system.rolePerm.alert.locked.title' })}
+          description={intl.formatMessage({ id: 'system.rolePerm.alert.locked.desc' })}
         />
       )}
       {!canAssign && !auditorLocked && (
@@ -257,8 +263,8 @@ const RolePermissionDrawer = ({
           type="info"
           showIcon
           style={{ marginBottom: 12 }}
-          title="只读"
-          description="你没有角色授权权限点（system:role:assign-perm），仅可查看当前权限矩阵。"
+          title={intl.formatMessage({ id: 'system.rolePerm.alert.readOnly.title' })}
+          description={intl.formatMessage({ id: 'system.rolePerm.alert.readOnly.desc' })}
         />
       )}
       {!readOnly && record?.code === 'SUPER_ADMIN' && (
@@ -266,8 +272,11 @@ const RolePermissionDrawer = ({
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
-          title="防自锁：三枚权限点不可摘除"
-          description={`必须保留 ${SUPER_ADMIN_REQUIRED_PERMS.join('、')}，否则将无人能再管理权限，服务端会直接拒绝。`}
+          title={intl.formatMessage({ id: 'system.rolePerm.alert.selfLock.title' })}
+          description={intl.formatMessage(
+            { id: 'system.rolePerm.alert.selfLock.desc' },
+            { codes: SUPER_ADMIN_REQUIRED_PERMS.join('、') },
+          )}
         />
       )}
       {!readOnly && narrowScope && (
@@ -275,21 +284,29 @@ const RolePermissionDrawer = ({
           type="info"
           showIcon
           style={{ marginBottom: 12 }}
-          title="防提权：只能授予自己已持有的权限点"
-          description="你的数据范围不是「全部」，标为「不可授」的节点提交后会被服务端拒绝。"
+          title={intl.formatMessage({ id: 'system.rolePerm.alert.narrow.title' })}
+          description={intl.formatMessage({ id: 'system.rolePerm.alert.narrow.desc' })}
         />
       )}
 
       <Space style={{ marginBottom: 12 }} size={8}>
         <Typography.Text type="secondary">
-          已选 {selectedCount} / 共 {allPoints.length} 个权限点
+          {intl.formatMessage(
+            { id: 'system.rolePerm.selected' },
+            { selected: selectedCount, total: allPoints.length },
+          )}
         </Typography.Text>
-        <Typography.Text type="secondary">（父节点计入 = 可见入口）</Typography.Text>
+        <Typography.Text type="secondary">
+          {intl.formatMessage({ id: 'system.rolePerm.parentNote' })}
+        </Typography.Text>
       </Space>
 
       <Spin spinning={loading}>
         {treeData.length === 0 && !loading ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="权限点目录为空" />
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={intl.formatMessage({ id: 'system.rolePerm.empty' })}
+          />
         ) : (
           <Tree
             checkable

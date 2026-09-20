@@ -18,7 +18,7 @@ import {
 } from '@ant-design/icons';
 import type { ProColumns } from '@ant-design/pro-components';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
-import { useAccess } from '@umijs/max';
+import { useAccess, useIntl } from '@umijs/max';
 import {
   Alert,
   Button,
@@ -35,16 +35,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import StatCard from '@/components/StatCard';
 import {
   fetchPermissionPointTree,
+  PERM_TYPE_META,
+  permTypeTextId,
   type PermissionPointVO,
   SYSTEM_PERM,
 } from '@/services/system';
-
-/** 权限点维度（1-菜单 2-操作 3-数据范围）。 */
-const TYPE_META: Readonly<Record<number, { text: string; color: string }>> = {
-  1: { text: '菜单', color: 'blue' },
-  2: { text: '操作', color: 'geekblue' },
-  3: { text: '数据范围', color: 'purple' },
-};
 
 /** 表格行：tree table 只在 children 非空时渲染展开箭头。 */
 interface PointRow {
@@ -126,6 +121,7 @@ function countByType(nodes: readonly PermissionPointVO[]): {
 
 const MenuPage = () => {
   const access = useAccess();
+  const intl = useIntl();
   const [tree, setTree] = useState<PermissionPointVO[]>([]);
   const [keyword, setKeyword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -161,13 +157,13 @@ const MenuPage = () => {
 
   const columns: ProColumns<PointRow>[] = [
     {
-      title: '权限点名称',
+      title: intl.formatMessage({ id: 'system.menu.column.permName' }),
       dataIndex: 'permName',
       search: false,
       width: 260,
     },
     {
-      title: '权限编码',
+      title: intl.formatMessage({ id: 'system.menu.column.permCode' }),
       dataIndex: 'permCode',
       search: false,
       copyable: true,
@@ -176,21 +172,25 @@ const MenuPage = () => {
       ),
     },
     {
-      title: '维度',
+      title: intl.formatMessage({ id: 'system.menu.column.type' }),
       dataIndex: 'type',
       search: false,
       width: 110,
       render: (_, row) => {
-        const meta = TYPE_META[row.type];
+        const meta = PERM_TYPE_META[row.type];
         return meta ? (
-          <Tag color={meta.color}>{meta.text}</Tag>
+          <Tag color={meta.color}>
+            {intl.formatMessage({ id: permTypeTextId(row.type) }, { type: row.type })}
+          </Tag>
         ) : (
-          <Tag>未知({row.type})</Tag>
+          <Tag>
+            {intl.formatMessage({ id: permTypeTextId(row.type) }, { type: row.type })}
+          </Tag>
         );
       },
     },
     {
-      title: '排序',
+      title: intl.formatMessage({ id: 'system.menu.column.sortNo' }),
       dataIndex: 'sortNo',
       search: false,
       width: 90,
@@ -204,33 +204,29 @@ const MenuPage = () => {
   ];
 
   return (
-    <PageContainer title="菜单 / 权限点目录" subTitle="权限模型现状（只读）">
+    <PageContainer
+      title={intl.formatMessage({ id: 'system.menu.title' })}
+      subTitle={intl.formatMessage({ id: 'system.menu.subtitle' })}
+    >
       <Alert
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        title="只读页：权限点的增删改由 SQL 迁移脚本维护"
-        description={
-          <span>
-            本项目把「菜单」与「操作」统一建模为<b>权限点</b>（<code>type</code>
-            ：1-菜单 2-操作 3-数据范围）。当前只有目录读取端点（
-            <code>GET /api/v1/permission-points</code>），没有权限点维护接口。
-            要给某个角色勾选权限，请到「角色管理 → 分配权限」。
-          </span>
-        }
+        title={intl.formatMessage({ id: 'system.menu.alert.title' })}
+        description={intl.formatMessage({ id: 'system.menu.alert.desc' })}
       />
 
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} sm={12} xl={6}>
           <StatCard
-            title="权限点总数"
+            title={intl.formatMessage({ id: 'system.menu.stat.total' })}
             value={stats.total}
             icon={<AppstoreOutlined />}
           />
         </Col>
         <Col xs={24} sm={12} xl={6}>
           <StatCard
-            title="菜单节点"
+            title={intl.formatMessage({ id: 'system.menu.stat.menu' })}
             value={stats.menu}
             tone="blue"
             icon={<BarsOutlined />}
@@ -239,7 +235,7 @@ const MenuPage = () => {
         </Col>
         <Col xs={24} sm={12} xl={6}>
           <StatCard
-            title="操作节点"
+            title={intl.formatMessage({ id: 'system.menu.stat.action' })}
             value={stats.action}
             tone="cyan"
             icon={<DatabaseOutlined />}
@@ -248,7 +244,7 @@ const MenuPage = () => {
         </Col>
         <Col xs={24} sm={12} xl={6}>
           <StatCard
-            title="数据范围节点"
+            title={intl.formatMessage({ id: 'system.menu.stat.scope' })}
             value={stats.scope}
             tone="purple"
             icon={<DatabaseOutlined />}
@@ -260,14 +256,14 @@ const MenuPage = () => {
       {!canRead && (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="缺少权限：需要 system:role:list 或 system:role:assign-perm"
+          description={intl.formatMessage({ id: 'system.menu.empty.noPerm' })}
         />
       )}
 
       {canRead && (
         <ProTable<PointRow>
           rowKey="id"
-          headerTitle="权限点树"
+          headerTitle={intl.formatMessage({ id: 'system.menu.headerTitle' })}
           columns={columns}
           dataSource={rows}
           loading={loading}
@@ -279,13 +275,13 @@ const MenuPage = () => {
             <Space key="tools" size={8}>
               <Input.Search
                 allowClear
-                placeholder="按名称 / 编码过滤"
+                placeholder={intl.formatMessage({ id: 'system.menu.searchPlaceholder' })}
                 value={keyword}
                 onChange={(event) => setKeyword(event.target.value)}
                 style={{ width: 260 }}
               />
               <Button icon={<ReloadOutlined />} onClick={() => void load()}>
-                刷新
+                {intl.formatMessage({ id: 'common.action.refresh' })}
               </Button>
             </Space>,
           ]}

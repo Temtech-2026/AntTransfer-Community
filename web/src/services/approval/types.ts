@@ -30,25 +30,27 @@ export const APPROVAL_STATUS = {
 } as const;
 
 /**
- * 状态文案。
+ * 状态文案 id。
  *
  * <p>未知状态返回「未知」而不是兜底成「待审批」：把状态不明的单子渲染成可审批，
  * 会让审批人对一张已终态的单子重复决策。
+ *
+ * <p>只返回 i18n id，文案由调用方 `intl.formatMessage` 渲染（服务层不内嵌文案）。
  */
-export function approvalStatusText(status?: number | null): string {
+export function approvalStatusTextId(status?: number | null): string {
   switch (status) {
     case APPROVAL_STATUS.pending:
-      return '待审批';
+      return 'approval.status.pending';
     case APPROVAL_STATUS.approved:
-      return '已通过';
+      return 'approval.status.approved';
     case APPROVAL_STATUS.rejected:
-      return '已驳回';
+      return 'approval.status.rejected';
     case APPROVAL_STATUS.transferred:
-      return '已转审';
+      return 'approval.status.transferred';
     case APPROVAL_STATUS.cancelled:
-      return '已撤销';
+      return 'approval.status.cancelled';
     default:
-      return '未知';
+      return 'approval.status.unknown';
   }
 }
 
@@ -119,19 +121,27 @@ export function actionRank(action?: string | null): number {
   }
 }
 
-/** 授权动作短标签（缩范围下拉用）。 */
-const ACTION_LABEL: Record<string, string> = {
-  ACCESS: '访问（预览）',
-  DOWNLOAD: '下载',
-  EDIT: '编辑',
-  SHARE: '外发分享',
+/** 授权动作短标签 id（缩范围下拉用）。 */
+const ACTION_LABEL_ID: Record<string, string> = {
+  ACCESS: 'approval.grantAction.access',
+  DOWNLOAD: 'approval.grantAction.download',
+  EDIT: 'approval.grantAction.edit',
+  SHARE: 'approval.grantAction.share',
 };
 
-export function actionLabel(action?: string | null): string {
+/**
+ * 授权动作短标签 id。
+ *
+ * <p>返回值**必须**是合法 i18n id：后端若新增动作而前端未跟进，统一兜底到
+ * `approval.grantAction.unknown`，而不是把裸动作码当作 id 交给 `intl.formatMessage`。
+ * 裸枚举直接透传会产生两个问题：中文界面回显 `DOWNLOAD_V2` 这类原始枚举影响可读性，
+ * 且 react-intl 会因找不到该 id 触发 missing-message 告警。
+ */
+export function actionLabelId(action?: string | null): string {
   if (!action) {
-    return '未知动作';
+    return 'approval.grantAction.unknown';
   }
-  return ACTION_LABEL[action] ?? action;
+  return ACTION_LABEL_ID[action] ?? 'approval.grantAction.unknown';
 }
 
 /**

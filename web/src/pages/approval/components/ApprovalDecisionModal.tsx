@@ -10,6 +10,7 @@
  * <p><b>驳回</b>理由必填（后端 `ApplicationRejectDTO.opinion` 为 `@NotBlank`）。
  */
 
+import { useIntl } from '@umijs/max';
 import { Alert, App, DatePicker, Form, Input, Modal, Select, Space, Tag, Typography } from 'antd';
 import type { Dayjs } from 'dayjs';
 import dayjs from 'dayjs';
@@ -17,7 +18,7 @@ import { useEffect, useState } from 'react';
 
 import {
   OPINION_MAX_LENGTH,
-  actionLabel,
+  actionLabelId,
   approveApplication,
   capExpireAt,
   downscopeOptionsOf,
@@ -25,7 +26,7 @@ import {
   rejectApplication,
 } from '@/services/approval';
 import type { ApprovalApplication, ApplyAction } from '@/services/approval';
-import { levelColor, levelText } from '@/services/file';
+import { levelColor, levelTextId } from '@/services/file';
 
 const { Text } = Typography;
 
@@ -59,6 +60,7 @@ export const ApprovalDecisionModal = ({
   onCancel,
   onSuccess,
 }: ApprovalDecisionModalProps) => {
+  const intl = useIntl();
   const [form] = Form.useForm<DecisionFormValues>();
   const { message } = App.useApp();
   const [submitting, setSubmitting] = useState(false);
@@ -108,17 +110,22 @@ export const ApprovalDecisionModal = ({
           expireAt: finalExpire,
           opinion: values.opinion?.trim() || undefined,
         });
-        message.success('已通过该申请');
+        message.success(intl.formatMessage({ id: 'approval.modal.approved' }));
       } else {
         await rejectApplication(application.id, {
           opinion: (values.opinion ?? '').trim(),
         });
-        message.success('已驳回该申请');
+        message.success(intl.formatMessage({ id: 'approval.modal.rejected' }));
       }
       onSuccess();
     } catch (error) {
       // 业务错误（如 2001 参数越界、状态已变更）由全局拦截器提示，这里兜底非 Result 形态异常
-      message.error((error as Error)?.message || (isApprove ? '审批通过失败' : '驳回失败'));
+      message.error(
+        (error as Error)?.message ||
+          intl.formatMessage({
+            id: isApprove ? 'approval.modal.approveFailed' : 'approval.modal.rejectFailed',
+          }),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -128,27 +135,54 @@ export const ApprovalDecisionModal = ({
   const cappedExpire = expireAt ? capExpireAt(toBackendDateTime(expireAt), desiredExpireAt) : null;
   const expireCapped =
     cappedExpire !== null && cappedExpire !== toBackendDateTime(expireAt);
+  const opinionMaxMessage = intl.formatMessage(
+    { id: 'approval.modal.opinionMax' },
+    { max: OPINION_MAX_LENGTH },
+  );
 
   return (
     <Modal
       open={open}
-      title={isApprove ? '审批通过' : '驳回申请'}
-      okText={isApprove ? '确认通过' : '确认驳回'}
+      title={intl.formatMessage({
+        id: isApprove ? 'approval.modal.approveTitle' : 'approval.modal.rejectTitle',
+      })}
+      okText={intl.formatMessage({
+        id: isApprove ? 'approval.modal.approveOk' : 'approval.modal.rejectOk',
+      })}
       okButtonProps={{ danger: !isApprove }}
       confirmLoading={submitting}
       onCancel={onCancel}
       onOk={() => void handleSubmit()}
-      destroyOnClose
+      destroyOnHidden
       width={560}
     >
       {application ? (
         <Space orientation="vertical" size={4} style={{ marginBottom: 12 }}>
-          <Text type="secondary">申请单号：{application.applicationNo || `#${application.id}`}</Text>
+          <Text type="secondary">
+            {intl.formatMessage(
+              { id: 'approval.modal.applicationNo' },
+              { no: application.applicationNo || `#${application.id}` },
+            )}
+          </Text>
           <Space size={6} wrap>
-            <Tag color="blue">申请：{actionLabel(application.applyType)}</Tag>
-            <Tag color={levelColor(application.level)}>{levelText(application.level)}</Tag>
+            <Tag color="blue">
+              {intl.formatMessage(
+                { id: 'approval.modal.applyScope' },
+                { action: intl.formatMessage({ id: actionLabelId(application.applyType) }) },
+              )}
+            </Tag>
+            <Tag color={levelColor(application.level)}>
+              {intl.formatMessage({ id: levelTextId(application.level) })}
+            </Tag>
             <Text type="secondary">
-              期望到期：{application.desiredExpireAt || '长期有效'}
+              {intl.formatMessage(
+                { id: 'approval.modal.desiredExpireAt' },
+                {
+                  at:
+                    application.desiredExpireAt ||
+                    intl.formatMessage({ id: 'approval.longTerm' }),
+                },
+              )}
             </Text>
           </Space>
         </Space>
@@ -159,36 +193,42 @@ export const ApprovalDecisionModal = ({
           <>
             <Form.Item
               name="grantType"
-              label="授权范围（只能收紧，不能超过申请范围）"
+              label={intl.formatMessage({ id: 'approval.modal.grantScope' })}
               extra={
                 downscoped
-                  ? `低于申请动作「${actionLabel(applyType)}」——将按更小范围授权`
-                  : '与申请范围一致'
+                  ? intl.formatMessage(
+                      { id: 'approval.modal.grantScopeDownscoped' },
+                      { action: intl.formatMessage({ id: actionLabelId(applyType) }) },
+                    )
+                  : intl.formatMessage({ id: 'approval.modal.grantScopeSame' })
               }
             >
               <Select
                 options={downscopeOptionsOf(applyType).map((action) => ({
                   value: action,
-                  label: actionLabel(action),
+                  label: intl.formatMessage({ id: actionLabelId(action) }),
                 }))}
                 onChange={(value) => setGrantType(value)}
-                placeholder="选择授权动作"
+                placeholder={intl.formatMessage({ id: 'approval.modal.grantScopePlaceholder' })}
               />
             </Form.Item>
 
             <Form.Item
               name="expireAt"
-              label="授权有效期（只能缩短，不能超过申请值）"
+              label={intl.formatMessage({ id: 'approval.modal.expireAt' })}
               extra={
                 expireCapped
-                  ? `所选时间晚于申请人期望，将收敛为 ${cappedExpire}`
-                  : '留空表示长期有效'
+                  ? intl.formatMessage(
+                      { id: 'approval.modal.expireCapped' },
+                      { expireAt: cappedExpire },
+                    )
+                  : intl.formatMessage({ id: 'approval.modal.expireKeep' })
               }
             >
               <DatePicker
                 showTime
                 style={{ width: '100%' }}
-                placeholder="留空 = 长期有效"
+                placeholder={intl.formatMessage({ id: 'approval.modal.expirePlaceholder' })}
                 // 只放行不晚于「申请人期望到期」的日期；期望为空（长期）时不设上限
                 disabledDate={(current) => (desired ? current.isAfter(desired, 'day') : false)}
                 onChange={(value) => setExpireAt(value)}
@@ -199,13 +239,19 @@ export const ApprovalDecisionModal = ({
 
         <Form.Item
           name="opinion"
-          label={isApprove ? '审批意见（可选）' : '驳回原因（必填）'}
+          label={intl.formatMessage({
+            id: isApprove ? 'approval.modal.opinionApprove' : 'approval.modal.opinionReject',
+          })}
           rules={
             isApprove
-              ? [{ max: OPINION_MAX_LENGTH, message: `不超过 ${OPINION_MAX_LENGTH} 字` }]
+              ? [{ max: OPINION_MAX_LENGTH, message: opinionMaxMessage }]
               : [
-                  { required: true, whitespace: true, message: '请填写驳回原因' },
-                  { max: OPINION_MAX_LENGTH, message: `不超过 ${OPINION_MAX_LENGTH} 字` },
+                  {
+                    required: true,
+                    whitespace: true,
+                    message: intl.formatMessage({ id: 'approval.modal.opinionRequired' }),
+                  },
+                  { max: OPINION_MAX_LENGTH, message: opinionMaxMessage },
                 ]
           }
         >
@@ -213,7 +259,11 @@ export const ApprovalDecisionModal = ({
             rows={3}
             showCount
             maxLength={OPINION_MAX_LENGTH}
-            placeholder={isApprove ? '可补充说明授权条件' : '说明驳回理由，将同步给申请人'}
+            placeholder={intl.formatMessage({
+              id: isApprove
+                ? 'approval.modal.opinionPlaceholderApprove'
+                : 'approval.modal.opinionPlaceholderReject',
+            })}
           />
         </Form.Item>
       </Form>
@@ -222,7 +272,7 @@ export const ApprovalDecisionModal = ({
         <Alert
           type="info"
           showIcon
-          title="通过后立即生效：授权范围与有效期均不可放宽，如需放宽须由申请人重新提交。"
+          title={intl.formatMessage({ id: 'approval.modal.notice' })}
         />
       ) : null}
     </Modal>

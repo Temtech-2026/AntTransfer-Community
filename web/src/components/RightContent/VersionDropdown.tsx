@@ -1,4 +1,5 @@
 import { ForkOutlined } from '@ant-design/icons';
+import { useIntl } from '@umijs/max';
 import type { MenuProps } from 'antd';
 import { Button } from 'antd';
 import HeaderDropdown from '../HeaderDropdown';
@@ -17,6 +18,7 @@ const onVersionClick: MenuProps['onClick'] = ({ key }) => {
 
 export const VersionDropdown: React.FC = () => {
   const { styles } = useHeaderActionStyles();
+  const intl = useIntl();
   return (
     <HeaderDropdown
       placement="bottomRight"
@@ -28,7 +30,11 @@ export const VersionDropdown: React.FC = () => {
         style: { minWidth: 100 },
       }}
     >
-      <Button type="text" className={styles.action} aria-label="历史版本">
+      <Button
+        type="text"
+        className={styles.action}
+        aria-label={intl.formatMessage({ id: 'component.version.history' })}
+      >
         <ForkOutlined />
       </Button>
     </HeaderDropdown>

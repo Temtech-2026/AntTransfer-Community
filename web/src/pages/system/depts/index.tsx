@@ -18,7 +18,7 @@ import {
 } from '@ant-design/icons';
 import type { ProColumns } from '@ant-design/pro-components';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
-import { useAccess } from '@umijs/max';
+import { useAccess, useIntl } from '@umijs/max';
 import { Alert, App, Button, Col, Row, Tag } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -76,6 +76,7 @@ function collectStats(
 
 const DeptPage = () => {
   const access = useAccess();
+  const intl = useIntl();
   const { message } = App.useApp();
   const [depts, setDepts] = useState<DeptOptionVO[]>([]);
   const [loading, setLoading] = useState(false);
@@ -112,7 +113,7 @@ const DeptPage = () => {
 
   const columns: ProColumns<DeptRow>[] = [
     {
-      title: '部门名称',
+      title: intl.formatMessage({ id: 'system.dept.column.name' }),
       dataIndex: 'name',
       search: false,
       render: (_, row) => (
@@ -120,34 +121,35 @@ const DeptPage = () => {
           {row.name}
           {row.depth === 0 && (
             <Tag color="blue" style={{ marginInlineStart: 6 }}>
-              根
+              {intl.formatMessage({ id: 'system.dept.rootTag' })}
             </Tag>
           )}
         </span>
       ),
     },
     {
-      title: '部门 ID',
+      title: intl.formatMessage({ id: 'system.dept.column.id' }),
       dataIndex: 'id',
       search: false,
       width: 160,
       render: (_, row) => <span>{row.id}</span>,
     },
     {
-      title: '上级部门 ID',
+      title: intl.formatMessage({ id: 'system.dept.column.parentId' }),
       dataIndex: 'parentId',
       search: false,
       width: 140,
     },
     {
-      title: '层级',
+      title: intl.formatMessage({ id: 'system.dept.column.depth' }),
       dataIndex: 'depth',
       search: false,
       width: 100,
-      render: (_, row) => `第 ${row.depth + 1} 层`,
+      render: (_, row) =>
+        intl.formatMessage({ id: 'system.dept.depthValue' }, { depth: row.depth + 1 }),
     },
     {
-      title: '下级部门数',
+      title: intl.formatMessage({ id: 'system.dept.column.childCount' }),
       dataIndex: 'childCount',
       search: false,
       width: 120,
@@ -156,46 +158,42 @@ const DeptPage = () => {
   ];
 
   return (
-    <PageContainer title="部门管理" subTitle="组织架构（只读）">
+    <PageContainer
+      title={intl.formatMessage({ id: 'system.dept.title' })}
+      subTitle={intl.formatMessage({ id: 'system.dept.subtitle' })}
+    >
       <Alert
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        title="只读页：CE 版未提供部门增删改接口"
-        description={
-          <span>
-            当前可用的部门端点只有{' '}
-            <code>GET /api/v1/system/users/dept-options</code>
-            （供用户表单下拉与数据范围判定）。本页如实呈现组织架构，不提供无法落地的写操作。
-            部门 ID 同时用于「用户调岗」与数据范围计算，调整前请先确认影响面。
-          </span>
-        }
+        title={intl.formatMessage({ id: 'system.dept.alert.title' })}
+        description={intl.formatMessage({ id: 'system.dept.alert.desc' })}
       />
 
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} sm={8}>
           <StatCard
-            title="部门总数"
+            title={intl.formatMessage({ id: 'system.dept.stat.total' })}
             value={stats.total}
-            suffix="个"
+            suffix={intl.formatMessage({ id: 'system.dept.suffix.count' })}
             icon={<ApartmentOutlined />}
           />
         </Col>
         <Col xs={24} sm={8}>
           <StatCard
-            title="根部门"
+            title={intl.formatMessage({ id: 'system.dept.stat.roots' })}
             value={tree.length}
-            suffix="个"
+            suffix={intl.formatMessage({ id: 'system.dept.suffix.count' })}
             tone="blue"
             icon={<ClusterOutlined />}
-            footer="无上级部门的顶层节点"
+            footer={intl.formatMessage({ id: 'system.dept.stat.rootsFooter' })}
           />
         </Col>
         <Col xs={24} sm={8}>
           <StatCard
-            title="最大层级"
+            title={intl.formatMessage({ id: 'system.dept.stat.maxDepth' })}
             value={stats.total === 0 ? 0 : stats.maxDepth + 1}
-            suffix="层"
+            suffix={intl.formatMessage({ id: 'system.dept.suffix.level' })}
             tone="purple"
             icon={<NodeIndexOutlined />}
           />
@@ -204,7 +202,7 @@ const DeptPage = () => {
 
       <ProTable<DeptRow>
         rowKey="id"
-        headerTitle="部门列表"
+        headerTitle={intl.formatMessage({ id: 'system.dept.headerTitle' })}
         columns={columns}
         dataSource={rows}
         loading={loading}
@@ -218,10 +216,10 @@ const DeptPage = () => {
             icon={<ReloadOutlined />}
             onClick={() => {
               void load();
-              message.success('已重新拉取部门列表');
+              message.success(intl.formatMessage({ id: 'system.dept.message.reloaded' }));
             }}
           >
-            刷新
+            {intl.formatMessage({ id: 'common.action.refresh' })}
           </Button>,
         ]}
       />

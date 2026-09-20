@@ -48,15 +48,13 @@ export function EmptyState({
   const { token } = theme.useToken();
 
   const fallbackTitle = intl.formatMessage({
-    id: variant === 'data' ? 'common.empty.noData' : `common.empty.${variant}.title`,
-    defaultMessage:
+    // `search` 的标题 id 是 `noResult.title`（与描述同前缀），不能按 variant 拼
+    id:
       variant === 'data'
-        ? '暂无数据'
+        ? 'common.empty.noData'
         : variant === 'search'
-          ? '没有匹配的结果'
-          : variant === 'error'
-            ? '加载失败'
-            : '无访问权限',
+          ? 'common.empty.noResult.title'
+          : `common.empty.${variant}.title`,
   });
 
   const fallbackDesc = intl.formatMessage({
@@ -66,12 +64,6 @@ export function EmptyState({
         : variant === 'error'
           ? 'common.empty.error.desc'
           : 'common.empty.denied.desc',
-    defaultMessage:
-      variant === 'search'
-        ? '试试调整筛选条件，或清空关键词后重新查询'
-        : variant === 'error'
-          ? '网络或服务异常，请稍后重试'
-          : '当前账号没有该项权限，如有需要请联系管理员',
   });
 
   /**

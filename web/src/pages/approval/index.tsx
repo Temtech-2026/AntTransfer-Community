@@ -15,19 +15,19 @@ import {
   type ProColumns,
   ProTable,
 } from '@ant-design/pro-components';
-import { history } from '@umijs/max';
+import { history, useIntl } from '@umijs/max';
 import { Alert, App, Tabs, Tag, theme } from 'antd';
 import { useMemo, useRef, useState } from 'react';
 import type { ApprovalApplication, ApprovalView } from '@/services/approval';
 import {
-  actionLabel,
+  actionLabelId,
   approvalStatusColor,
-  approvalStatusText,
+  approvalStatusTextId,
   canDecide,
   pageMyApprovals,
   pagePendingApprovals,
 } from '@/services/approval';
-import { levelColor, levelText } from '@/services/file';
+import { levelColor, levelTextId } from '@/services/file';
 import type { DecisionMode } from './components/ApprovalDecisionModal';
 import ApprovalDecisionModal from './components/ApprovalDecisionModal';
 import ApprovalDetailDrawer from './components/ApprovalDetailDrawer';
@@ -52,6 +52,7 @@ function readViewFromLocation(): ApprovalView {
 }
 
 const ApprovalCenterPage = () => {
+  const intl = useIntl();
   const { message } = App.useApp();
   const { token } = theme.useToken();
   const actionRef = useRef<ActionType | null>(null);
@@ -65,30 +66,32 @@ const ApprovalCenterPage = () => {
   const columns = useMemo<ProColumns<ApprovalApplication>[]>(() => {
     const base: ProColumns<ApprovalApplication>[] = [
       {
-        title: '申请单号',
+        title: intl.formatMessage({ id: 'approval.column.applicationNo' }),
         dataIndex: 'applicationNo',
         width: 180,
         ellipsis: true,
         render: (_, record) => record.applicationNo || `#${record.id}`,
       },
       {
-        title: '申请动作',
+        title: intl.formatMessage({ id: 'approval.column.applyAction' }),
         dataIndex: 'applyType',
         width: 110,
         render: (_, record) => (
-          <Tag color="blue">{actionLabel(record.applyType)}</Tag>
+          <Tag color="blue">{intl.formatMessage({ id: actionLabelId(record.applyType) })}</Tag>
         ),
       },
       {
-        title: '敏感等级',
+        title: intl.formatMessage({ id: 'approval.column.level' }),
         dataIndex: 'level',
         width: 90,
         render: (_, record) => (
-          <Tag color={levelColor(record.level)}>{levelText(record.level)}</Tag>
+          <Tag color={levelColor(record.level)}>
+            {intl.formatMessage({ id: levelTextId(record.level) })}
+          </Tag>
         ),
       },
       {
-        title: '资源',
+        title: intl.formatMessage({ id: 'approval.column.resource' }),
         width: 130,
         ellipsis: true,
         render: (_, record) =>
@@ -97,45 +100,46 @@ const ApprovalCenterPage = () => {
             : '—',
       },
       {
-        title: '申请人',
+        title: intl.formatMessage({ id: 'approval.column.applicant' }),
         dataIndex: 'applicantId',
         width: 90,
         render: (_, record) => record.applicantId ?? '—',
       },
       {
-        title: '使用用途',
+        title: intl.formatMessage({ id: 'approval.column.purpose' }),
         dataIndex: 'purpose',
         ellipsis: true,
         render: (_, record) => record.purpose || '—',
       },
       {
-        title: '期望到期',
+        title: intl.formatMessage({ id: 'approval.column.desiredExpireAt' }),
         dataIndex: 'desiredExpireAt',
         width: 165,
-        render: (_, record) => record.desiredExpireAt || '长期有效',
+        render: (_, record) =>
+          record.desiredExpireAt || intl.formatMessage({ id: 'approval.longTerm' }),
       },
     ];
 
     if (view === 'pending') {
       base.push({
-        title: 'SLA',
+        title: intl.formatMessage({ id: 'approval.column.sla' }),
         width: 130,
         render: (_, record) => <SlaCountdown application={record} />,
       });
     } else {
       base.push(
         {
-          title: '状态',
+          title: intl.formatMessage({ id: 'approval.column.status' }),
           dataIndex: 'status',
           width: 100,
           render: (_, record) => (
             <Tag color={approvalStatusColor(record.status)}>
-              {approvalStatusText(record.status)}
+              {intl.formatMessage({ id: approvalStatusTextId(record.status) })}
             </Tag>
           ),
         },
         {
-          title: '审批意见',
+          title: intl.formatMessage({ id: 'approval.column.opinion' }),
           dataIndex: 'opinion',
           width: 160,
           ellipsis: true,
@@ -146,20 +150,20 @@ const ApprovalCenterPage = () => {
 
     base.push(
       {
-        title: '申请时间',
+        title: intl.formatMessage({ id: 'approval.column.createdAt' }),
         dataIndex: 'createdAt',
         width: 165,
         render: (_, record) => record.createdAt || '—',
       },
       {
-        title: '操作',
+        title: intl.formatMessage({ id: 'approval.column.actions' }),
         valueType: 'option',
         width: 160,
         fixed: 'right',
         render: (_, record) => {
           const actions = [
             <a key="detail" onClick={() => setDetail(record)}>
-              详情
+              {intl.formatMessage({ id: 'approval.rowAction.detail' })}
             </a>,
           ];
           if (canDecide(record, view)) {
@@ -170,7 +174,7 @@ const ApprovalCenterPage = () => {
                   setDecision({ mode: 'approve', application: record })
                 }
               >
-                通过
+                {intl.formatMessage({ id: 'approval.rowAction.approve' })}
               </a>,
               <a
                 key="reject"
@@ -179,7 +183,7 @@ const ApprovalCenterPage = () => {
                   setDecision({ mode: 'reject', application: record })
                 }
               >
-                驳回
+                {intl.formatMessage({ id: 'approval.rowAction.reject' })}
               </a>,
             );
           }
@@ -189,11 +193,14 @@ const ApprovalCenterPage = () => {
     );
 
     return base;
-  }, [view, token.colorError]);
+  }, [view, token.colorError, intl]);
 
   return (
     <PageContainer
-      header={{ title: '审批中心', subTitle: '待我审批与我发起的权限申请' }}
+      header={{
+        title: intl.formatMessage({ id: 'approval.title' }),
+        subTitle: intl.formatMessage({ id: 'approval.subtitle' }),
+      }}
     >
       <Tabs
         activeKey={view}
@@ -204,8 +211,11 @@ const ApprovalCenterPage = () => {
           history.replace(`/approval?view=${next}`);
         }}
         items={[
-          { key: 'pending', label: '待我审批' },
-          { key: 'mine', label: '我发起' },
+          {
+            key: 'pending',
+            label: intl.formatMessage({ id: 'approval.tab.pending' }),
+          },
+          { key: 'mine', label: intl.formatMessage({ id: 'approval.tab.mine' }) },
         ]}
       />
 
@@ -214,7 +224,7 @@ const ApprovalCenterPage = () => {
           style={{ marginBottom: 16 }}
           type="info"
           showIcon
-          title="SLA 按密级推算（公开 24h / 内部 12h / 机密 4h），超时仅作提醒，不会自动通过或放行权限。"
+          title={intl.formatMessage({ id: 'approval.slaNotice' })}
         />
       ) : null}
 
@@ -248,7 +258,7 @@ const ApprovalCenterPage = () => {
         onCancel={() => setDecision(null)}
         onSuccess={() => {
           setDecision(null);
-          message.success('审批结果已提交');
+          message.success(intl.formatMessage({ id: 'approval.decisionSubmitted' }));
           actionRef.current?.reload();
         }}
       />

@@ -4,96 +4,113 @@
  * <p><b>来源</b>：{@code at-common/.../audit/OperationLog.java} 的 {@code ACTION_*} /
  * {@code MODULE_*} / {@code TARGET_*} 常量，以及 {@code AuditLogVO#result} 的
  * 「0-成功 1-失败」。{@code sys_operation_log.action} 在 DDL 里是 {@code varchar(64)}
- * <b>无枚举约束</b>，所以这里只作为「检索下拉的候选集」：命中字典就显示中文，
- * 命中不了就原样显示编码（见 {@link actionText}），绝不因字典缺项而把数据藏起来。</p>
+ * <b>无枚举约束</b>，所以这里只作为「检索下拉的候选集」：命中字典就显示对应文案，
+ * 命中不了就原样显示编码（见 {@link actionTextId}），绝不因字典缺项而把数据藏起来。</p>
+ *
+ * <p><b>为什么只存 i18n id</b>：本文件是纯常量表，不能内嵌语言文案，否则英文界面会漏出中文。
+ * 真正的文案在 `locales/{zh-CN,en-US}/audit.ts`，由页面用 {@code useIntl()} 渲染。</p>
  */
 
+/** 审计动作选项（label 只存 i18n id，文案由页面渲染）。 */
+export interface AuditActionOption {
+  labelId: string;
+  value: string;
+}
+
 /** 审计动作分组选项（供带搜索的分组下拉使用）。 */
-export const AUDIT_ACTION_GROUPS: readonly {
-  label: string;
-  options: readonly { label: string; value: string }[];
-}[] = [
+export interface AuditActionGroup {
+  labelId: string;
+  options: readonly AuditActionOption[];
+}
+
+/** 审计动作分组选项（供带搜索的分组下拉使用）。 */
+export const AUDIT_ACTION_GROUPS: readonly AuditActionGroup[] = [
   {
-    label: '文件与目录',
+    labelId: 'audit.actionGroup.file',
     options: [
-      { label: '上传文件', value: 'FILE_UPLOAD' },
-      { label: '下载文件', value: 'FILE_DOWNLOAD' },
-      { label: '预览文件', value: 'FILE_PREVIEW' },
-      { label: '重命名文件', value: 'FILE_RENAME' },
-      { label: '移动文件', value: 'FILE_MOVE' },
-      { label: '复制文件', value: 'FILE_COPY' },
-      { label: '移入回收站', value: 'FILE_DELETE' },
-      { label: '回收站还原', value: 'FILE_RESTORE' },
-      { label: '彻底销毁', value: 'FILE_DESTROY' },
-      { label: '回收站到期清理', value: 'RECYCLE_PURGE' },
-      { label: '下载票据签发', value: 'FILE_TICKET_ISSUE' },
-      { label: '新建目录', value: 'FOLDER_CREATE' },
-      { label: '重命名目录', value: 'FOLDER_RENAME' },
-      { label: '移动目录', value: 'FOLDER_MOVE' },
-      { label: '删除目录', value: 'FOLDER_DELETE' },
-      { label: '打 / 取消标签', value: 'FILE_TAG' },
-      { label: '回滚历史版本', value: 'VERSION_ROLLBACK' },
-      { label: '上传新版本', value: 'VERSION_CREATE' },
-      { label: '版本裁剪', value: 'VERSION_PRUNE' },
-      { label: '发起批量打包', value: 'PACK_CREATE' },
-      { label: '下载打包产物', value: 'PACK_DOWNLOAD' },
+      { labelId: 'audit.action.FILE_UPLOAD', value: 'FILE_UPLOAD' },
+      { labelId: 'audit.action.FILE_DOWNLOAD', value: 'FILE_DOWNLOAD' },
+      { labelId: 'audit.action.FILE_PREVIEW', value: 'FILE_PREVIEW' },
+      { labelId: 'audit.action.FILE_RENAME', value: 'FILE_RENAME' },
+      { labelId: 'audit.action.FILE_MOVE', value: 'FILE_MOVE' },
+      { labelId: 'audit.action.FILE_COPY', value: 'FILE_COPY' },
+      { labelId: 'audit.action.FILE_DELETE', value: 'FILE_DELETE' },
+      { labelId: 'audit.action.FILE_RESTORE', value: 'FILE_RESTORE' },
+      { labelId: 'audit.action.FILE_DESTROY', value: 'FILE_DESTROY' },
+      { labelId: 'audit.action.RECYCLE_PURGE', value: 'RECYCLE_PURGE' },
+      { labelId: 'audit.action.FILE_TICKET_ISSUE', value: 'FILE_TICKET_ISSUE' },
+      { labelId: 'audit.action.FOLDER_CREATE', value: 'FOLDER_CREATE' },
+      { labelId: 'audit.action.FOLDER_RENAME', value: 'FOLDER_RENAME' },
+      { labelId: 'audit.action.FOLDER_MOVE', value: 'FOLDER_MOVE' },
+      { labelId: 'audit.action.FOLDER_DELETE', value: 'FOLDER_DELETE' },
+      { labelId: 'audit.action.FILE_TAG', value: 'FILE_TAG' },
+      { labelId: 'audit.action.VERSION_ROLLBACK', value: 'VERSION_ROLLBACK' },
+      { labelId: 'audit.action.VERSION_CREATE', value: 'VERSION_CREATE' },
+      { labelId: 'audit.action.VERSION_PRUNE', value: 'VERSION_PRUNE' },
+      { labelId: 'audit.action.PACK_CREATE', value: 'PACK_CREATE' },
+      { labelId: 'audit.action.PACK_DOWNLOAD', value: 'PACK_DOWNLOAD' },
     ],
   },
   {
-    label: '外发分享',
+    labelId: 'audit.actionGroup.share',
     options: [
-      { label: '创建分享', value: 'SHARE_CREATE' },
-      { label: '撤销分享', value: 'SHARE_REVOKE' },
-      { label: '访客下载', value: 'SHARE_DOWNLOAD' },
-      { label: '访客预览', value: 'SHARE_PREVIEW' },
-      { label: '外发拦截', value: 'SHARE_BLOCKED' },
-      { label: '提取码锁定', value: 'SHARE_CODE_LOCKED' },
+      { labelId: 'audit.action.SHARE_CREATE', value: 'SHARE_CREATE' },
+      { labelId: 'audit.action.SHARE_REVOKE', value: 'SHARE_REVOKE' },
+      { labelId: 'audit.action.SHARE_DOWNLOAD', value: 'SHARE_DOWNLOAD' },
+      { labelId: 'audit.action.SHARE_PREVIEW', value: 'SHARE_PREVIEW' },
+      { labelId: 'audit.action.SHARE_BLOCKED', value: 'SHARE_BLOCKED' },
+      { labelId: 'audit.action.SHARE_CODE_LOCKED', value: 'SHARE_CODE_LOCKED' },
     ],
   },
   {
-    label: '用户与角色',
+    labelId: 'audit.actionGroup.userRole',
     options: [
-      { label: '创建用户', value: 'USER_CREATE' },
-      { label: '修改用户', value: 'USER_UPDATE' },
-      { label: '删除用户', value: 'USER_DELETE' },
-      { label: '启停用户', value: 'USER_STATUS' },
-      { label: '重置口令', value: 'USER_PASSWORD_RESET' },
-      { label: '变更用户角色', value: 'USER_ROLE_ASSIGN' },
-      { label: '创建角色', value: 'ROLE_CREATE' },
-      { label: '修改角色', value: 'ROLE_UPDATE' },
-      { label: '删除角色', value: 'ROLE_DELETE' },
-      { label: '角色授权调整', value: 'ROLE_PERM_ASSIGN' },
+      { labelId: 'audit.action.USER_CREATE', value: 'USER_CREATE' },
+      { labelId: 'audit.action.USER_UPDATE', value: 'USER_UPDATE' },
+      { labelId: 'audit.action.USER_DELETE', value: 'USER_DELETE' },
+      { labelId: 'audit.action.USER_STATUS', value: 'USER_STATUS' },
+      { labelId: 'audit.action.USER_PASSWORD_RESET', value: 'USER_PASSWORD_RESET' },
+      { labelId: 'audit.action.USER_ROLE_ASSIGN', value: 'USER_ROLE_ASSIGN' },
+      { labelId: 'audit.action.ROLE_CREATE', value: 'ROLE_CREATE' },
+      { labelId: 'audit.action.ROLE_UPDATE', value: 'ROLE_UPDATE' },
+      { labelId: 'audit.action.ROLE_DELETE', value: 'ROLE_DELETE' },
+      { labelId: 'audit.action.ROLE_PERM_ASSIGN', value: 'ROLE_PERM_ASSIGN' },
     ],
   },
   {
-    label: '审批与授权',
+    labelId: 'audit.actionGroup.approval',
     options: [
-      { label: '提交申请', value: 'APPLY' },
-      { label: '审批通过', value: 'APPROVE' },
-      { label: '审批驳回', value: 'REJECT' },
-      { label: '审批转审', value: 'TRANSFER' },
-      { label: '授权落地', value: 'GRANT' },
-      { label: '授权回收', value: 'REVOKE' },
-      { label: '授权到期回收', value: 'GRANT_EXPIRE' },
+      { labelId: 'audit.action.APPLY', value: 'APPLY' },
+      { labelId: 'audit.action.APPROVE', value: 'APPROVE' },
+      { labelId: 'audit.action.REJECT', value: 'REJECT' },
+      { labelId: 'audit.action.TRANSFER', value: 'TRANSFER' },
+      { labelId: 'audit.action.GRANT', value: 'GRANT' },
+      { labelId: 'audit.action.REVOKE', value: 'REVOKE' },
+      { labelId: 'audit.action.GRANT_EXPIRE', value: 'GRANT_EXPIRE' },
     ],
   },
 ];
 
-/** 动作编码 → 中文（由 {@link AUDIT_ACTION_GROUPS} 展开，避免两处手写不同步）。 */
-export const AUDIT_ACTION_LABELS: Readonly<Record<string, string>> = Object.freeze(
+/** 动作编码 → i18n id（由 {@link AUDIT_ACTION_GROUPS} 展开，避免两处手写不同步）。 */
+export const AUDIT_ACTION_LABEL_IDS: Readonly<Record<string, string>> = Object.freeze(
   Object.fromEntries(
     AUDIT_ACTION_GROUPS.flatMap((group) =>
-      group.options.map((option) => [option.value, option.label] as const),
+      group.options.map((option) => [option.value, option.labelId] as const),
     ),
   ),
 );
 
-/** 动作编码 → 展示文案：命中字典显示中文，未命中原样显示编码。 */
-export function actionText(action?: string | null): string {
+/**
+ * 动作编码 → 文案 id：命中字典返回 i18n id，未命中返回 null（调用方原样显示编码）。
+ *
+ * <p>返回 null 而不是兜底成某个中文，是为了让「字典缺项」显式暴露在调用方，
+ * 而不是悄悄显示一句错误的「未知」。</p>
+ */
+export function actionTextId(action?: string | null): string | null {
   if (!action) {
-    return '--';
+    return null;
   }
-  return AUDIT_ACTION_LABELS[action] ?? action;
+  return AUDIT_ACTION_LABEL_IDS[action] ?? null;
 }
 
 /**
@@ -104,35 +121,35 @@ export function actionText(action?: string | null): string {
  * 否则审计员无法筛选传输 / 协作域的历史记录。</p>
  */
 export const AUDIT_MODULE_ENUM: Readonly<
-  Record<string, { text: string; status: 'Default' | 'Success' | 'Processing' | 'Error' | 'Warning' }>
+  Record<string, { labelId: string; status: 'Default' | 'Success' | 'Processing' | 'Error' | 'Warning' }>
 > = {
-  AUTH: { text: '认证', status: 'Processing' },
-  PERMISSION: { text: '权限与系统管理', status: 'Warning' },
-  TRANSFER: { text: '传输', status: 'Success' },
-  FILE: { text: '文件', status: 'Default' },
-  COLLABORATION: { text: '协作', status: 'Processing' },
-  COMMON: { text: '公共', status: 'Default' },
+  AUTH: { labelId: 'audit.module.AUTH', status: 'Processing' },
+  PERMISSION: { labelId: 'audit.module.PERMISSION', status: 'Warning' },
+  TRANSFER: { labelId: 'audit.module.TRANSFER', status: 'Success' },
+  FILE: { labelId: 'audit.module.FILE', status: 'Default' },
+  COLLABORATION: { labelId: 'audit.module.COLLABORATION', status: 'Processing' },
+  COMMON: { labelId: 'audit.module.COMMON', status: 'Default' },
 };
 
 /** 结果（{@code OperationLog.RESULT_*}）。 */
 export const AUDIT_RESULT_ENUM: Readonly<
-  Record<string, { text: string; status: 'Success' | 'Error' }>
+  Record<string, { labelId: string; status: 'Success' | 'Error' }>
 > = {
-  '0': { text: '成功', status: 'Success' },
-  '1': { text: '失败', status: 'Error' },
+  '0': { labelId: 'audit.result.success', status: 'Success' },
+  '1': { labelId: 'audit.result.failed', status: 'Error' },
 };
 
 /** 操作对象类型（{@code OperationLog.TARGET_*}）。 */
-export const AUDIT_TARGET_TYPE_OPTIONS: readonly { label: string; value: string }[] = [
-  { label: '外发链接', value: 'SHARE' },
-  { label: '文件条目', value: 'FILE' },
-  { label: '目录', value: 'FOLDER' },
-  { label: '标签', value: 'TAG' },
-  { label: '打包任务', value: 'PACK_TASK' },
-  { label: '用户账号', value: 'USER' },
-  { label: '角色', value: 'ROLE' },
-  { label: '权限点', value: 'PERMISSION' },
-  { label: '权限申请单', value: 'APPLICATION' },
-  { label: '授权记录', value: 'GRANT' },
-  { label: '系统任务', value: 'SYSTEM' },
+export const AUDIT_TARGET_TYPE_OPTIONS: readonly AuditActionOption[] = [
+  { labelId: 'audit.target.SHARE', value: 'SHARE' },
+  { labelId: 'audit.target.FILE', value: 'FILE' },
+  { labelId: 'audit.target.FOLDER', value: 'FOLDER' },
+  { labelId: 'audit.target.TAG', value: 'TAG' },
+  { labelId: 'audit.target.PACK_TASK', value: 'PACK_TASK' },
+  { labelId: 'audit.target.USER', value: 'USER' },
+  { labelId: 'audit.target.ROLE', value: 'ROLE' },
+  { labelId: 'audit.target.PERMISSION', value: 'PERMISSION' },
+  { labelId: 'audit.target.APPLICATION', value: 'APPLICATION' },
+  { labelId: 'audit.target.GRANT', value: 'GRANT' },
+  { labelId: 'audit.target.SYSTEM', value: 'SYSTEM' },
 ];

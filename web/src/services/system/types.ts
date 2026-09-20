@@ -238,17 +238,17 @@ export interface RolePermissionAssignPayload {
 
 /* ============================ 纯函数 / 展示映射 ============================ */
 
-/** 用户状态展示文案。 */
-export function userStatusText(status?: number | null): string {
+/** 用户状态展示文案的 i18n id。 */
+export function userStatusTextId(status?: number | null): string {
   switch (status) {
     case UserStatus.NORMAL:
-      return '正常';
+      return 'system.userStatus.normal';
     case UserStatus.DISABLED:
-      return '禁用';
+      return 'system.userStatus.disabled';
     case UserStatus.LOCKED:
-      return '锁定';
+      return 'system.userStatus.locked';
     default:
-      return '未知';
+      return 'system.userStatus.unknown';
   }
 }
 
@@ -271,17 +271,29 @@ export function isBuiltInRole(role?: Pick<RoleVO, 'builtIn'> | null): boolean {
   return role?.builtIn === 1;
 }
 
-/** 数据范围下拉选项（取值来自 {@link DataScope}，与后端 {@code sys_role.data_scope} 一致）。 */
-export const DATA_SCOPE_OPTIONS: readonly { label: string; value: number }[] = [
-  { label: '仅本人', value: DataScope.SELF },
-  { label: '本部门及以下', value: DataScope.DEPT_AND_SUB },
-  { label: '全部', value: DataScope.ALL },
+/** 数据范围下拉选项（labelId 为 i18n id；取值来自 {@link DataScope}，与后端 {@code sys_role.data_scope} 一致）。 */
+export const DATA_SCOPE_OPTIONS: readonly { labelId: string; value: number }[] = [
+  { labelId: 'system.dataScope.self', value: DataScope.SELF },
+  { labelId: 'system.dataScope.deptAndSub', value: DataScope.DEPT_AND_SUB },
+  { labelId: 'system.dataScope.all', value: DataScope.ALL },
 ] as const;
 
-/** 数据范围展示文案（未知取值不猜测，回落为「未知(n)」）。 */
-export function dataScopeText(scope?: number | null): string {
+/** 数据范围展示文案的 i18n id（未知取值不猜测，渲染侧配 {@code values.scope} 回落为「未知(n)」）。 */
+export function dataScopeTextId(scope?: number | null): string {
   const hit = DATA_SCOPE_OPTIONS.find((item) => item.value === scope);
-  return hit ? hit.label : `未知(${scope ?? '-'})`;
+  return hit ? hit.labelId : 'system.dataScope.unknown';
+}
+
+/** 权限点维度展示映射：textId 为 i18n id，color 为 Ant Design Tag color。 */
+export const PERM_TYPE_META: Readonly<Record<number, { textId: string; color: string }>> = {
+  1: { textId: 'system.permType.menu', color: 'blue' },
+  2: { textId: 'system.permType.action', color: 'geekblue' },
+  3: { textId: 'system.permType.dataScope', color: 'purple' },
+};
+
+/** 权限点维度展示文案的 i18n id（未知维度回落为「未知(n)」，渲染侧配 {@code values.type}）。 */
+export function permTypeTextId(type?: number | null): string {
+  return PERM_TYPE_META[type ?? -1]?.textId ?? 'system.permType.unknown';
 }
 
 /** 数据范围色标：全部=red（影响面最大），本部门及以下=orange，本人=blue。 */
@@ -298,15 +310,15 @@ export function dataScopeColor(scope?: number | null): string {
   }
 }
 
-/** 审计结果展示文案（0-成功 1-失败）。 */
-export function auditResultText(result?: number | null): string {
+/** 审计结果展示文案的 i18n id（0-成功 1-失败，其余未知）。 */
+export function auditResultTextId(result?: number | null): string {
   if (result === 0) {
-    return '成功';
+    return 'audit.result.success';
   }
   if (result === 1) {
-    return '失败';
+    return 'audit.result.failed';
   }
-  return '未知';
+  return 'audit.result.unknown';
 }
 
 /** 审计结果色标。 */
@@ -321,15 +333,20 @@ export function auditResultColor(result?: number | null): string {
 }
 
 /**
- * 操作人展示文案。
+ * 操作人兜底展示的 i18n id（{@code operatorName} 非空时无需 id，渲染侧直接用展示名）。
  *
  * <p>后端 {@code operatorName} 为 null 有两种语义：①用户已被注销，反查不到；
  * ②本身就是匿名 / 系统任务（如到期回收、回收站清理）。两者都<b>不是</b>数据缺失，
  * 因此分别展示而不是一律显示「未知」。</p>
+ *
+ * <p>返回 {@code null} 表示展示名可用，渲染侧直接用 {@code operatorName}；
+ * 否则用返回的 id 渲染，其中 {@code audit.operator.deletedUser} 需传 {@code values.userId}。</p>
  */
-export function operatorText(row: Pick<AuditLogVO, 'userId' | 'operatorName'>): string {
+export function operatorTextId(
+  row: Pick<AuditLogVO, 'userId' | 'operatorName'>,
+): string | null {
   if (row.operatorName) {
-    return row.operatorName;
+    return null;
   }
-  return row.userId ? `已注销用户 #${row.userId}` : '系统 / 匿名';
+  return row.userId ? 'audit.operator.deletedUser' : 'audit.operator.system';
 }

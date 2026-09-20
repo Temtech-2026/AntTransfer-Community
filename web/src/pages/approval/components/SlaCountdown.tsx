@@ -8,8 +8,9 @@
  * <p>倒计时**只作提醒**：超时不会自动通过/驳回，也不会放行任何权限。
  */
 
+import { useIntl } from '@umijs/max';
 import { Tag, Tooltip } from 'antd';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import {
   SLA_TICK_MS,
@@ -20,13 +21,14 @@ import {
   slaStage,
   slaStageColor,
 } from '@/services/approval';
-import type { ApprovalApplication } from '@/services/approval';
+import type { ApprovalApplication, Translate } from '@/services/approval';
 
 export interface SlaCountdownProps {
   application: ApprovalApplication;
 }
 
 export const SlaCountdown = ({ application }: SlaCountdownProps) => {
+  const intl = useIntl();
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -38,10 +40,20 @@ export const SlaCountdown = ({ application }: SlaCountdownProps) => {
   const stage = slaStage(remaining, application.level);
   const deadline = slaDeadlineMs(application.createdAt, application.level);
 
+  const t: Translate = useMemo(
+    () => (id, values) => intl.formatMessage({ id }, values),
+    [intl],
+  );
+
   return (
-    <Tooltip title={`应于 ${formatDeadline(deadline)} 前处理（超时仅提醒，不自动放行）`}>
+    <Tooltip
+      title={intl.formatMessage(
+        { id: 'approval.sla.tooltip' },
+        { deadline: formatDeadline(deadline) },
+      )}
+    >
       <Tag color={slaStageColor(stage)} style={{ fontVariantNumeric: 'tabular-nums' }}>
-        {formatCountdown(remaining)}
+        {formatCountdown(t, remaining)}
       </Tag>
     </Tooltip>
   );

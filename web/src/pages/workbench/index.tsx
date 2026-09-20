@@ -21,7 +21,7 @@ import {
   ThunderboltOutlined,
 } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
-import { history } from '@umijs/max';
+import { history, useIntl } from '@umijs/max';
 import { Alert, Button, Col, Progress, Row, Tooltip, Typography } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -44,46 +44,47 @@ const { Text } = Typography;
 /** 未就绪统一占位符。 */
 const PLACEHOLDER = '--';
 
-/** 快捷入口：纯导航，不承载任何数据，因此不受接口降级影响。 */
+/** 快捷入口：纯导航，不承载任何数据，因此不受接口降级影响。文案走 i18n id。 */
 const QUICK_LINKS = [
   {
     key: 'upload',
     path: '/upload',
-    title: '上传文件',
-    desc: '拖拽或分片续传',
+    titleId: 'workbench.quick.upload.title',
+    descId: 'workbench.quick.upload.desc',
     icon: <CloudUploadOutlined />,
   },
   {
     key: 'file',
     path: '/file',
-    title: '文件管理',
-    desc: '浏览与整理目录',
+    titleId: 'workbench.quick.file.title',
+    descId: 'workbench.quick.file.desc',
     icon: <FolderOpenOutlined />,
   },
   {
     key: 'shares',
     path: '/shares',
-    title: '我的分享',
-    desc: '链接与提取码',
+    titleId: 'workbench.quick.shares.title',
+    descId: 'workbench.quick.shares.desc',
     icon: <ShareAltOutlined />,
   },
   {
     key: 'approval',
     path: '/approval',
-    title: '审批中心',
-    desc: '待办与已办',
+    titleId: 'workbench.quick.approval.title',
+    descId: 'workbench.quick.approval.desc',
     icon: <AuditOutlined />,
   },
   {
     key: 'messages',
     path: '/messages',
-    title: '消息中心',
-    desc: '系统与传输通知',
+    titleId: 'workbench.quick.messages.title',
+    descId: 'workbench.quick.messages.desc',
     icon: <BellOutlined />,
   },
 ] as const;
 
 const WorkbenchPage = () => {
+  const intl = useIntl();
   const { styles } = useStyles();
   const [loading, setLoading] = useState(true);
   const [unread, setUnread] = useState<UnreadCount>({ ...EMPTY_UNREAD });
@@ -118,8 +119,8 @@ const WorkbenchPage = () => {
   return (
     <PageContainer
       header={{
-        title: '工作台',
-        subTitle: '传输、审批与待办一屏总览',
+        title: intl.formatMessage({ id: 'workbench.title' }),
+        subTitle: intl.formatMessage({ id: 'workbench.subtitle' }),
       }}
       extra={[
         <Button
@@ -129,7 +130,7 @@ const WorkbenchPage = () => {
           loading={loading}
           onClick={() => void load()}
         >
-          刷新
+          {intl.formatMessage({ id: 'workbench.action.refresh' })}
         </Button>,
       ]}
     >
@@ -138,8 +139,8 @@ const WorkbenchPage = () => {
           style={{ marginBottom: 16 }}
           type="warning"
           showIcon
-          message="传输量与成功率暂不可用"
-          description="统计接口本次拉取失败，已降级为占位符（不会显示模拟数据）；其余卡片不受影响，可稍后刷新重试。"
+          message={intl.formatMessage({ id: 'workbench.degraded.title' })}
+          description={intl.formatMessage({ id: 'workbench.degraded.desc' })}
         />
       ) : null}
 
@@ -147,7 +148,7 @@ const WorkbenchPage = () => {
         <Col xs={24} sm={12} xl={6}>
           <StatCard
             loading={loading}
-            title="传输量"
+            title={intl.formatMessage({ id: 'workbench.stat.transfer' })}
             icon={<CloudUploadOutlined />}
             value={
               transferReady
@@ -157,13 +158,13 @@ const WorkbenchPage = () => {
             footer={
               <>
                 <Text type="secondary">
-                  上传{' '}
+                  {intl.formatMessage({ id: 'workbench.stat.upload' })}{' '}
                   {transferReady
                     ? formatBytes(stats?.uploadBytes ?? 0)
                     : PLACEHOLDER}
                 </Text>
                 <Text type="secondary">
-                  下载{' '}
+                  {intl.formatMessage({ id: 'workbench.stat.download' })}{' '}
                   {transferReady
                     ? formatBytes(stats?.downloadBytes ?? 0)
                     : PLACEHOLDER}
@@ -176,13 +177,17 @@ const WorkbenchPage = () => {
         <Col xs={24} sm={12} xl={6}>
           <StatCard
             loading={loading}
-            title="传输成功率"
+            title={intl.formatMessage({ id: 'workbench.stat.successRate' })}
             tone="cyan"
             icon={<ThunderboltOutlined />}
             value={rate === null ? PLACEHOLDER : rate}
             suffix={rate === null ? undefined : '%'}
             footer={
-              <Tooltip title="成功任务数 ÷（成功 + 失败）；无任务时不显示 0% 以免误判">
+              <Tooltip
+                title={intl.formatMessage({
+                  id: 'workbench.stat.successRate.tip',
+                })}
+              >
                 <Progress
                   percent={rate ?? 0}
                   status={rate === null ? 'normal' : undefined}
@@ -199,26 +204,32 @@ const WorkbenchPage = () => {
         <Col xs={24} sm={12} xl={6}>
           <StatCard
             loading={loading}
-            title="待我审批"
+            title={intl.formatMessage({ id: 'workbench.stat.pending' })}
             tone="orange"
             icon={<AuditOutlined />}
             value={pendingCount === null ? PLACEHOLDER : pendingCount}
-            suffix="单"
+            suffix={intl.formatMessage({ id: 'workbench.stat.pending.unit' })}
             onClick={() => history.push('/approval')}
-            footer={<Text type="secondary">点击进入审批中心</Text>}
+            footer={
+              <Text type="secondary">
+                {intl.formatMessage({ id: 'workbench.stat.pending.footer' })}
+              </Text>
+            }
           />
         </Col>
 
         <Col xs={24} sm={12} xl={6}>
           <StatCard
             loading={loading}
-            title="待办数"
+            title={intl.formatMessage({ id: 'workbench.stat.todo' })}
             tone="blue"
             icon={<BellOutlined />}
             value={unread.todo}
-            suffix="项"
+            suffix={intl.formatMessage({ id: 'workbench.stat.todo.unit' })}
             footer={
-              <Text type="secondary">含审批待办、审批结果与传输完成</Text>
+              <Text type="secondary">
+                {intl.formatMessage({ id: 'workbench.stat.todo.footer' })}
+              </Text>
             }
           />
         </Col>
@@ -226,9 +237,13 @@ const WorkbenchPage = () => {
 
       <SectionCard
         style={{ marginTop: 16 }}
-        title="快捷入口"
-        subTitle="常用操作直达"
-        extra={<Text type="secondary">仅作导航，不加载数据</Text>}
+        title={intl.formatMessage({ id: 'workbench.quick.title' })}
+        subTitle={intl.formatMessage({ id: 'workbench.quick.subtitle' })}
+        extra={
+          <Text type="secondary">
+            {intl.formatMessage({ id: 'workbench.quick.extra' })}
+          </Text>
+        }
       >
         <div className={styles.quickGrid}>
           {QUICK_LINKS.map((link) => (
@@ -240,8 +255,12 @@ const WorkbenchPage = () => {
             >
               <span className={styles.quickIcon}>{link.icon}</span>
               <span className={styles.quickText}>
-                <span className={styles.quickTitle}>{link.title}</span>
-                <span className={styles.quickDesc}>{link.desc}</span>
+                <span className={styles.quickTitle}>
+                  {intl.formatMessage({ id: link.titleId })}
+                </span>
+                <span className={styles.quickDesc}>
+                  {intl.formatMessage({ id: link.descId })}
+                </span>
               </span>
             </button>
           ))}

@@ -2,8 +2,8 @@
  * 审批域出口（services/approval）。
  *
  * <p>对外只需从这里取：数据访问（pagePendingApprovals / pageMyApprovals / approve / reject / transfer）、
- * 状态与动作口径（approvalStatusText / canDecide / downscopeOptionsOf / capExpireAt）、
- * SLA 纯函数（slaRemainingMs / formatCountdown / slaStage）。
+ * 状态与动作口径（approvalStatusTextId / actionLabelId / canDecide / downscopeOptionsOf / capExpireAt）、
+ * SLA 纯函数（slaRemainingMs / formatCountdown(t, ms) / slaStage）。
  */
 
 export * from './api';

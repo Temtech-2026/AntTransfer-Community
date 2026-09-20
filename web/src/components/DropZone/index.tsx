@@ -1,4 +1,5 @@
 import { InboxOutlined } from '@ant-design/icons';
+import { useIntl } from '@umijs/max';
 import React, { useRef, useState } from 'react';
 
 import useStyles from './index.style';
@@ -33,7 +34,7 @@ export interface DropZoneProps {
  * 因为 `<button>` 的内容模型不允许嵌套 `<input>` 这类可交互元素。
  */
 const DropZone: React.FC<DropZoneProps> = ({
-  title = '拖拽文件到此处，或点击选择',
+  title,
   description,
   icon,
   accept,
@@ -44,6 +45,7 @@ const DropZone: React.FC<DropZoneProps> = ({
   className,
   style,
 }) => {
+  const intl = useIntl();
   const { styles } = useStyles();
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -64,6 +66,8 @@ const DropZone: React.FC<DropZoneProps> = ({
     dragDepthRef.current = 0;
     setDragging(false);
   };
+
+  const displayTitle = title ?? intl.formatMessage({ id: 'component.dropZone.title' });
 
   return (
     <>
@@ -107,7 +111,7 @@ const DropZone: React.FC<DropZoneProps> = ({
         }}
       >
         <span className={styles.icon}>{icon ?? <InboxOutlined />}</span>
-        <span className={styles.title}>{title}</span>
+        <span className={styles.title}>{displayTitle}</span>
         {description ? (
           <span className={styles.description}>{description}</span>
         ) : null}

@@ -23,13 +23,26 @@ vi.mock('antd', () => ({
   },
 }));
 
-vi.mock('@umijs/max', () => ({
-  request: vi.fn(),
-  history: {
-    push: vi.fn(),
-    replace: vi.fn(),
-  },
-}));
+vi.mock('@umijs/max', async () => {
+  // services/request 的非 Result 兜底文案走 getIntl()，接真实 zh-CN 语言包
+  const { testFormatMessage } = await vi.importActual<
+    typeof import('@/locales/testTranslate')
+  >('@/locales/testTranslate');
+  return {
+    request: vi.fn(),
+    history: {
+      push: vi.fn(),
+      replace: vi.fn(),
+    },
+    // 兼容两种调用形态：`formatMessage({ id, values })` 与 `formatMessage({ id }, values)`
+    getIntl: () => ({
+      formatMessage: (
+        descriptor: { id: string; values?: Record<string, unknown> },
+        values?: Record<string, unknown>,
+      ) => testFormatMessage({ id: descriptor.id, values: values ?? descriptor.values }),
+    }),
+  };
+});
 
 /** 可脚本化的假 XHR（只实现 request.ts 用到的成员）。 */
 class FakeXhr {

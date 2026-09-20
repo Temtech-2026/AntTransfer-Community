@@ -9,13 +9,14 @@
  * 角色（独立接口）、备注（{@code UserVO} 不回显备注，提交就成了「盲写」，宁可不可改）。</p>
  */
 
+import { useIntl } from '@umijs/max';
 import { Alert, App, Form, Input, Modal, Select } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 
 import {
   SYSTEM_PERM,
   createUser,
-  dataScopeText,
+  dataScopeTextId,
   updateUser,
   type DeptOptionVO,
   type RoleVO,
@@ -59,6 +60,7 @@ const UserFormModal = ({
   onSuccess,
 }: UserFormModalProps) => {
   const [form] = Form.useForm<UserFormValues>();
+  const intl = useIntl();
   const { message } = App.useApp();
   const [submitting, setSubmitting] = useState(false);
   const editing = record != null;
@@ -71,10 +73,20 @@ const UserFormModal = ({
   const roleSelectOptions = useMemo(
     () =>
       roleOptions.map((role) => ({
-        label: `${role.name}（${role.code}·${dataScopeText(role.dataScope)}）`,
+        label: intl.formatMessage(
+          { id: 'system.userForm.roleOption' },
+          {
+            name: role.name,
+            code: role.code,
+            scope: intl.formatMessage(
+              { id: dataScopeTextId(role.dataScope) },
+              { scope: role.dataScope ?? '-' },
+            ),
+          },
+        ),
         value: role.id,
       })),
-    [roleOptions],
+    [roleOptions, intl],
   );
 
   useEffect(() => {
@@ -114,7 +126,7 @@ const UserFormModal = ({
           // 部门必须显式提交：与原值不同即触发调岗 + 审批授权回收；null = 解除部门分配
           deptId: values.deptId ?? null,
         });
-        message.success('用户资料已更新');
+        message.success(intl.formatMessage({ id: 'system.userForm.message.updated' }));
       } else {
         await createUser({
           username: values.username,
@@ -126,7 +138,7 @@ const UserFormModal = ({
           remark: values.remark,
           roleIds: canAssignRole ? values.roleIds : undefined,
         });
-        message.success('用户已创建');
+        message.success(intl.formatMessage({ id: 'system.userForm.message.created' }));
       }
       onSuccess();
     } catch {
@@ -139,9 +151,18 @@ const UserFormModal = ({
   return (
     <Modal
       open={open}
-      title={editing ? `编辑用户 · ${record?.username ?? ''}` : '新建用户'}
-      okText={editing ? '保存' : '创建'}
-      cancelText="取消"
+      title={
+        editing
+          ? intl.formatMessage(
+              { id: 'system.userForm.title.edit' },
+              { name: record?.username ?? '' },
+            )
+          : intl.formatMessage({ id: 'system.userForm.title.create' })
+      }
+      okText={intl.formatMessage({
+        id: editing ? 'common.action.save' : 'system.action.create',
+      })}
+      cancelText={intl.formatMessage({ id: 'common.action.cancel' })}
       confirmLoading={submitting}
       onOk={handleSubmit}
       onCancel={onClose}
@@ -153,27 +174,37 @@ const UserFormModal = ({
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-          title="账号名、状态、角色、口令均不在本表单内"
-          description="账号名不可改；状态 / 口令 / 角色请用列表中的对应按钮。备注因接口不回显，暂不提供编辑。"
+          title={intl.formatMessage({ id: 'system.userForm.alert.title' })}
+          description={intl.formatMessage({ id: 'system.userForm.alert.desc' })}
         />
       )}
       <Form form={form} layout="vertical" preserve={false} requiredMark>
         <Form.Item
           name="username"
-          label="登录账号"
+          label={intl.formatMessage({ id: 'system.userForm.field.username' })}
           rules={
             editing
               ? []
               : [
-                  { required: true, message: '请输入登录账号' },
-                  { pattern: USERNAME_PATTERN, message: '须为 3~64 位字母/数字/下划线/点/横线' },
+                  {
+                    required: true,
+                    message: intl.formatMessage({ id: 'system.userForm.rule.usernameRequired' }),
+                  },
+                  {
+                    pattern: USERNAME_PATTERN,
+                    message: intl.formatMessage({ id: 'system.userForm.rule.usernamePattern' }),
+                  },
                 ]
           }
         >
           <Input
             disabled={editing}
             maxLength={64}
-            placeholder={editing ? undefined : '3~64 位字母/数字/下划线/点/横线'}
+            placeholder={
+              editing
+                ? undefined
+                : intl.formatMessage({ id: 'system.userForm.placeholder.username' })
+            }
             autoComplete="off"
           />
         </Form.Item>
@@ -181,15 +212,22 @@ const UserFormModal = ({
         {!editing && (
           <Form.Item
             name="password"
-            label="初始口令"
+            label={intl.formatMessage({ id: 'system.userForm.field.password' })}
             rules={[
-              { required: true, message: '请输入初始口令' },
-              { min: 8, max: 64, message: '口令长度须为 8~64 位' },
+              {
+                required: true,
+                message: intl.formatMessage({ id: 'system.userForm.rule.passwordRequired' }),
+              },
+              {
+                min: 8,
+                max: 64,
+                message: intl.formatMessage({ id: 'system.userForm.rule.passwordLength' }),
+              },
             ]}
           >
             <Input.Password
               maxLength={64}
-              placeholder="8~64 位"
+              placeholder={intl.formatMessage({ id: 'system.userForm.placeholder.password' })}
               autoComplete="new-password"
             />
           </Form.Item>
@@ -197,10 +235,17 @@ const UserFormModal = ({
 
         <Form.Item
           name="nickname"
-          label="昵称 / 姓名"
+          label={intl.formatMessage({ id: 'system.userForm.field.nickname' })}
           rules={[
-            { required: true, whitespace: true, message: '请输入昵称' },
-            { max: 64, message: '不超过 64 字符' },
+            {
+              required: true,
+              whitespace: true,
+              message: intl.formatMessage({ id: 'system.userForm.rule.nicknameRequired' }),
+            },
+            {
+              max: 64,
+              message: intl.formatMessage({ id: 'system.userForm.rule.nicknameMax' }),
+            },
           ]}
         >
           <Input maxLength={64} />
@@ -208,17 +253,17 @@ const UserFormModal = ({
 
         <Form.Item
           name="deptId"
-          label="所属部门"
+          label={intl.formatMessage({ id: 'system.userForm.field.dept' })}
           extra={
             editing
-              ? '改动部门即视为调岗：会回收该用户「审批获得」的全部生效授权'
-              : '留空 = 未分配部门'
+              ? intl.formatMessage({ id: 'system.userForm.extra.deptEdit' })
+              : intl.formatMessage({ id: 'system.userForm.extra.deptCreate' })
           }
         >
           <Select
             allowClear
             showSearch
-            placeholder="未分配"
+            placeholder={intl.formatMessage({ id: 'system.userForm.placeholder.dept' })}
             options={deptSelectOptions}
             optionFilterProp="label"
           />
@@ -226,21 +271,33 @@ const UserFormModal = ({
 
         <Form.Item
           name="email"
-          label="邮箱"
+          label={intl.formatMessage({ id: 'system.userForm.field.email' })}
           rules={[
-            { type: 'email', message: '邮箱格式不正确' },
-            { max: 128, message: '不超过 128 字符' },
+            {
+              type: 'email',
+              message: intl.formatMessage({ id: 'system.userForm.rule.emailInvalid' }),
+            },
+            {
+              max: 128,
+              message: intl.formatMessage({ id: 'system.userForm.rule.emailMax' }),
+            },
           ]}
-          extra={editing ? '留空 = 不修改（后端保守策略，邮箱无法被清空）' : undefined}
+          extra={
+            editing ? intl.formatMessage({ id: 'system.userForm.extra.emailEdit' }) : undefined
+          }
         >
           <Input maxLength={128} autoComplete="off" />
         </Form.Item>
 
         <Form.Item
           name="mobile"
-          label="手机号"
-          rules={[{ max: 32, message: '不超过 32 字符' }]}
-          extra={editing ? '留空 = 不修改' : undefined}
+          label={intl.formatMessage({ id: 'system.userForm.field.mobile' })}
+          rules={[
+            { max: 32, message: intl.formatMessage({ id: 'system.userForm.rule.mobileMax' }) },
+          ]}
+          extra={
+            editing ? intl.formatMessage({ id: 'system.userForm.extra.mobileEdit' }) : undefined
+          }
         >
           <Input maxLength={32} autoComplete="off" />
         </Form.Item>
@@ -248,14 +305,17 @@ const UserFormModal = ({
         {!editing && canAssignRole && (
           <Form.Item
             name="roleIds"
-            label="初始角色"
-            extra={`可不分配。数据范围非「全部」时只能分配自己已持有的角色（需 ${SYSTEM_PERM.USER_ASSIGN_ROLE}）。`}
+            label={intl.formatMessage({ id: 'system.userForm.field.roleIds' })}
+            extra={intl.formatMessage(
+              { id: 'system.userForm.extra.roleIds' },
+              { perm: SYSTEM_PERM.USER_ASSIGN_ROLE },
+            )}
           >
             <Select
               mode="multiple"
               allowClear
               showSearch
-              placeholder="不分配角色"
+              placeholder={intl.formatMessage({ id: 'system.userForm.placeholder.roleIds' })}
               options={roleSelectOptions}
               optionFilterProp="label"
             />
@@ -265,8 +325,10 @@ const UserFormModal = ({
         {!editing && (
           <Form.Item
             name="remark"
-            label="备注"
-            rules={[{ max: 255, message: '不超过 255 字符' }]}
+            label={intl.formatMessage({ id: 'system.column.remark' })}
+            rules={[
+              { max: 255, message: intl.formatMessage({ id: 'system.userForm.rule.remarkMax' }) },
+            ]}
           >
             <Input.TextArea rows={2} maxLength={255} showCount />
           </Form.Item>

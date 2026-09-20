@@ -21,6 +21,7 @@ import {
   type ProColumns,
   ProTable,
 } from '@ant-design/pro-components';
+import { useIntl } from '@umijs/max';
 import {
   Alert,
   Button,
@@ -43,15 +44,15 @@ import {
   fetchPermissionMap,
   type PermissionMapView,
 } from '@/services/access';
-import { actionLabel } from '@/services/approval';
+import { actionLabelId } from '@/services/approval';
 
 import {
   buildGrantTimeline,
   type GrantState,
   type GrantTimelineEntry,
   grantStateColor,
-  grantStateText,
-  remainDaysText,
+  grantStateTextId,
+  remainDaysTextId,
   summarizeGrants,
 } from './grant-timeline';
 
@@ -80,6 +81,7 @@ function resourceText(grant: ApprovalGrant): string {
 }
 
 const PermissionMapPage = () => {
+  const intl = useIntl();
   const [data, setData] = useState<PermissionMapView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -93,11 +95,11 @@ const PermissionMapPage = () => {
       setData(map);
       setError(null);
     } catch (err) {
-      setError((err as Error)?.message || '权限地图加载失败');
+      setError((err as Error)?.message || intl.formatMessage({ id: 'permissionMap.loadFailed' }));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [intl]);
 
   useEffect(() => {
     void load();
@@ -118,50 +120,73 @@ const PermissionMapPage = () => {
     return map;
   }, [timeline]);
 
+  /** 概览里的「共 N 条 · M 条即将到期 · K 条已过期」。 */
+  const grantsSummaryText = [
+    intl.formatMessage({ id: 'permissionMap.grant.total' }, { total: summary.total }),
+    summary.expiring > 0
+      ? intl.formatMessage(
+          { id: 'permissionMap.grant.expiringSuffix' },
+          { count: summary.expiring },
+        )
+      : '',
+    summary.expired > 0
+      ? intl.formatMessage(
+          { id: 'permissionMap.grant.expiredSuffix' },
+          { count: summary.expired },
+        )
+      : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
   const columns: ProColumns<ApprovalGrant>[] = [
     {
-      title: '来源',
+      title: intl.formatMessage({ id: 'permissionMap.column.source' }),
       width: 160,
       render: (_, grant) => (
         <Space size={4}>
-          <Tag color="blue">审批授权</Tag>
+          <Tag color="blue">
+            {intl.formatMessage({ id: 'permissionMap.source.approval' })}
+          </Tag>
           <Text type="secondary">#{grant.grantId}</Text>
         </Space>
       ),
     },
     {
-      title: '授权动作',
+      title: intl.formatMessage({ id: 'permissionMap.column.grantType' }),
       width: 120,
-      render: (_, grant) => actionLabel(grant.grantType),
+      render: (_, grant) => intl.formatMessage({ id: actionLabelId(grant.grantType) }),
     },
     {
-      title: '资源',
+      title: intl.formatMessage({ id: 'permissionMap.column.resource' }),
       ellipsis: true,
       render: (_, grant) => resourceText(grant),
     },
     {
-      title: '来源申请单',
+      title: intl.formatMessage({ id: 'permissionMap.column.application' }),
       width: 120,
       render: (_, grant) =>
         grant.applicationId ? `#${grant.applicationId}` : '—',
     },
     {
-      title: '到期时间',
+      title: intl.formatMessage({ id: 'permissionMap.column.expireAt' }),
       width: 170,
-      render: (_, grant) => grant.expireAt || '长期有效',
+      render: (_, grant) =>
+        grant.expireAt ||
+        intl.formatMessage({ id: 'permissionMap.grantState.permanent' }),
     },
     {
-      title: '有效期状态',
+      title: intl.formatMessage({ id: 'permissionMap.column.validity' }),
       width: 130,
       render: (_, grant) => {
         const entry = entryByGrantId.get(grant.grantId);
         return (
           <Space size={6}>
             <Tag color={grantStateColor(entry?.state ?? 'active')}>
-              {grantStateText(entry?.state ?? 'active')}
+              {intl.formatMessage({ id: grantStateTextId(entry?.state ?? 'active') })}
             </Tag>
             <Text type="secondary">
-              {remainDaysText(entry?.remainDays ?? null)}
+              {intl.formatMessage(remainDaysTextId(entry?.remainDays ?? null))}
             </Text>
           </Space>
         );
@@ -171,10 +196,13 @@ const PermissionMapPage = () => {
 
   return (
     <PageContainer
-      header={{ title: '权限地图', subTitle: '我持有的权限点、来源与有效期' }}
+      header={{
+        title: intl.formatMessage({ id: 'permissionMap.page.title' }),
+        subTitle: intl.formatMessage({ id: 'permissionMap.page.subTitle' }),
+      }}
       extra={[
         <Button key="reload" onClick={() => void load()} loading={loading}>
-          刷新
+          {intl.formatMessage({ id: 'common.action.refresh' })}
         </Button>,
       ]}
     >
@@ -192,54 +220,64 @@ const PermissionMapPage = () => {
           <Row gutter={[16, 16]}>
             <Col xs={24} sm={12} xl={6}>
               <StatCard
-                title="权限点"
+                title={intl.formatMessage({ id: 'permissionMap.stat.perm.title' })}
                 value={data?.permCodes?.length ?? 0}
                 icon={<SafetyCertificateOutlined />}
-                footer="后端只提供「是否持有」"
+                footer={intl.formatMessage({ id: 'permissionMap.stat.perm.footer' })}
               />
             </Col>
             <Col xs={24} sm={12} xl={6}>
               <StatCard
-                title="角色"
+                title={intl.formatMessage({ id: 'permissionMap.stat.role.title' })}
                 value={data?.roleCodes?.length ?? 0}
                 tone="blue"
                 icon={<TeamOutlined />}
-                footer="权限点的已知来源之一"
+                footer={intl.formatMessage({ id: 'permissionMap.stat.role.footer' })}
               />
             </Col>
             <Col xs={24} sm={12} xl={6}>
               <StatCard
-                title="审批授权"
+                title={intl.formatMessage({ id: 'permissionMap.stat.grant.title' })}
                 value={summary.total}
                 tone="purple"
                 icon={<UserSwitchOutlined />}
-                footer={`其中 ${summary.expired} 条已过期`}
+                footer={intl.formatMessage(
+                  { id: 'permissionMap.stat.grant.footer' },
+                  { expired: summary.expired },
+                )}
               />
             </Col>
             <Col xs={24} sm={12} xl={6}>
               <StatCard
-                title="即将到期"
+                title={intl.formatMessage({ id: 'permissionMap.grantState.expiring' })}
                 value={summary.expiring}
                 tone="orange"
                 icon={<ClockCircleOutlined />}
-                footer="7 天内到期"
+                footer={intl.formatMessage({ id: 'permissionMap.stat.expiring.footer' })}
               />
             </Col>
           </Row>
 
           <SectionCard
-            title="权限概览"
-            subTitle="用户、数据范围与权限点"
+            title={intl.formatMessage({ id: 'permissionMap.overview.title' })}
+            subTitle={intl.formatMessage({ id: 'permissionMap.overview.subTitle' })}
             icon={<SafetyCertificateOutlined />}
           >
             <Descriptions column={2} size="small" bordered>
-              <Descriptions.Item label="用户 ID">
+              <Descriptions.Item
+                label={intl.formatMessage({ id: 'permissionMap.overview.userId' })}
+              >
                 {data?.userId ?? '—'}
               </Descriptions.Item>
-              <Descriptions.Item label="数据范围">
+              <Descriptions.Item
+                label={intl.formatMessage({ id: 'permissionMap.overview.dataScope' })}
+              >
                 {data?.dataScope || '—'}
               </Descriptions.Item>
-              <Descriptions.Item label="角色" span={2}>
+              <Descriptions.Item
+                label={intl.formatMessage({ id: 'permissionMap.overview.roles' })}
+                span={2}
+              >
                 {data?.roleCodes?.length ? (
                   <Space size={4} wrap>
                     {data.roleCodes.map((code) => (
@@ -252,22 +290,26 @@ const PermissionMapPage = () => {
                   '—'
                 )}
               </Descriptions.Item>
-              <Descriptions.Item label="审批授权" span={2}>
-                共 {summary.total} 条
-                {summary.expiring > 0
-                  ? ` · ${summary.expiring} 条即将到期`
-                  : ''}
-                {summary.expired > 0 ? ` · ${summary.expired} 条已过期` : ''}
+              <Descriptions.Item
+                label={intl.formatMessage({ id: 'permissionMap.overview.grants' })}
+                span={2}
+              >
+                {grantsSummaryText}
               </Descriptions.Item>
             </Descriptions>
 
             <div style={{ marginTop: 16 }}>
-              <Text strong>权限点（{data?.permCodes?.length ?? 0}）</Text>
+              <Text strong>
+                {intl.formatMessage(
+                  { id: 'permissionMap.permCodes.title' },
+                  { count: data?.permCodes?.length ?? 0 },
+                )}
+              </Text>
               <Paragraph
                 type="secondary"
                 style={{ marginTop: 4, marginBottom: 8 }}
               >
-                后端只提供「是否持有」，逐点来源需等后续接口；下方角色与审批授权是两条已知来源。
+                {intl.formatMessage({ id: 'permissionMap.permCodes.desc' })}
               </Paragraph>
               {data?.permCodes?.length ? (
                 <Space size={4} wrap>
@@ -278,15 +320,18 @@ const PermissionMapPage = () => {
               ) : (
                 <Empty
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description="暂无权限点"
+                  description={intl.formatMessage({ id: 'permissionMap.permCodes.empty' })}
                 />
               )}
             </div>
           </SectionCard>
 
           <SectionCard
-            title="授权来源"
-            subTitle={`共 ${grants.length} 条审批授权`}
+            title={intl.formatMessage({ id: 'permissionMap.grants.title' })}
+            subTitle={intl.formatMessage(
+              { id: 'permissionMap.grants.subTitle' },
+              { count: grants.length },
+            )}
             bodyPadding={false}
           >
             <ProTable<ApprovalGrant>
@@ -297,11 +342,20 @@ const PermissionMapPage = () => {
               options={false}
               pagination={false}
               size="small"
-              locale={{ emptyText: <Empty description="暂无审批授权" /> }}
+              locale={{
+                emptyText: (
+                  <Empty
+                    description={intl.formatMessage({ id: 'permissionMap.grants.empty' })}
+                  />
+                ),
+              }}
             />
           </SectionCard>
 
-          <SectionCard title="有效期时间轴" subTitle="到期轴：授权落库即生效">
+          <SectionCard
+            title={intl.formatMessage({ id: 'permissionMap.timeline.title' })}
+            subTitle={intl.formatMessage({ id: 'permissionMap.timeline.subTitle' })}
+          >
             {timeline.length ? (
               <Timeline
                 items={timeline.map((entry) => ({
@@ -309,19 +363,29 @@ const PermissionMapPage = () => {
                   children: (
                     <Space orientation="vertical" size={2}>
                       <Space size={6}>
-                        <Text strong>{actionLabel(entry.grant.grantType)}</Text>
+                        <Text strong>
+                          {intl.formatMessage({
+                            id: actionLabelId(entry.grant.grantType),
+                          })}
+                        </Text>
                         <Tag color={grantStateColor(entry.state)}>
-                          {grantStateText(entry.state)}
+                          {intl.formatMessage({ id: grantStateTextId(entry.state) })}
                         </Tag>
                       </Space>
                       <Text type="secondary">
-                        {resourceText(entry.grant)} · 到期{' '}
-                        {entry.grant.expireAt || '长期有效'} ·{' '}
-                        {remainDaysText(entry.remainDays)}
+                        {resourceText(entry.grant)} ·{' '}
+                        {intl.formatMessage({ id: 'permissionMap.timeline.expirePrefix' })}{' '}
+                        {entry.grant.expireAt ||
+                          intl.formatMessage({ id: 'permissionMap.grantState.permanent' })}{' '}
+                        ·{' '}
+                        {intl.formatMessage(remainDaysTextId(entry.remainDays))}
                       </Text>
                       {entry.grant.applicationId ? (
                         <Text type="secondary">
-                          来源申请单 #{entry.grant.applicationId}
+                          {intl.formatMessage(
+                            { id: 'permissionMap.timeline.fromApplication' },
+                            { id: entry.grant.applicationId },
+                          )}
                         </Text>
                       ) : null}
                     </Space>
@@ -331,7 +395,7 @@ const PermissionMapPage = () => {
             ) : (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="暂无带有效期的授权"
+                description={intl.formatMessage({ id: 'permissionMap.timeline.empty' })}
               />
             )}
           </SectionCard>

@@ -19,9 +19,10 @@ import { App } from 'antd';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { testFormatMessage } from '@/locales/testTranslate';
 import { pageMyApprovals, pagePendingApprovals } from '@/services/approval';
 import type { ApprovalApplication } from '@/services/approval';
-import { APPROVAL_STATUS, approvalStatusText } from '@/services/approval';
+import { APPROVAL_STATUS, approvalStatusTextId } from '@/services/approval';
 
 import ApprovalCenterPage from './index';
 
@@ -33,27 +34,33 @@ const holder = vi.hoisted(() => ({
   push: vi.fn(),
 }));
 
-vi.mock('@umijs/max', () => ({
-  useAccess: () => holder.model,
-  useIntl: () => ({
-    formatMessage: (descriptor?: { defaultMessage?: string }) =>
-      descriptor?.defaultMessage ?? '',
-  }),
-  request: vi.fn(),
-  history: {
-    // getter：模块在测试体之前就被导入，初始视角必须读「渲染那一刻」的 search
-    location: {
-      get search() {
-        return holder.search;
+vi.mock('@umijs/max', async () => {
+  const { testFormatMessage: translate } = await import('@/locales/testTranslate');
+  return {
+    useAccess: () => holder.model,
+    // 兼容两种调用形态：`formatMessage({ id, values })` 与 `formatMessage({ id }, values)`
+    useIntl: () => ({
+      formatMessage: (
+        descriptor: { id: string; values?: Record<string, unknown> },
+        values?: Record<string, unknown>,
+      ) => translate({ id: descriptor.id, values: values ?? descriptor.values }),
+    }),
+    request: vi.fn(),
+    history: {
+      // getter：模块在测试体之前就被导入，初始视角必须读「渲染那一刻」的 search
+      location: {
+        get search() {
+          return holder.search;
+        },
+        pathname: '/approval',
       },
-      pathname: '/approval',
+      replace: (...args: unknown[]) => holder.replace(...args),
+      push: (...args: unknown[]) => holder.push(...args),
     },
-    replace: (...args: unknown[]) => holder.replace(...args),
-    push: (...args: unknown[]) => holder.push(...args),
-  },
-}));
+  };
+});
 
-// 只替换两个列表端点：canDecide / approvalStatusText 等口径必须用真品，
+// 只替换两个列表端点：canDecide / approvalStatusTextId 等口径必须用真品，
 // 否则「口径是否被改坏」就测不出来了。
 vi.mock('@/services/approval', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/approval')>();
@@ -193,7 +200,11 @@ describe('视角切换与深链', () => {
     expect(row.queryByText('驳回')).toBeNull();
     expect(row.getByText('详情')).toBeTruthy();
     // 该视角关心的信息：状态与审批意见（取代 SLA 列）
-    expect(row.getByText(approvalStatusText(APPROVAL_STATUS.pending))).toBeTruthy();
+    expect(
+      row.getByText(
+        testFormatMessage({ id: approvalStatusTextId(APPROVAL_STATUS.pending) }),
+      ),
+    ).toBeTruthy();
     expect(screen.queryByRole('columnheader', { name: 'SLA' })).toBeNull();
   });
 

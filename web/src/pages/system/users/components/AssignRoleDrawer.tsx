@@ -11,10 +11,17 @@
  * </ul></p>
  */
 
+import { useIntl } from '@umijs/max';
 import { Alert, App, Button, Checkbox, Drawer, Empty, Input, Space, Tag, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 
-import { assignUserRoles, dataScopeColor, dataScopeText, type RoleVO, type UserVO } from '@/services/system';
+import {
+  assignUserRoles,
+  dataScopeColor,
+  dataScopeTextId,
+  type RoleVO,
+  type UserVO,
+} from '@/services/system';
 
 export interface AssignRoleDrawerProps {
   open: boolean;
@@ -26,6 +33,7 @@ export interface AssignRoleDrawerProps {
 }
 
 const AssignRoleDrawer = ({ open, record, roleOptions, onClose, onSuccess }: AssignRoleDrawerProps) => {
+  const intl = useIntl();
   const { message } = App.useApp();
   const [selected, setSelected] = useState<number[]>([]);
   const [keyword, setKeyword] = useState('');
@@ -57,7 +65,7 @@ const AssignRoleDrawer = ({ open, record, roleOptions, onClose, onSuccess }: Ass
     setSubmitting(true);
     try {
       await assignUserRoles(record.id, selected);
-      message.success('角色已更新');
+      message.success(intl.formatMessage({ id: 'system.assignRole.message.done' }));
       onSuccess();
     } catch {
       // 全局错误提示已给出
@@ -70,18 +78,23 @@ const AssignRoleDrawer = ({ open, record, roleOptions, onClose, onSuccess }: Ass
     <Drawer
       open={open}
       width={480}
-      title={`分配角色 · ${record?.nickname ?? record?.username ?? ''}`}
+      title={intl.formatMessage(
+        { id: 'system.assignRole.title' },
+        { name: record?.nickname ?? record?.username ?? '' },
+      )}
       onClose={onClose}
       footer={
         <Space style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <Button onClick={onClose}>取消</Button>
+          <Button onClick={onClose}>
+            {intl.formatMessage({ id: 'common.action.cancel' })}
+          </Button>
           <Button
             type="primary"
             loading={submitting}
             disabled={selected.length === 0}
             onClick={handleSubmit}
           >
-            保存
+            {intl.formatMessage({ id: 'common.action.save' })}
           </Button>
         </Space>
       }
@@ -91,8 +104,8 @@ const AssignRoleDrawer = ({ open, record, roleOptions, onClose, onSuccess }: Ass
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
-          title="受保护账号"
-          description="必须保留超级管理员角色；摘除会被服务端拒绝。"
+          title={intl.formatMessage({ id: 'system.assignRole.alert.protected.title' })}
+          description={intl.formatMessage({ id: 'system.assignRole.alert.protected.desc' })}
         />
       )}
 
@@ -100,13 +113,13 @@ const AssignRoleDrawer = ({ open, record, roleOptions, onClose, onSuccess }: Ass
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
-        title="整集替换 + 至少保留一个角色"
-        description="提交后以本次勾选为准（非增量）。后端要求角色集合非空，故至少勾选一个。"
+        title={intl.formatMessage({ id: 'system.assignRole.alert.mode.title' })}
+        description={intl.formatMessage({ id: 'system.assignRole.alert.mode.desc' })}
       />
 
       <Input.Search
         allowClear
-        placeholder="按角色名 / 编码过滤"
+        placeholder={intl.formatMessage({ id: 'system.assignRole.searchPlaceholder' })}
         value={keyword}
         onChange={(event) => setKeyword(event.target.value)}
         style={{ marginBottom: 12 }}
@@ -115,11 +128,12 @@ const AssignRoleDrawer = ({ open, record, roleOptions, onClose, onSuccess }: Ass
       {visibleRoles.length === 0 ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={
-            roleOptions.length === 0
-              ? '没有可分配的角色（可能因数据范围受限）'
-              : '没有匹配的角色'
-          }
+          description={intl.formatMessage({
+            id:
+              roleOptions.length === 0
+                ? 'system.assignRole.empty.noOptions'
+                : 'system.assignRole.empty.noMatch',
+          })}
         />
       ) : (
         <Checkbox.Group
@@ -136,9 +150,16 @@ const AssignRoleDrawer = ({ open, record, roleOptions, onClose, onSuccess }: Ass
                     {role.code}
                   </Typography.Text>
                   <Tag color={dataScopeColor(role.dataScope)} style={{ marginInlineEnd: 0 }}>
-                    {dataScopeText(role.dataScope)}
+                    {intl.formatMessage(
+                      { id: dataScopeTextId(role.dataScope) },
+                      { scope: role.dataScope ?? '-' },
+                    )}
                   </Tag>
-                  {role.builtIn === 1 && <Tag style={{ marginInlineEnd: 0 }}>内置</Tag>}
+                  {role.builtIn === 1 && (
+                    <Tag style={{ marginInlineEnd: 0 }}>
+                      {intl.formatMessage({ id: 'system.role.builtInTag' })}
+                    </Tag>
+                  )}
                 </Space>
               </Checkbox>
             ))}
@@ -148,7 +169,7 @@ const AssignRoleDrawer = ({ open, record, roleOptions, onClose, onSuccess }: Ass
 
       {selected.length === 0 && (
         <Typography.Text type="danger" style={{ display: 'block', marginTop: 12 }}>
-          至少勾选一个角色：后端对角色集合做了非空校验。
+          {intl.formatMessage({ id: 'system.assignRole.atLeastOne' })}
         </Typography.Text>
       )}
     </Drawer>

@@ -25,10 +25,10 @@
 import { request } from '@umijs/max';
 import { message } from 'antd';
 
-import { presentError, refreshTokenOnce } from '@/requestErrorConfig';
+import { presentError, refreshTokenOnce, translateMessage } from '@/requestErrorConfig';
 import { currentAcceptLanguage } from '@/utils/locale';
 import {
-  DEFAULT_ERROR_MESSAGE,
+  DEFAULT_ERROR_MESSAGE_ID,
   type HandleStrategy,
   type PageResult,
   type Result,
@@ -83,7 +83,7 @@ export class BizError extends Error {
   readonly info: Result<unknown>;
 
   constructor(result: Result<unknown>) {
-    super(result.message || '请求失败');
+    super(result.message || translateMessage('app.request.failed'));
     this.name = 'BizError';
     this.code = result.code;
     this.traceId = result.traceId;
@@ -272,7 +272,7 @@ export interface BinaryDeps {
 
 /** 中止错误（与 services/upload 的 isAbortError 判定保持一致）。 */
 function abortError(): Error {
-  const error = new Error('请求已取消');
+  const error = new Error(translateMessage('app.request.aborted'));
   error.name = 'AbortError';
   return error;
 }
@@ -366,11 +366,11 @@ function sendOnce(
 
     xhr.onerror = () => {
       options.signal?.removeEventListener('abort', onAbort);
-      reject(new Error('网络异常，请检查网络后重试'));
+      reject(new Error(translateMessage(DEFAULT_ERROR_MESSAGE_ID)));
     };
     xhr.ontimeout = () => {
       options.signal?.removeEventListener('abort', onAbort);
-      reject(new Error('请求超时，请稍后重试'));
+      reject(new Error(translateMessage('app.request.timeout')));
     };
     xhr.onabort = () => {
       options.signal?.removeEventListener('abort', onAbort);
@@ -390,7 +390,7 @@ function sendOnce(
             disposition: xhr.getResponseHeader('Content-Disposition'),
           });
         })
-        .catch(() => reject(new Error('响应解析失败')));
+        .catch(() => reject(new Error(translateMessage('app.request.parseFailed'))));
     };
 
     xhr.send((options.body ?? null) as XMLHttpRequestBodyInit | null);
@@ -440,7 +440,12 @@ export async function binaryRequest<T>(
     }
     // 非 Result 形态的 HTTP 错误（网关 / 静态资源 / 非契约端点）：
     // 文案与全局 errorHandler 的网络层兜底一致，且不把 HTTP 状态码塞进业务码空间
-    const error = new Error(`${DEFAULT_ERROR_MESSAGE}（HTTP ${status}）`);
+    const error = new Error(
+      translateMessage('app.request.http', {
+        message: translateMessage(DEFAULT_ERROR_MESSAGE_ID),
+        status,
+      }),
+    );
     if (!options.silent) {
       message.error(error.message);
     }

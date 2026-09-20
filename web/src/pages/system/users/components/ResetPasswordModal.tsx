@@ -5,6 +5,7 @@
  * 所以这一步是「破坏性」的：文案必须提前说清楚，不能让管理员以为只是改个密码。</p>
  */
 
+import { useIntl } from '@umijs/max';
 import { Alert, App, Form, Input, Modal } from 'antd';
 import { useState } from 'react';
 
@@ -29,6 +30,7 @@ const ResetPasswordModal = ({
   onSuccess,
 }: ResetPasswordModalProps) => {
   const [form] = Form.useForm<ResetPasswordFormValues>();
+  const intl = useIntl();
   const { message } = App.useApp();
   const [submitting, setSubmitting] = useState(false);
 
@@ -46,7 +48,7 @@ const ResetPasswordModal = ({
     setSubmitting(true);
     try {
       await resetUserPassword(record.id, values.newPassword);
-      message.success('口令已重置，该用户全部在途会话已失效');
+      message.success(intl.formatMessage({ id: 'system.resetPassword.message.done' }));
       onSuccess();
     } catch {
       // 全局错误提示已给出
@@ -58,10 +60,13 @@ const ResetPasswordModal = ({
   return (
     <Modal
       open={open}
-      title={`重置口令 · ${record?.nickname ?? record?.username ?? ''}`}
-      okText="确认重置"
+      title={intl.formatMessage(
+        { id: 'system.resetPassword.title' },
+        { name: record?.nickname ?? record?.username ?? '' },
+      )}
+      okText={intl.formatMessage({ id: 'system.resetPassword.ok' })}
       okButtonProps={{ danger: true }}
-      cancelText="取消"
+      cancelText={intl.formatMessage({ id: 'common.action.cancel' })}
       confirmLoading={submitting}
       onOk={handleSubmit}
       onCancel={onClose}
@@ -72,32 +77,48 @@ const ResetPasswordModal = ({
         type="warning"
         showIcon
         style={{ marginBottom: 16 }}
-        title="重置后该用户全部在途会话立即失效"
-        description="用户需用新口令重新登录；管理员无法查看原口令（库中只存散列）。"
+        title={intl.formatMessage({ id: 'system.resetPassword.alert.title' })}
+        description={intl.formatMessage({ id: 'system.resetPassword.alert.desc' })}
       />
       <Form form={form} layout="vertical" preserve={false}>
         <Form.Item
           name="newPassword"
-          label="新口令"
+          label={intl.formatMessage({ id: 'system.resetPassword.field.newPassword' })}
           rules={[
-            { required: true, message: '请输入新口令' },
-            { min: 8, max: 64, message: '口令长度须为 8~64 位' },
+            {
+              required: true,
+              message: intl.formatMessage({ id: 'system.resetPassword.rule.newRequired' }),
+            },
+            {
+              min: 8,
+              max: 64,
+              message: intl.formatMessage({ id: 'system.resetPassword.rule.length' }),
+            },
           ]}
         >
-          <Input.Password maxLength={64} autoComplete="new-password" placeholder="8~64 位" />
+          <Input.Password
+            maxLength={64}
+            autoComplete="new-password"
+            placeholder={intl.formatMessage({ id: 'system.resetPassword.placeholder.password' })}
+          />
         </Form.Item>
         <Form.Item
           name="confirmPassword"
-          label="确认新口令"
+          label={intl.formatMessage({ id: 'system.resetPassword.field.confirmPassword' })}
           dependencies={['newPassword']}
           rules={[
-            { required: true, message: '请再次输入新口令' },
+            {
+              required: true,
+              message: intl.formatMessage({ id: 'system.resetPassword.rule.confirmRequired' }),
+            },
             ({ getFieldValue }) => ({
               validator(_rule, value) {
                 if (!value || getFieldValue('newPassword') === value) {
                   return Promise.resolve();
                 }
-                return Promise.reject(new Error('两次输入的口令不一致'));
+                return Promise.reject(
+                  new Error(intl.formatMessage({ id: 'system.resetPassword.rule.mismatch' })),
+                );
               },
             }),
           ]}

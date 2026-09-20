@@ -13,6 +13,7 @@
  * 故下拉选项按操作者数据范围裁剪。</p>
  */
 
+import { useIntl } from '@umijs/max';
 import { Alert, App, Form, Input, Modal, Select } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -20,7 +21,7 @@ import { DataScope } from '@/services/access';
 import {
   DATA_SCOPE_OPTIONS,
   createRole,
-  dataScopeText,
+  dataScopeTextId,
   isBuiltInRole,
   updateRole,
   type RoleVO,
@@ -48,6 +49,7 @@ interface RoleFormValues {
 
 const RoleFormModal = ({ open, record, maxDataScope, onClose, onSuccess }: RoleFormModalProps) => {
   const [form] = Form.useForm<RoleFormValues>();
+  const intl = useIntl();
   const { message } = App.useApp();
   const [submitting, setSubmitting] = useState(false);
   const editing = record != null;
@@ -93,7 +95,7 @@ const RoleFormModal = ({ open, record, maxDataScope, onClose, onSuccess }: RoleF
           // 显式传空串以支持「清空备注」（RoleUpdateDTO.remark 无 @NotBlank）
           remark: values.remark ?? '',
         });
-        message.success('角色已更新');
+        message.success(intl.formatMessage({ id: 'system.roleForm.message.updated' }));
       } else {
         await createRole({
           code: values.code,
@@ -101,7 +103,7 @@ const RoleFormModal = ({ open, record, maxDataScope, onClose, onSuccess }: RoleF
           dataScope: values.dataScope,
           remark: values.remark || undefined,
         });
-        message.success('角色已创建');
+        message.success(intl.formatMessage({ id: 'system.roleForm.message.created' }));
       }
       onSuccess();
     } catch {
@@ -114,9 +116,18 @@ const RoleFormModal = ({ open, record, maxDataScope, onClose, onSuccess }: RoleF
   return (
     <Modal
       open={open}
-      title={editing ? `编辑角色 · ${record?.name ?? ''}` : '新建角色'}
-      okText={editing ? '保存' : '创建'}
-      cancelText="取消"
+      title={
+        editing
+          ? intl.formatMessage(
+              { id: 'system.roleForm.title.edit' },
+              { name: record?.name ?? '' },
+            )
+          : intl.formatMessage({ id: 'system.roleForm.title.create' })
+      }
+      okText={intl.formatMessage({
+        id: editing ? 'common.action.save' : 'system.action.create',
+      })}
+      cancelText={intl.formatMessage({ id: 'common.action.cancel' })}
       confirmLoading={submitting}
       onOk={handleSubmit}
       onCancel={onClose}
@@ -128,38 +139,53 @@ const RoleFormModal = ({ open, record, maxDataScope, onClose, onSuccess }: RoleF
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-          title="内置角色"
-          description="编码与数据范围不可修改，仅可调整名称与备注；权限矩阵在「分配权限」抽屉中维护。"
+          title={intl.formatMessage({ id: 'system.roleForm.alert.title' })}
+          description={intl.formatMessage({ id: 'system.roleForm.alert.desc' })}
         />
       )}
       <Form form={form} layout="vertical" preserve={false}>
         <Form.Item
           name="code"
-          label="角色编码"
+          label={intl.formatMessage({ id: 'system.roleForm.field.code' })}
           rules={
             editing
               ? []
               : [
-                  { required: true, message: '请输入角色编码' },
-                  { pattern: ROLE_CODE_PATTERN, message: '须为大写字母开头，仅含大写字母/数字/下划线' },
+                  {
+                    required: true,
+                    message: intl.formatMessage({ id: 'system.roleForm.rule.codeRequired' }),
+                  },
+                  {
+                    pattern: ROLE_CODE_PATTERN,
+                    message: intl.formatMessage({ id: 'system.roleForm.rule.codePattern' }),
+                  },
                 ]
           }
-          extra={editing ? '编码为角色的对外标识，创建后不可修改' : undefined}
+          extra={
+            editing ? intl.formatMessage({ id: 'system.roleForm.extra.codeEdit' }) : undefined
+          }
         >
           <Input
             disabled={editing}
             maxLength={64}
-            placeholder="例如 DEPT_ADMIN"
+            placeholder={intl.formatMessage({ id: 'system.roleForm.placeholder.code' })}
             autoComplete="off"
           />
         </Form.Item>
 
         <Form.Item
           name="name"
-          label="角色名称"
+          label={intl.formatMessage({ id: 'system.roleForm.field.name' })}
           rules={[
-            { required: true, whitespace: true, message: '请输入角色名称' },
-            { max: 64, message: '不超过 64 字符' },
+            {
+              required: true,
+              whitespace: true,
+              message: intl.formatMessage({ id: 'system.roleForm.rule.nameRequired' }),
+            },
+            {
+              max: 64,
+              message: intl.formatMessage({ id: 'system.roleForm.rule.nameMax' }),
+            },
           ]}
         >
           <Input maxLength={64} />
@@ -167,24 +193,42 @@ const RoleFormModal = ({ open, record, maxDataScope, onClose, onSuccess }: RoleF
 
         <Form.Item
           name="dataScope"
-          label="数据范围"
-          rules={[{ required: true, message: '请选择数据范围' }]}
+          label={intl.formatMessage({ id: 'system.roleForm.field.dataScope' })}
+          rules={[
+            {
+              required: true,
+              message: intl.formatMessage({ id: 'system.roleForm.rule.dataScopeRequired' }),
+            },
+          ]}
           extra={
             builtIn
-              ? '内置角色的数据范围不可修改'
-              : `不得超过你自身的数据范围（当前：${dataScopeText(maxDataScope)}）`
+              ? intl.formatMessage({ id: 'system.roleForm.extra.dataScopeBuiltIn' })
+              : intl.formatMessage(
+                  { id: 'system.roleForm.extra.dataScopeMax' },
+                  {
+                    scope: intl.formatMessage(
+                      { id: dataScopeTextId(maxDataScope) },
+                      { scope: maxDataScope ?? '-' },
+                    ),
+                  },
+                )
           }
         >
           <Select
             disabled={builtIn}
-            options={scopeOptions.map((option) => ({ label: option.label, value: option.value }))}
+            options={scopeOptions.map((option) => ({
+              label: intl.formatMessage({ id: option.labelId }),
+              value: option.value,
+            }))}
           />
         </Form.Item>
 
         <Form.Item
           name="remark"
-          label="备注"
-          rules={[{ max: 255, message: '不超过 255 字符' }]}
+          label={intl.formatMessage({ id: 'system.column.remark' })}
+          rules={[
+            { max: 255, message: intl.formatMessage({ id: 'system.userForm.rule.remarkMax' }) },
+          ]}
         >
           <Input.TextArea rows={2} maxLength={255} showCount />
         </Form.Item>

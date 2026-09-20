@@ -12,7 +12,7 @@
 import { PlusOutlined } from '@ant-design/icons';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
-import { useAccess } from '@umijs/max';
+import { useAccess, useIntl } from '@umijs/max';
 import { Alert, App, Button, Popconfirm, Space, Tag, Typography } from 'antd';
 import type { ReactNode } from 'react';
 import { useRef, useState } from 'react';
@@ -21,7 +21,7 @@ import {
   SYSTEM_MAX_PAGE_SIZE,
   SYSTEM_PERM,
   dataScopeColor,
-  dataScopeText,
+  dataScopeTextId,
   deleteRole,
   isBuiltInRole,
   pageRoles,
@@ -34,6 +34,7 @@ import RolePermissionDrawer from './components/RolePermissionDrawer';
 
 const RolesPage = () => {
   const access = useAccess();
+  const intl = useIntl();
   const { message } = App.useApp();
   const actionRef = useRef<ActionType | null>(null);
 
@@ -64,7 +65,9 @@ const RolesPage = () => {
   const handleDelete = async (row: RoleVO) => {
     try {
       await deleteRole(row.id);
-      message.success(`已删除角色 ${row.name}`);
+      message.success(
+        intl.formatMessage({ id: 'system.role.message.deleted' }, { name: row.name }),
+      );
       reload();
     } catch {
       // 全局错误提示已给出（含 1020 内置角色 / 角色在用）
@@ -75,13 +78,15 @@ const RolesPage = () => {
 
   const columns: ProColumns<RoleVO>[] = [
     {
-      title: '角色名称 / 编码',
+      title: intl.formatMessage({ id: 'system.role.column.keyword' }),
       dataIndex: 'keyword',
       hideInTable: true,
-      fieldProps: { placeholder: '名称或编码，模糊匹配' },
+      fieldProps: {
+        placeholder: intl.formatMessage({ id: 'system.role.column.keywordPlaceholder' }),
+      },
     },
     {
-      title: '角色名称',
+      title: intl.formatMessage({ id: 'system.role.column.name' }),
       dataIndex: 'name',
       search: false,
       width: 200,
@@ -90,14 +95,14 @@ const RolesPage = () => {
           <Typography.Text>{row.name}</Typography.Text>
           {isBuiltInRole(row) && (
             <Tag color="blue" style={{ marginInlineEnd: 0 }}>
-              内置
+              {intl.formatMessage({ id: 'system.role.builtInTag' })}
             </Tag>
           )}
         </Space>
       ),
     },
     {
-      title: '编码',
+      title: intl.formatMessage({ id: 'system.role.column.code' }),
       dataIndex: 'code',
       search: false,
       copyable: true,
@@ -105,33 +110,40 @@ const RolesPage = () => {
       render: (_, row) => <Typography.Text code>{row.code}</Typography.Text>,
     },
     {
-      title: '数据范围',
+      title: intl.formatMessage({ id: 'system.role.column.dataScope' }),
       dataIndex: 'dataScope',
       search: false,
       width: 130,
       render: (_, row) => (
         <Tag color={dataScopeColor(row.dataScope)} style={{ marginInlineEnd: 0 }}>
-          {dataScopeText(row.dataScope)}
+          {intl.formatMessage(
+            { id: dataScopeTextId(row.dataScope) },
+            { scope: row.dataScope ?? '-' },
+          )}
         </Tag>
       ),
     },
     {
-      title: '权限集',
+      title: intl.formatMessage({ id: 'system.role.column.permissionSet' }),
       dataIndex: 'auditorLocked',
       search: false,
       width: 110,
       render: (_, row) =>
-        row.auditorLocked ? <Tag color="warning">锁定只读</Tag> : <Tag>可维护</Tag>,
+        row.auditorLocked ? (
+          <Tag color="warning">{intl.formatMessage({ id: 'system.role.lockedTag' })}</Tag>
+        ) : (
+          <Tag>{intl.formatMessage({ id: 'system.role.maintainableTag' })}</Tag>
+        ),
     },
     {
-      title: '备注',
+      title: intl.formatMessage({ id: 'system.column.remark' }),
       dataIndex: 'remark',
       search: false,
       ellipsis: true,
       render: (_, row) => row.remark || '--',
     },
     {
-      title: '创建时间',
+      title: intl.formatMessage({ id: 'system.column.createTime' }),
       dataIndex: 'createTime',
       search: false,
       valueType: 'dateTime',
@@ -141,7 +153,7 @@ const RolesPage = () => {
 
   if (hasAnyRowAction) {
     columns.push({
-      title: '操作',
+      title: intl.formatMessage({ id: 'system.column.action' }),
       valueType: 'option',
       key: 'option',
       fixed: 'right',
@@ -160,7 +172,7 @@ const RolesPage = () => {
                 setFormOpen(true);
               }}
             >
-              编辑
+              {intl.formatMessage({ id: 'system.action.edit' })}
             </Button>,
           );
         }
@@ -176,7 +188,7 @@ const RolesPage = () => {
                 setPermOpen(true);
               }}
             >
-              分配权限
+              {intl.formatMessage({ id: 'system.role.action.assignPerm' })}
             </Button>,
           );
         }
@@ -185,16 +197,16 @@ const RolesPage = () => {
           nodes.push(
             <Popconfirm
               key="delete"
-              title="确认删除该角色？"
-              description="内置角色、有关联权限或仍被用户持有的角色会被服务端拒绝。"
-              okText="删除"
+              title={intl.formatMessage({ id: 'system.role.confirm.deleteTitle' })}
+              description={intl.formatMessage({ id: 'system.role.confirm.deleteDesc' })}
+              okText={intl.formatMessage({ id: 'system.action.delete' })}
               okButtonProps={{ danger: true }}
-              cancelText="取消"
+              cancelText={intl.formatMessage({ id: 'common.action.cancel' })}
               disabled={isBuiltInRole(row)}
               onConfirm={() => handleDelete(row)}
             >
               <Button type="link" size="small" danger disabled={isBuiltInRole(row)}>
-                删除
+                {intl.formatMessage({ id: 'system.action.delete' })}
               </Button>
             </Popconfirm>,
           );
@@ -206,19 +218,16 @@ const RolesPage = () => {
   }
 
   return (
-    <PageContainer title="角色管理" subTitle="角色本体与权限矩阵">
+    <PageContainer
+      title={intl.formatMessage({ id: 'system.role.title' })}
+      subTitle={intl.formatMessage({ id: 'system.role.subtitle' })}
+    >
       <Alert
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        title="操作边界"
-        description={
-          <span>
-            内置角色不可删除、数据范围不可改；系统管理面的权限点只授予超级管理员。
-            数据范围非「全部」时，新建角色只能授出不高于自身的数据范围，
-            分配权限也只能勾选自己已持有的权限点（服务端防提权兜底）。
-          </span>
-        }
+        title={intl.formatMessage({ id: 'system.alert.boundaryTitle' })}
+        description={intl.formatMessage({ id: 'system.role.alertBoundary' })}
       />
       <ProTable<RoleVO>
         rowKey="id"
@@ -253,7 +262,7 @@ const RolesPage = () => {
                     setFormOpen(true);
                   }}
                 >
-                  新建角色
+                  {intl.formatMessage({ id: 'system.role.action.create' })}
                 </Button>,
               ]
             : []

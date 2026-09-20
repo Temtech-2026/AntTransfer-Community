@@ -1,4 +1,5 @@
 import { DownOutlined, UpOutlined } from '@ant-design/icons';
+import { useIntl } from '@umijs/max';
 import { Button, Tag } from 'antd';
 import { clsx } from 'clsx';
 import React, { type FC, useMemo, useState } from 'react';
@@ -54,6 +55,7 @@ interface TagSelectProps {
 const TagSelect: FC<TagSelectProps> & {
   Option: typeof TagSelectOption;
 } = (props) => {
+  const intl = useIntl();
   const { styles } = useStyles();
   const {
     children,
@@ -104,9 +106,9 @@ const TagSelect: FC<TagSelectProps> & {
   };
   const checkedAll = allTags.length === value?.length && allTags.length > 0;
   const {
-    expandText = '展开',
-    collapseText = '收起',
-    selectAllText = '全部',
+    expandText = intl.formatMessage({ id: 'component.tagSelect.expand' }),
+    collapseText = intl.formatMessage({ id: 'component.tagSelect.collapse' }),
+    selectAllText = intl.formatMessage({ id: 'component.tagSelect.all' }),
   } = actionsText;
   const cls = clsx(styles.tagSelect, className, {
     [styles.hasExpandTag]: expandable,

@@ -76,11 +76,8 @@ export function useDangerConfirm(): DangerConfirmResult {
           title,
           icon: <ExclamationCircleFilled style={{ color: token.colorError }} />,
           okButtonProps: { danger: true },
-          okText:
-            okText ??
-            intl.formatMessage({ id: 'common.danger.ok', defaultMessage: '确认执行' }),
-          cancelText:
-            cancelText ?? intl.formatMessage({ id: 'common.danger.cancel', defaultMessage: '取消' }),
+          okText: okText ?? intl.formatMessage({ id: 'common.danger.ok' }),
+          cancelText: cancelText ?? intl.formatMessage({ id: 'common.danger.cancel' }),
           content: (
             <div>
               <div style={{ color: token.colorTextSecondary }}>{content}</div>
@@ -88,7 +85,6 @@ export function useDangerConfirm(): DangerConfirmResult {
                 <div style={{ marginTop: 8, color: token.colorError, fontSize: 12 }}>
                   {intl.formatMessage({
                     id: 'common.danger.irreversible',
-                    defaultMessage: '该操作不可撤销，请确认后继续。',
                   })}
                 </div>
               ) : null}

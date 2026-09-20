@@ -11,90 +11,112 @@
  */
 
 import { PageContainer } from '@ant-design/pro-components';
+import { useIntl } from '@umijs/max';
 import { Alert, Descriptions, Space, Table, Tag, Typography } from 'antd';
 
 import SectionCard from '@/components/SectionCard';
 
-/** 补齐群组管理所需的接口（现状全部未实现，列在此处作为排期清单）。 */
+/** 补齐群组管理所需的接口（现状全部未实现，列在此处作为排期清单；purposeId 为 i18n id）。 */
 const MISSING_ENDPOINTS: readonly {
   method: string;
   path: string;
-  purpose: string;
+  purposeId: string;
 }[] = [
   {
     method: 'GET',
     path: '/api/v1/system/groups',
-    purpose: '群组分页 / 关键字检索',
+    purposeId: 'system.group.endpoint.groups.page',
   },
-  { method: 'GET', path: '/api/v1/system/groups/{id}', purpose: '群组详情' },
-  { method: 'POST', path: '/api/v1/system/groups', purpose: '创建群组' },
+  {
+    method: 'GET',
+    path: '/api/v1/system/groups/{id}',
+    purposeId: 'system.group.endpoint.groups.detail',
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/system/groups',
+    purposeId: 'system.group.endpoint.groups.create',
+  },
   {
     method: 'PUT',
     path: '/api/v1/system/groups/{id}',
-    purpose: '编辑群组（名称 / 备注 / 负责人）',
+    purposeId: 'system.group.endpoint.groups.update',
   },
-  { method: 'DELETE', path: '/api/v1/system/groups/{id}', purpose: '删除群组' },
+  {
+    method: 'DELETE',
+    path: '/api/v1/system/groups/{id}',
+    purposeId: 'system.group.endpoint.groups.remove',
+  },
   {
     method: 'GET',
     path: '/api/v1/system/groups/{id}/members',
-    purpose: '成员列表',
+    purposeId: 'system.group.endpoint.members.list',
   },
   {
     method: 'PUT',
     path: '/api/v1/system/groups/{id}/members',
-    purpose: '整集替换成员',
+    purposeId: 'system.group.endpoint.members.replace',
   },
 ];
 
 const GroupPage = () => {
+  const intl = useIntl();
   return (
-    <PageContainer title="群组管理" subTitle="暂未开放">
+    <PageContainer
+      title={intl.formatMessage({ id: 'system.group.title' })}
+      subTitle={intl.formatMessage({ id: 'system.group.subtitle' })}
+    >
       <Alert
         type="warning"
         showIcon
         style={{ marginBottom: 16 }}
-        title="CE 版未提供群组管理接口，本页暂为占位说明"
-        description={
-          <span>
-            数据表 <code>sys_group</code> / <code>sys_group_member</code>{' '}
-            已存在，
-            但服务端没有对应的管理控制器与权限点。为避免给出「点了必然失败」的入口，
-            这里不提供增删改操作，也不渲染模拟数据。
-          </span>
-        }
+        title={intl.formatMessage({ id: 'system.group.alert.title' })}
+        description={intl.formatMessage({ id: 'system.group.alert.desc' })}
       />
 
       <SectionCard
-        title="现状"
-        subTitle="数据表、服务端实体与权限点"
+        title={intl.formatMessage({ id: 'system.group.section.current.title' })}
+        subTitle={intl.formatMessage({ id: 'system.group.section.current.subtitle' })}
         style={{ marginBottom: 16 }}
       >
         <Descriptions column={1} size="small" bordered>
-          <Descriptions.Item label="数据表">
+          <Descriptions.Item
+            label={intl.formatMessage({ id: 'system.group.desc.table' })}
+          >
             <Space size={6}>
               <Typography.Text code>sys_group</Typography.Text>
               <Typography.Text code>sys_group_member</Typography.Text>
             </Space>
           </Descriptions.Item>
-          <Descriptions.Item label="服务端实体">
+          <Descriptions.Item
+            label={intl.formatMessage({ id: 'system.group.desc.entity' })}
+          >
             <Typography.Text code>GroupMember</Typography.Text>
             <Typography.Text type="secondary" style={{ marginLeft: 8 }}>
-              仅协作域内部使用（访问判定），无对外 CRUD
+              {intl.formatMessage({ id: 'system.group.entity.note' })}
             </Typography.Text>
           </Descriptions.Item>
-          <Descriptions.Item label="权限点">
+          <Descriptions.Item
+            label={intl.formatMessage({ id: 'system.group.desc.perm' })}
+          >
             <Typography.Text type="secondary">
-              无 <code>system:group:*</code> 权限点（V9 只定义了 system:user:*
-              与 system:role:*）
+              {intl.formatMessage({ id: 'system.group.perm.none' })}
             </Typography.Text>
           </Descriptions.Item>
-          <Descriptions.Item label="当前可用性">
-            <Tag color="default">只读不可用（无接口）</Tag>
+          <Descriptions.Item
+            label={intl.formatMessage({ id: 'system.group.desc.availability' })}
+          >
+            <Tag color="default">
+              {intl.formatMessage({ id: 'system.group.availability.readonly' })}
+            </Tag>
           </Descriptions.Item>
         </Descriptions>
       </SectionCard>
 
-      <SectionCard title="补齐所需接口" subTitle="排期清单">
+      <SectionCard
+        title={intl.formatMessage({ id: 'system.group.section.endpoints.title' })}
+        subTitle={intl.formatMessage({ id: 'system.group.section.endpoints.subtitle' })}
+      >
         <Table
           rowKey="path"
           size="small"
@@ -102,19 +124,23 @@ const GroupPage = () => {
           dataSource={MISSING_ENDPOINTS}
           columns={[
             {
-              title: '方法',
+              title: intl.formatMessage({ id: 'system.group.column.method' }),
               dataIndex: 'method',
               width: 90,
               render: (method: string) => <Tag>{method}</Tag>,
             },
             {
-              title: '路径',
+              title: intl.formatMessage({ id: 'system.group.column.path' }),
               dataIndex: 'path',
               render: (path: string) => (
                 <Typography.Text code>{path}</Typography.Text>
               ),
             },
-            { title: '用途', dataIndex: 'purpose' },
+            {
+              title: intl.formatMessage({ id: 'system.group.column.purpose' }),
+              dataIndex: 'purposeId',
+              render: (purposeId: string) => intl.formatMessage({ id: purposeId }),
+            },
           ]}
         />
       </SectionCard>

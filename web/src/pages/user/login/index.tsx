@@ -19,7 +19,7 @@
  */
 
 import { LockOutlined, PictureOutlined, UserOutlined } from '@ant-design/icons';
-import { useSearchParams } from '@umijs/max';
+import { useIntl, useSearchParams } from '@umijs/max';
 import type { ThemeConfig } from 'antd';
 import {
   Alert,
@@ -47,7 +47,7 @@ import {
 } from '@/services/auth';
 import { BizError } from '@/services/request';
 import { safeRedirectPath } from '@/utils/redirect';
-import { ACCOUNT_LOCKED_CODE, DEFAULT_ERROR_MESSAGE } from '@/utils/result';
+import { ACCOUNT_LOCKED_CODE, DEFAULT_ERROR_MESSAGE_ID } from '@/utils/result';
 
 import useStyles from './index.style';
 
@@ -90,6 +90,7 @@ const DARK_THEME: ThemeConfig = {
 
 const LoginPage: React.FC = () => {
   const { styles } = useStyles();
+  const intl = useIntl();
   const [searchParams] = useSearchParams();
   const redirect = searchParams.get('redirect');
 
@@ -144,8 +145,11 @@ const LoginPage: React.FC = () => {
         // 解析不到分钟数时只展示原文案：不臆造一个可能早已过期的倒计时
         setLockUntil(minutes ? lockDeadline(minutes) : null);
       }
+      // 兜底文案走 i18n id（utils/result 是纯契约层，不内嵌语言文案）
       setErrorText(
-        biz?.message || (error as Error)?.message || DEFAULT_ERROR_MESSAGE,
+        biz?.message ||
+          (error as Error)?.message ||
+          intl.formatMessage({ id: DEFAULT_ERROR_MESSAGE_ID }),
       );
       setSubmitting(false);
     }
@@ -166,7 +170,7 @@ const LoginPage: React.FC = () => {
                 AntTransfer
               </Typography.Title>
               <Typography.Text type="secondary">
-                企业文件传输与协作平台
+                {intl.formatMessage({ id: 'auth.login.brand.subtitle' })}
               </Typography.Text>
             </div>
 
@@ -175,8 +179,16 @@ const LoginPage: React.FC = () => {
                 type="warning"
                 showIcon
                 style={{ marginBottom: 16 }}
-                title="账号已锁定"
-                description={`${lockMessage || '登录失败次数过多'}（剩余 ${formatCountdown(remaining)}）`}
+                title={intl.formatMessage({ id: 'auth.login.locked.title' })}
+                description={intl.formatMessage(
+                  { id: 'auth.login.locked.desc' },
+                  {
+                    message:
+                      lockMessage ||
+                      intl.formatMessage({ id: 'auth.login.locked.fallback' }),
+                    countdown: formatCountdown(remaining),
+                  },
+                )}
               />
             ) : null}
 
@@ -201,13 +213,22 @@ const LoginPage: React.FC = () => {
             >
               <Form.Item
                 name="username"
-                label="账号"
-                rules={[{ required: true, message: '请输入账号' }]}
+                label={intl.formatMessage({ id: 'auth.login.username.label' })}
+                rules={[
+                  {
+                    required: true,
+                    message: intl.formatMessage({
+                      id: 'auth.login.username.required',
+                    }),
+                  },
+                ]}
               >
                 <Input
                   className={styles.inputField}
                   prefix={<UserOutlined />}
-                  placeholder="请输入账号"
+                  placeholder={intl.formatMessage({
+                    id: 'auth.login.username.placeholder',
+                  })}
                   autoComplete="username"
                   disabled={locked}
                 />
@@ -215,30 +236,44 @@ const LoginPage: React.FC = () => {
 
               <Form.Item
                 name="password"
-                label="密码"
-                rules={[{ required: true, message: '请输入密码' }]}
+                label={intl.formatMessage({ id: 'auth.login.password.label' })}
+                rules={[
+                  {
+                    required: true,
+                    message: intl.formatMessage({
+                      id: 'auth.login.password.required',
+                    }),
+                  },
+                ]}
               >
                 <Input.Password
                   className={styles.inputField}
                   prefix={<LockOutlined />}
-                  placeholder="请输入密码"
+                  placeholder={intl.formatMessage({
+                    id: 'auth.login.password.placeholder',
+                  })}
                   autoComplete="current-password"
                   disabled={locked}
                 />
               </Form.Item>
 
               <Form.Item
-                label="图形验证码"
-                tooltip="图形验证码服务尚未接入，当前登录不做校验（仅 UI 预留）"
+                label={intl.formatMessage({ id: 'auth.login.captcha.label' })}
+                tooltip={intl.formatMessage({ id: 'auth.login.captcha.tooltip' })}
               >
                 <Space.Compact style={{ width: '100%' }}>
-                  <Input placeholder="服务接入后启用" disabled />
+                  <Input
+                    placeholder={intl.formatMessage({
+                      id: 'auth.login.captcha.placeholder',
+                    })}
+                    disabled
+                  />
                   <Button
                     icon={<PictureOutlined />}
                     disabled
                     style={{ width: 104 }}
                   >
-                    验证码
+                    {intl.formatMessage({ id: 'auth.login.captcha.button' })}
                   </Button>
                 </Space.Compact>
               </Form.Item>
@@ -249,7 +284,7 @@ const LoginPage: React.FC = () => {
                 style={{ marginBottom: 16 }}
               >
                 <Checkbox disabled={locked}>
-                  记住我（仅记住账号，不保存密码）
+                  {intl.formatMessage({ id: 'auth.login.remember' })}
                 </Checkbox>
               </Form.Item>
 
@@ -260,7 +295,12 @@ const LoginPage: React.FC = () => {
                 loading={submitting}
                 disabled={locked}
               >
-                {locked ? `请 ${formatCountdown(remaining)} 后重试` : '登录'}
+                {locked
+                  ? intl.formatMessage(
+                      { id: 'auth.login.submitLocked' },
+                      { countdown: formatCountdown(remaining) },
+                    )
+                  : intl.formatMessage({ id: 'auth.login.submit' })}
               </Button>
             </Form>
 
@@ -273,7 +313,7 @@ const LoginPage: React.FC = () => {
                 textAlign: 'center',
               }}
             >
-              账号由管理员统一分配，如需开通请联系管理员
+              {intl.formatMessage({ id: 'auth.login.footerHint' })}
             </Typography.Paragraph>
           </div>
         </ConfigProvider>

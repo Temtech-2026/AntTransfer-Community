@@ -6,12 +6,14 @@
  * 的双份状态。
  */
 
+import { useIntl } from '@umijs/max';
 import { Descriptions, Drawer, Space, Tag, Timeline, Typography } from 'antd';
+import { useMemo } from 'react';
 
 import {
   approvalStatusColor,
-  approvalStatusText,
-  actionLabel,
+  approvalStatusTextId,
+  actionLabelId,
   formatCountdown,
   formatDeadline,
   slaDeadlineMs,
@@ -19,8 +21,8 @@ import {
   slaStage,
   slaStageColor,
 } from '@/services/approval';
-import type { ApprovalApplication } from '@/services/approval';
-import { levelColor, levelText } from '@/services/file';
+import type { ApprovalApplication, Translate } from '@/services/approval';
+import { levelColor, levelTextId } from '@/services/file';
 
 import { buildApprovalTimeline, timelineColor } from '../timeline';
 
@@ -45,55 +47,75 @@ export const ApprovalDetailDrawer = ({
   application,
   onClose,
 }: ApprovalDetailDrawerProps) => {
+  const intl = useIntl();
   const timeline = buildApprovalTimeline(application);
   const remaining = application ? slaRemainingMs(application, Date.now()) : null;
   const stage = slaStage(remaining, application?.level);
   const deadline = application ? slaDeadlineMs(application.createdAt, application.level) : null;
 
+  const t: Translate = useMemo(() => (id, values) => intl.formatMessage({ id }, values), [intl]);
+
   return (
-    <Drawer open={open} title="审批单详情" width={560} onClose={onClose}>
+    <Drawer
+      open={open}
+      title={intl.formatMessage({ id: 'approval.detail.title' })}
+      width={560}
+      onClose={onClose}
+    >
       {application ? (
         <Space orientation="vertical" size={16} style={{ width: '100%' }}>
           <Descriptions column={1} size="small" bordered>
-            <Descriptions.Item label="申请单号">
+            <Descriptions.Item label={intl.formatMessage({ id: 'approval.column.applicationNo' })}>
               {text(application.applicationNo || `#${application.id}`)}
             </Descriptions.Item>
-            <Descriptions.Item label="状态">
+            <Descriptions.Item label={intl.formatMessage({ id: 'approval.column.status' })}>
               <Tag color={approvalStatusColor(application.status)}>
-                {approvalStatusText(application.status)}
+                {intl.formatMessage({ id: approvalStatusTextId(application.status) })}
               </Tag>
             </Descriptions.Item>
-            <Descriptions.Item label="申请动作">
-              {actionLabel(application.applyType)}
+            <Descriptions.Item label={intl.formatMessage({ id: 'approval.column.applyAction' })}>
+              {intl.formatMessage({ id: actionLabelId(application.applyType) })}
             </Descriptions.Item>
-            <Descriptions.Item label="敏感等级">
-              <Tag color={levelColor(application.level)}>{levelText(application.level)}</Tag>
+            <Descriptions.Item label={intl.formatMessage({ id: 'approval.column.level' })}>
+              <Tag color={levelColor(application.level)}>
+                {intl.formatMessage({ id: levelTextId(application.level) })}
+              </Tag>
             </Descriptions.Item>
-            <Descriptions.Item label="资源">
+            <Descriptions.Item label={intl.formatMessage({ id: 'approval.column.resource' })}>
               {text(application.resourceType)} / {text(application.resourceId)}
             </Descriptions.Item>
-            <Descriptions.Item label="申请人">
+            <Descriptions.Item label={intl.formatMessage({ id: 'approval.column.applicant' })}>
               {text(application.applicantId)}
             </Descriptions.Item>
-            <Descriptions.Item label="期望到期">
-              {text(application.desiredExpireAt || '长期有效')}
+            <Descriptions.Item
+              label={intl.formatMessage({ id: 'approval.column.desiredExpireAt' })}
+            >
+              {text(
+                application.desiredExpireAt ||
+                  intl.formatMessage({ id: 'approval.longTerm' }),
+              )}
             </Descriptions.Item>
-            <Descriptions.Item label="SLA">
+            <Descriptions.Item label={intl.formatMessage({ id: 'approval.column.sla' })}>
               <Space size={6}>
-                <Tag color={slaStageColor(stage)}>{formatCountdown(remaining)}</Tag>
-                <Text type="secondary">截止 {formatDeadline(deadline)}</Text>
+                <Tag color={slaStageColor(stage)}>{formatCountdown(t, remaining)}</Tag>
+                <Text type="secondary">
+                  {intl.formatMessage(
+                    { id: 'approval.detail.slaDeadline' },
+                    { deadline: formatDeadline(deadline) },
+                  )}
+                </Text>
               </Space>
             </Descriptions.Item>
-            <Descriptions.Item label="使用用途">
+            <Descriptions.Item label={intl.formatMessage({ id: 'approval.column.purpose' })}>
               {text(application.purpose)}
             </Descriptions.Item>
-            <Descriptions.Item label="审批意见">
+            <Descriptions.Item label={intl.formatMessage({ id: 'approval.column.opinion' })}>
               {text(application.opinion)}
             </Descriptions.Item>
           </Descriptions>
 
           <div>
-            <Text strong>流转记录</Text>
+            <Text strong>{intl.formatMessage({ id: 'approval.detail.timeline' })}</Text>
             <Timeline
               style={{ marginTop: 12 }}
               items={timeline.map((entry) => ({
@@ -101,9 +123,17 @@ export const ApprovalDetailDrawer = ({
                 color: timelineColor(entry.state),
                 children: (
                   <Space orientation="vertical" size={2}>
-                    <Text strong={entry.state === 'active'}>{entry.label}</Text>
+                    <Text strong={entry.state === 'active'}>
+                      {intl.formatMessage({ id: entry.labelId })}
+                    </Text>
                     <Text type="secondary">{text(entry.at)}</Text>
-                    {entry.detail ? <Text>{entry.detail}</Text> : null}
+                    {entry.detailId ? (
+                      <Text>
+                        {intl.formatMessage({ id: entry.detailId }, entry.detailValues)}
+                      </Text>
+                    ) : entry.detail ? (
+                      <Text>{entry.detail}</Text>
+                    ) : null}
                   </Space>
                 ),
               }))}

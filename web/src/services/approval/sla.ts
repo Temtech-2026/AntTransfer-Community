@@ -42,17 +42,7 @@ export function slaHoursOf(level?: number | null): number {
   }
 }
 
-/** 敏感等级文案（列表 SLA 列展示「机密 · 4h」用）。 */
-export function slaLevelText(level?: number | null): string {
-  switch (normalizeLevel(level)) {
-    case 3:
-      return '机密';
-    case 2:
-      return '内部';
-    default:
-      return '公开';
-  }
-}
+/* 注：密级文案统一由 services/file 的 levelTextId 提供，此处不再重复一份口径。 */
 
 /**
  * 解析后端下发的本地时间字符串（`2026-09-14T10:00:00`）。
@@ -114,13 +104,22 @@ export function slaStageColor(stage: SlaStage): string {
 }
 
 /**
+ * i18n 取值函数签名。
+ *
+ * <p>纯函数不直接依赖 react-intl：由调用方注入 `intl.formatMessage`，
+ * 这样既能保持可单测（测试注入假实现），又不会在本文件里内嵌任何语言文案。
+ */
+export type Translate = (id: string, values?: Record<string, string | number>) => string;
+
+/**
  * 倒计时文案：`2d 03:15:07` / `05:12:30` / `已超时 3小时20分` / `--`。
  *
  * <p>超时用「已超时 X」而非负数计数：负数倒计时会被误读成「还有时间」。
+ * <p>正向倒计时是纯数字（与语言无关），只有超时分支与「--」占位需要取值。
  */
-export function formatCountdown(remainingMs: number | null): string {
+export function formatCountdown(t: Translate, remainingMs: number | null): string {
   if (remainingMs === null) {
-    return '--';
+    return t('approval.sla.noDeadline');
   }
   const abs = Math.abs(remainingMs);
   const totalSeconds = Math.floor(abs / 1000);
@@ -132,12 +131,12 @@ export function formatCountdown(remainingMs: number | null): string {
 
   if (remainingMs <= 0) {
     if (days > 0) {
-      return `已超时 ${days}天${hours}小时`;
+      return t('approval.sla.overdue.days', { days, hours });
     }
     if (hours > 0) {
-      return `已超时 ${hours}小时${minutes}分`;
+      return t('approval.sla.overdue.hours', { hours, minutes });
     }
-    return `已超时 ${minutes}分`;
+    return t('approval.sla.overdue.minutes', { minutes });
   }
   if (days > 0) {
     return `${days}d ${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
@@ -145,7 +144,11 @@ export function formatCountdown(remainingMs: number | null): string {
   return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 }
 
-/** 截止时刻文案（`MM-DD HH:mm`），供 Tooltip 展示「应于何时前处理」。 */
+/**
+ * 截止时刻文案（`MM-DD HH:mm`），供 Tooltip 展示「应于何时前处理」。
+ *
+ * <p>纯数字 + 分隔符，无语言文案；缺值时由调用方决定占位文案（见 `approval.sla.noDeadline`）。
+ */
 export function formatDeadline(deadlineMs: number | null): string {
   if (deadlineMs === null) {
     return '--';

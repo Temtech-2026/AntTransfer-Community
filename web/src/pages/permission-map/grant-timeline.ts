@@ -22,6 +22,12 @@ export interface GrantTimelineEntry {
   remainDays: number | null;
 }
 
+/** i18n 消息描述符（id + 插值），可直接交给 {@code intl.formatMessage} 渲染。 */
+export interface GrantMessage {
+  id: string;
+  values?: Record<string, number>;
+}
+
 /** 解析到期时刻（毫秒）；无值或不可解析返回 null。 */
 export function expireMsOf(expireAt?: string | null): number | null {
   if (!expireAt) {
@@ -57,17 +63,17 @@ export function grantState(
   return days <= warningDays ? 'expiring' : 'active';
 }
 
-/** 状态文案。 */
-export function grantStateText(state: GrantState): string {
+/** 状态文案 id（文案在 locale 包里，页面用 intl.formatMessage 渲染）。 */
+export function grantStateTextId(state: GrantState): string {
   switch (state) {
     case 'expired':
-      return '已过期';
+      return 'permissionMap.grantState.expired';
     case 'expiring':
-      return '即将到期';
+      return 'permissionMap.grantState.expiring';
     case 'permanent':
-      return '长期有效';
+      return 'permissionMap.grantState.permanent';
     default:
-      return '生效中';
+      return 'permissionMap.grantState.active';
   }
 }
 
@@ -85,15 +91,15 @@ export function grantStateColor(state: GrantState): string {
   }
 }
 
-/** 剩余天数文案。 */
-export function remainDaysText(remainDays: number | null): string {
+/** 剩余天数文案描述符（长期有效 / 已过期 / 剩 N 天，由页面格式化）。 */
+export function remainDaysTextId(remainDays: number | null): GrantMessage {
   if (remainDays === null) {
-    return '长期有效';
+    return { id: 'permissionMap.grantState.permanent' };
   }
   if (remainDays <= 0) {
-    return '已过期';
+    return { id: 'permissionMap.grantState.expired' };
   }
-  return `剩 ${remainDays} 天`;
+  return { id: 'permissionMap.remainDays', values: { days: remainDays } };
 }
 
 /**

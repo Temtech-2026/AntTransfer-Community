@@ -33,26 +33,14 @@ function renderErrorFallback(
         status="error"
         title={intl.formatMessage({
           id: isChunkError ? 'app.error.chunk.title' : 'app.error.render.title',
-          defaultMessage: isChunkError
-            ? 'Failed to load page'
-            : 'Something went wrong',
         })}
         subTitle={intl.formatMessage({
           id: getSubTitleId(isChunkError, isOffline),
-          defaultMessage:
-            isChunkError && isOffline
-              ? 'Your network connection has been lost. Please check your connection and reload.'
-              : isChunkError
-                ? 'Page resources failed to load. Please reload and try again.'
-                : 'Sorry, an error occurred on this page. Please reload or go back to the home page.',
         })}
         extra={[
           isChunkError && (
             <Button type="primary" key="retry" onClick={onRetry}>
-              {intl.formatMessage({
-                id: 'app.error.retry',
-                defaultMessage: 'Retry',
-              })}
+              {intl.formatMessage({ id: 'app.error.retry' })}
             </Button>
           ),
           <Button
@@ -60,16 +48,10 @@ function renderErrorFallback(
             key="reload"
             onClick={onReload}
           >
-            {intl.formatMessage({
-              id: 'app.error.reload',
-              defaultMessage: 'Reload Page',
-            })}
+            {intl.formatMessage({ id: 'app.error.reload' })}
           </Button>,
           <Button href="/" key="home">
-            {intl.formatMessage({
-              id: 'app.error.home',
-              defaultMessage: 'Back Home',
-            })}
+            {intl.formatMessage({ id: 'app.error.home' })}
           </Button>,
         ].filter(Boolean)}
       />
