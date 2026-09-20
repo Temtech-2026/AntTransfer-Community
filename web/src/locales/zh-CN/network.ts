@@ -11,4 +11,13 @@ export default {
   'app.error.reload': '刷新页面',
   'app.error.home': '返回首页',
   'app.request.offline': '网络不可用，请检查网络连接后重试。',
+  // 拿不到响应体时的兜底文案（services/request 的 XHR 通道与全局 errorHandler 共用同一口径）
+  'app.request.default': '网络异常，请检查网络后重试',
+  'app.request.http': '{message}（HTTP {status}）',
+  'app.request.retryLater': '{message}，请稍后重试',
+  'app.request.traceId': 'traceId：{traceId}',
+  'app.request.failed': '请求失败',
+  'app.request.aborted': '请求已取消',
+  'app.request.timeout': '请求超时，请稍后重试',
+  'app.request.parseFailed': '响应解析失败',
 };

@@ -16,6 +16,9 @@ const SUPPORTED = ['zh-CN', 'en-US'] as const;
 
 export type AppLocale = (typeof SUPPORTED)[number];
 
+/** 受支持的界面语言清单（顺序即语言开关的展示顺序）。 */
+export const SUPPORTED_LOCALES: readonly AppLocale[] = SUPPORTED;
+
 export const DEFAULT_LOCALE: AppLocale = 'zh-CN';
 
 /**
@@ -38,6 +41,29 @@ export function normalizeLocale(locale?: string | null): AppLocale {
     SUPPORTED.find((item) => item.toLowerCase().startsWith(prefix)) ??
     DEFAULT_LOCALE
   );
+}
+
+/**
+ * 把任意语言标签收敛到「界面语言」受支持集合。
+ *
+ * <p>与 `normalizeLocale` 的差别在兜底策略：`normalizeLocale` 服务于后端 `Accept-Language`，
+ * 兜底取默认语言（zh-CN）；界面语言则按「中文语系 → zh-CN，其余 → en-US」回落——
+ * 中英双语产品里，日语 / 葡语用户读英文比读中文更合理。
+ *
+ * <p>存在的意义：浏览器 / 系统语言可能是 `zh-TW` / `ja-JP` / `fa-IR` 这类
+ * **`src/locales` 下没有对应语言包**的值。若原样交给 Umi，`getLocale()` 会返回该值，
+ * 页面文案随之回退成 `defaultMessage`（中文）甚至原始 key，表现为「切了语言但界面没变」。
+ */
+export function resolveUiLocale(locale?: string | null): AppLocale {
+  if (!locale) {
+    return DEFAULT_LOCALE;
+  }
+  const lower = locale.toLowerCase();
+  const exact = SUPPORTED.find((item) => item.toLowerCase() === lower);
+  if (exact) {
+    return exact;
+  }
+  return lower.startsWith('zh') ? 'zh-CN' : 'en-US';
 }
 
 /**

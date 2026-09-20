@@ -37,6 +37,31 @@ export default {
   'pages.welcome.infoCard.procomponents.title': 'Learn Pro Components',
   'pages.welcome.infoCard.procomponents.desc':
     'ProComponents provides higher-abstraction template components on top of Ant Design, with one-component-one-page philosophy.',
+  /* ============================ 欢迎页（pages/Welcome.tsx） ============================ */
+  'pages.welcome.header.title': 'AntTransfer CE',
+  'pages.welcome.header.subTitle':
+    'Open-source secure file transfer and collaboration',
+  'pages.welcome.hero.title': 'AntTransfer Community Edition',
+  'pages.welcome.hero.desc':
+    'An open-source secure content / file transfer and collaboration solution: a Spring Boot 3 modular monolith backend plus an Ant Design Pro frontend, ready to use and easy to extend.',
+  'pages.welcome.feature.transfer.title': 'Secure file transfer',
+  'pages.welcome.feature.transfer.desc':
+    'Resumable upload, visible progress and instant-upload checksum verification for large-file scenarios (at-transfer / at-file).',
+  'pages.welcome.feature.collaboration.title': 'Collaboration and sharing',
+  'pages.welcome.feature.collaboration.desc':
+    'Collaboration spaces and share links let multiple people securely access the same batch of files (at-collaboration).',
+  'pages.welcome.feature.permission.title': 'Permissions and audit',
+  'pages.welcome.feature.permission.desc':
+    'RBAC permission points and end-to-end TraceId make everything auditable and traceable (at-permission / at-gateway).',
+  'pages.welcome.quickStart.title': 'Quick start',
+  'pages.welcome.quickStart.subTitle': 'Local integration and next steps',
+  /* 首段含内联代码块（/api、http://localhost:8080），拆成三段拼接；代码块不翻译 */
+  'pages.welcome.quickStart.proxyPrefix':
+    'Local integration: this project proxies',
+  'pages.welcome.quickStart.proxyMiddle': 'to the backend',
+  'pages.welcome.quickStart.proxySuffix': ' (see config/proxy.ts).',
+  'pages.welcome.quickStart.domainHint':
+    'Domain pages (transfer / file / collaboration / permission) will be added step by step as backend APIs land.',
   'pages.404.subTitle': 'Sorry, the page you visited does not exist.',
   'pages.404.buttonText': 'Back Home',
   'pages.admin.subPage.title': 'This page can only be viewed by Admin',

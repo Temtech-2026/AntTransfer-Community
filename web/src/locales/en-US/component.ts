@@ -1,5 +1,144 @@
+/**
+ * Shared copy for shell-level components (header, sider, global search,
+ * notification bell, org switcher, drop zone, tag select).
+ */
 export default {
+  'component.langSwitch': 'Switch language',
+
+  // Tag select
   'component.tagSelect.expand': 'Expand',
   'component.tagSelect.collapse': 'Collapse',
   'component.tagSelect.all': 'All',
-};
+
+  // Sider footer entries
+  'component.siderFooter.messages': 'Messages',
+  'component.siderFooter.transfer': 'Transfers',
+  'component.siderFooter.openMessages': 'Open message panel',
+  'component.siderFooter.openTransfer': 'Open transfer center',
+
+  // Header global search
+  'component.globalSearch.placeholder': 'Search file name / tag, press Enter to locate',
+  'component.globalSearch.ariaLabel': 'Global search',
+  'component.globalSearch.scopeAria': 'Search scope',
+  'component.globalSearch.scopeTitle': 'Scope: file names and tags (jumps to the file workspace).',
+  'component.globalSearch.scopeEe':
+    'Full-text search inside file contents requires extraction and indexing, an EE capability.',
+
+  // Header docs entry
+  'component.docLink.title': 'Documentation',
+
+  // Header version-history entry
+  'component.version.history': 'Version history',
+
+  // Article list content (template component)
+  'component.articleList.publishedAt': 'published at',
+
+  // Avatar dropdown and profile
+  'component.avatar.profile': 'Profile',
+  'component.avatar.changePassword': 'Change password',
+  'component.avatar.logout': 'Sign out',
+  'component.avatar.account': 'Account',
+  'component.avatar.nickname': 'Nickname',
+  'component.avatar.roles': 'Roles',
+
+  // Self-service password change dialog (signs out every session on success)
+  'component.avatar.changePassword.title': 'Change password',
+  'component.avatar.changePassword.alert.title': 'You will be signed out after changing',
+  'component.avatar.changePassword.alert.desc':
+    'For your security, changing the password immediately signs out every device. Please sign in again with the new password.',
+  'component.avatar.changePassword.old': 'Current password',
+  'component.avatar.changePassword.oldPlaceholder': 'Enter your current password',
+  'component.avatar.changePassword.oldRequired': 'Please enter your current password',
+  'component.avatar.changePassword.new': 'New password',
+  'component.avatar.changePassword.newPlaceholder': 'Enter a new password',
+  'component.avatar.changePassword.newRequired': 'Please enter a new password',
+  'component.avatar.changePassword.newLength': 'Password must be 8-64 characters long',
+  'component.avatar.changePassword.newPattern':
+    'Password must contain both letters and digits, with no spaces',
+  'component.avatar.changePassword.policyHint': '8-64 characters, must include letters and digits',
+  'component.avatar.changePassword.confirm': 'Confirm new password',
+  'component.avatar.changePassword.confirmPlaceholder': 'Enter the new password again',
+  'component.avatar.changePassword.confirmRequired': 'Please enter the new password again',
+  'component.avatar.changePassword.confirmMismatch': 'The two new passwords do not match',
+  'component.avatar.changePassword.submit': 'Change password',
+  'component.avatar.changePassword.done': 'Password changed, please sign in with the new password',
+
+  // Notification bell
+  'component.notify.title': 'Notifications',
+  'component.notify.count.inbox': 'Notifications {count}',
+  'component.notify.count.todo': 'To-do {count}',
+  'component.notify.count.chat': 'Messages {count}',
+  'component.notify.markAllRead': 'Mark all as read',
+  'component.notify.markedAllRead': 'All marked as read',
+  'component.notify.status.idle': 'Realtime channel not started',
+  'component.notify.status.connecting': 'Connecting…',
+  'component.notify.status.open': 'Realtime notifications connected',
+  'component.notify.status.reconnecting': 'Disconnected, reconnecting…',
+  'component.notify.status.closed': 'Realtime channel closed',
+
+  // Org / team switcher
+  'component.org.defaultName': 'Default organization',
+  'component.org.current': 'Current deployment',
+  'component.org.create': 'New organization / team',
+  'component.org.switch': 'Switch to another organization',
+  'component.org.eeHint':
+    'Cross-organization isolation (multiple organizations, seat licensing) is an EE capability; CE is a single-organization self-hosted deployment.',
+  'component.org.tooltip': 'Current organization: {name}',
+
+  // Drop / click file zone
+  'component.dropZone.title': 'Drag files here, or click to select',
+
+  // Chunked upload component
+  'component.chunkUpload.title': 'File upload',
+  'component.chunkUpload.busy': '{count} task(s) in progress',
+  'component.chunkUpload.resumableCount': '{count} unfinished upload(s) detected',
+  'component.chunkUpload.resumableNote':
+    'To avoid transferring the same data twice, select the same file again; chunks already received by the server will be skipped.',
+  'component.chunkUpload.resumableSelect': 'Select file to resume',
+  'component.chunkUpload.instantDone': 'Instant upload done',
+  'component.chunkUpload.instantSuccess': 'Instant upload',
+  'component.chunkUpload.progress.hashing': 'Computing file checksum…',
+  'component.chunkUpload.progress.prechecking': 'Checking instant-upload eligibility…',
+  'component.chunkUpload.progress.querying': 'Fetching uploaded chunks…',
+  'component.chunkUpload.progress.merging': 'Merging chunks…',
+  'component.chunkUpload.progress.paused': 'Paused ({received}/{total} chunks done)',
+  'component.chunkUpload.progress.failed': 'Upload failed',
+  'component.chunkUpload.progress.uploading': '{received}/{total} chunks · {speed}',
+  'component.chunkUpload.progress.retried': ' · retried {count} time(s)',
+  'component.chunkUpload.progress.chunks': '{count} chunks',
+  'component.chunkUpload.retryTooltip': 'Automatically retried with exponential backoff on network jitter',
+  'component.chunkUpload.retryTag': 'Retry {count}',
+  'component.chunkUpload.draggerText': 'Click or drag files here to upload',
+  'component.chunkUpload.draggerHint':
+    'Supports chunked upload for large files, instant upload and resume; a failed file is retried up to {count} time(s)',
+  'component.chunkUpload.chunkSize': 'Chunk size',
+  'component.chunkUpload.concurrency': 'Concurrency',
+  'component.chunkUpload.tuningNote': 'Changes apply to subsequent chunks',
+  'component.chunkUpload.overallProgress': 'Overall progress',
+  'component.chunkUpload.overallSummary': '{finished}/{total} files · {uploaded} / {totalSize}',
+
+  // Transfer monitor panel
+  'component.transfer.title': 'Transfer center',
+  'component.transfer.expand': 'Expand transfer center',
+  'component.transfer.collapse': 'Collapse transfer center',
+  'component.transfer.capsule': 'Transferring {count}',
+  'component.transfer.summary': '{active} in progress · {success} done',
+  'component.transfer.summaryFailed': ' · {count} failed',
+  'component.transfer.pauseAll': 'Pause all',
+  'component.transfer.resumeAll': 'Resume all / retry failed',
+  'component.transfer.clearFinished': 'Clear completed / canceled / failed',
+  'component.transfer.fastMode': 'Turbo mode',
+  'component.transfer.fastModeHint':
+    'Raises concurrent chunks to the contract limit of 5; it also applies to tasks already running and overrides the concurrency chosen on the upload page.',
+  'component.transfer.empty': 'No transfer tasks',
+  'component.transfer.chartAria': 'Transfer speed chart',
+  'component.transfer.pause': 'Pause',
+  'component.transfer.resumeRetry': 'Resume / retry',
+  'component.transfer.pauseNamed': 'Pause {name}',
+  'component.transfer.resumeNamed': 'Resume {name}',
+  'component.transfer.status.active': 'Transferring',
+  'component.transfer.status.paused': 'Paused',
+  'component.transfer.status.error': 'Failed',
+  'component.transfer.status.success': 'Completed',
+  'component.transfer.status.canceled': 'Canceled',
+} as const;

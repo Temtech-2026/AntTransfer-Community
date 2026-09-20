@@ -21,6 +21,23 @@ export default {
   'common.danger.ok': '确认执行',
   'common.danger.cancel': '取消',
 
+  // 跨模块复用动作与连接符（避免每个模块各写一遍，导致英文界面漏出中文）
+  'common.action.cancel': '取消',
+  'common.action.confirm': '确定',
+  'common.action.ok': '好的',
+  'common.action.gotIt': '知道了',
+  'common.action.close': '关闭',
+  'common.action.submit': '提交',
+  'common.action.save': '保存',
+  'common.action.retry': '重试',
+  'common.action.copy': '复制',
+  'common.action.copied': '已复制',
+  'common.action.selectAll': '全选',
+  'common.action.clear': '清空',
+  'common.action.refresh': '刷新',
+  'common.listSeparator': '、',
+  'common.etcCount': '等 {count} 项',
+
   // 全局上传进度
   'common.upload.title': '上传任务',
   'common.upload.summary': '{active} 个上传中 · 共 {total} 个',

@@ -16,6 +16,23 @@ export default {
   'common.danger.ok': 'Confirm',
   'common.danger.cancel': 'Cancel',
 
+  // Actions and joiners reused across modules
+  'common.action.cancel': 'Cancel',
+  'common.action.confirm': 'OK',
+  'common.action.ok': 'OK',
+  'common.action.gotIt': 'Got it',
+  'common.action.close': 'Close',
+  'common.action.submit': 'Submit',
+  'common.action.save': 'Save',
+  'common.action.retry': 'Retry',
+  'common.action.copy': 'Copy',
+  'common.action.copied': 'Copied',
+  'common.action.selectAll': 'Select all',
+  'common.action.clear': 'Clear',
+  'common.action.refresh': 'Refresh',
+  'common.listSeparator': ', ',
+  'common.etcCount': 'and {count} more',
+
   // Global upload progress
   'common.upload.title': 'Uploads',
   'common.upload.summary': '{active} uploading · {total} total',

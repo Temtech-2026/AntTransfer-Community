@@ -39,6 +39,7 @@ export default {
   'chat.new.scope.private': 'Direct',
   'chat.new.scope.group': 'Group',
   'chat.new.user.placeholder': 'Search by username or nickname',
+  'chat.new.user.optionLabel': '{name} ({username})',
   'chat.new.user.noPermission':
     'Your account cannot search users; enter the recipient user ID directly',
   'chat.new.target.label': 'Recipient user ID',
@@ -50,4 +51,20 @@ export default {
   'chat.new.content.placeholder': 'Leave empty and type later',
   'chat.new.submit': 'Start',
   'chat.new.cancel': 'Cancel',
+
+  // Instant-messaging drawer (a second entry point besides /chat)
+  'chat.drawer.title': 'Messages',
+  'chat.drawer.backToList': 'Back to conversation list',
+  'chat.drawer.refresh': 'Refresh conversation list',
+  'chat.drawer.close': 'Close message panel',
+  'chat.drawer.emptyConversations': 'No conversations yet',
+  'chat.drawer.openConversation': 'Open conversation with {name}',
+  'chat.drawer.emptyMessages': 'No messages yet — drag a file in and say hello',
+  'chat.drawer.mineAvatar': 'Me',
+  'chat.drawer.fileFallback': '[File] {content}',
+  'chat.drawer.removeAttachment': 'Remove pending file',
+  'chat.drawer.dropHint': 'Drag a file from the file area to send it as a file message',
+  'chat.drawer.placeholderWithAttachment': 'Optionally add a note (can be empty)',
+  'chat.drawer.placeholder': 'Type a message, press Enter to send',
+  'chat.drawer.send': 'Send',
 } as const;

@@ -36,6 +36,29 @@ export default {
   'pages.welcome.infoCard.procomponents.title': '了解 Pro Components',
   'pages.welcome.infoCard.procomponents.desc':
     'ProComponents 是基于 Ant Design 的高抽象模板组件，以一个组件就是一个页面为开发理念。',
+  /* ============================ 欢迎页（pages/Welcome.tsx） ============================ */
+  'pages.welcome.header.title': 'AntTransfer CE',
+  'pages.welcome.header.subTitle': '开源文件安全传输与协作共享',
+  'pages.welcome.hero.title': 'AntTransfer Community Edition',
+  'pages.welcome.hero.desc':
+    '开源的内容 / 文件安全传输与协作共享解决方案：Spring Boot 3 模块化单体后端 + Ant Design Pro 前端，开箱即用、易于二次开发。',
+  'pages.welcome.feature.transfer.title': '安全文件传输',
+  'pages.welcome.feature.transfer.desc':
+    '断点续传、进度可视、秒传校验，适配大文件传输场景（at-transfer / at-file）。',
+  'pages.welcome.feature.collaboration.title': '协作共享',
+  'pages.welcome.feature.collaboration.desc':
+    '协作空间与分享链接，多人安全访问同一批文件（at-collaboration）。',
+  'pages.welcome.feature.permission.title': '权限与审计',
+  'pages.welcome.feature.permission.desc':
+    'RBAC 权限点与全链路 TraceId，可审计可追溯（at-permission / at-gateway）。',
+  'pages.welcome.quickStart.title': '快速开始',
+  'pages.welcome.quickStart.subTitle': '本地联调与后续接入',
+  /* 首段含内联代码块（/api、http://localhost:8080），拆成三段拼接；代码块不翻译 */
+  'pages.welcome.quickStart.proxyPrefix': '前后端联调：本工程已把',
+  'pages.welcome.quickStart.proxyMiddle': '代理到后端',
+  'pages.welcome.quickStart.proxySuffix': '（见 config/proxy.ts）。',
+  'pages.welcome.quickStart.domainHint':
+    '领域页面（传输 / 文件 / 协作 / 权限）将随后端接口落地逐步接入。',
   'pages.404.subTitle': '抱歉，您访问的页面不存在。',
   'pages.404.buttonText': '返回首页',
   'pages.admin.subPage.title': ' 这个页面只有 admin 权限才能查看',

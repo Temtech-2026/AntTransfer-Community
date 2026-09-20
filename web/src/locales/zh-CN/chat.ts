@@ -38,6 +38,7 @@ export default {
   'chat.new.scope.private': '单聊',
   'chat.new.scope.group': '群聊',
   'chat.new.user.placeholder': '输入账号或昵称搜索',
+  'chat.new.user.optionLabel': '{name}（{username}）',
   'chat.new.user.noPermission': '当前账号无用户检索权限，请直接填写对方用户 ID',
   'chat.new.target.label': '对端用户 ID',
   'chat.new.target.labelGroup': '群组 ID',
@@ -48,4 +49,20 @@ export default {
   'chat.new.content.placeholder': '可以留空，创建后再输入',
   'chat.new.submit': '发起',
   'chat.new.cancel': '取消',
+
+  // 即时通讯抽屉（/chat 之外的第二入口，文案独立，避免与页面标题互相牵制）
+  'chat.drawer.title': '消息',
+  'chat.drawer.backToList': '返回会话列表',
+  'chat.drawer.refresh': '刷新会话列表',
+  'chat.drawer.close': '关闭消息面板',
+  'chat.drawer.emptyConversations': '暂无会话',
+  'chat.drawer.openConversation': '打开与 {name} 的会话',
+  'chat.drawer.emptyMessages': '还没有消息，拖一个文件进来说句话',
+  'chat.drawer.mineAvatar': '我',
+  'chat.drawer.fileFallback': '[文件] {content}',
+  'chat.drawer.removeAttachment': '移除待发送文件',
+  'chat.drawer.dropHint': '从文件区拖一个文件进来，即可作为文件消息发送',
+  'chat.drawer.placeholderWithAttachment': '可附加一句说明（可留空）',
+  'chat.drawer.placeholder': '输入消息，回车发送',
+  'chat.drawer.send': '发送',
 } as const;
