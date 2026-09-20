@@ -35,6 +35,7 @@
 | 工作台 `/workbench`（web 首页） | 页面可见（待办 / 待审批 / 传输统计） | —（后端按当前登录用户收敛，无原子权限点） | 全部业务角色 |
 | （不存在）日志清除 | 任何入口都**不渲染** | 后端从不签发 `audit:log:clear` | 任何角色（含 SUPER_ADMIN）都无 |
 | 权限地图 `/permission-map` | 页面可见（我的权限点 / 角色 / 审批授权） | —（后端 `GET /v1/permission/map` 只返回当前登录用户的权限，无原子权限点） | 全部业务角色 |
+| 顶栏头像下拉（全局，`AvatarDropdown`） | 个人信息 / 修改密码 / 退出登录 | —（`GET /v1/auth/me`、`PUT /v1/auth/password`、`POST /v1/auth/logout` 均按当前登录身份收敛，**不设原子权限点**） | 全部业务角色（有登录态即可见；改密成功后服务端全端吊销，前端须清本地令牌并回登录页） |
 | 系统管理 `/system/users` | 页面可见（菜单） | `system:user:list` | 仅 SUPER_ADMIN |
 | 系统管理 `/system/users` | 新建用户 | `system:user:create` | 仅 SUPER_ADMIN |
 | 系统管理 `/system/users` | 编辑资料 / 调岗 | `system:user:update` | 仅 SUPER_ADMIN |
@@ -84,4 +85,6 @@ if (!hasPerm(route.perm)) redirect('/403');
 - 数据范围收敛（能管到哪些部门）由 `AccessControlService` 在服务端按 `dataScope` 落地，
   前端**不要自己拼部门查询条件**；
 - 用户管理端点在 `at-permission` 的 `/api/v1/system/users`（**不是** at-auth 的 `/api/v1/users`，
-  后者是个人中心自助，见 [api/README.md §1](../api/README.md)）。
+  后者是个人中心自助，见 [api/README.md §1](../api/README.md)）；
+- **本人自助改密**（GAP-03，2026-09-20）落在 `/api/v1/auth/password`（**认证域动作端点**，不在上表两条前缀下）：
+  只要求登录态、**不设权限点**，任何业务角色都可用；成功后全端吊销，前端入口见上表「顶栏头像下拉」行。
