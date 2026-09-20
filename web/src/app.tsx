@@ -2,7 +2,7 @@ import { LinkOutlined } from '@ant-design/icons';
 import type { Settings as LayoutSettings } from '@ant-design/pro-components';
 import { SettingDrawer } from '@ant-design/pro-components';
 import type { RequestConfig, RunTimeLayoutConfig } from '@umijs/max';
-import { history, Link } from '@umijs/max';
+import { getLocale, history, Link, setLocale } from '@umijs/max';
 import { ConfigProvider, theme } from 'antd';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
@@ -13,13 +13,17 @@ dayjs.extend(relativeTime);
 
 import {
   AvatarDropdown,
+  ChatDrawer,
   DocLink,
   ErrorBoundary,
   Footer,
-  GlobalUploadProgress,
+  GlobalSearch,
   LangDropdown,
   NotificationBell,
   OfflineBanner,
+  OrgSwitcher,
+  SiderFooter,
+  TransferMonitor,
   VersionDropdown,
 } from '@/components';
 import {
@@ -45,6 +49,7 @@ import {
   resolveIsDark,
   THEME_CHANGE_EVENT,
 } from '@/theme/tokens';
+import { resolveUiLocale } from '@/utils/locale';
 import defaultSettings from '../config/defaultSettings';
 import { errorConfig } from './requestErrorConfig';
 
@@ -110,6 +115,21 @@ export async function getInitialState(): Promise<{
     navTheme: resolveIsDark() ? 'realDark' : 'light',
   };
 
+  /**
+   * 界面语言归一化（必须发生在首次渲染之前，避免先渲染一屏原始 key 再跳变）。
+   *
+   * <p>Umi 的 `locale.baseNavigator: true` 会把 `navigator.language` 原样当作界面语言，
+   * 而浏览器语言可能是 `zh-TW` / `ja-JP` / `fa-IR` 这类 **`src/locales` 下没有语言包**的值。
+   * 那种情况下 `formatMessage` 会回退到 `defaultMessage`（中文）甚至原始 key，
+   * 用户看到的就是「切换语言后界面文案没变」。这里按 `resolveUiLocale` 收敛到中英双语，
+   * 并通过 `setLocale` 写回 localStorage 让后续访问保持一致。
+   */
+  const browserLocale = getLocale();
+  const uiLocale = resolveUiLocale(browserLocale);
+  if (browserLocale !== uiLocale) {
+    setLocale(uiLocale, false);
+  }
+
   // 如果不是登录页面，执行
   const { location } = history;
   if (location.pathname !== loginPath) {
@@ -170,19 +190,56 @@ export const layout: RunTimeLayoutConfig = ({
       }
       return dom;
     },
+    /**
+     * 顶栏左侧：Logo + 品牌名 + 组织切换器。
+     *
+     * <p>组织切换器紧贴品牌，让「当前在哪个组织的空间里操作」一眼可见
+     * （CE 为单组织部署，多组织隔离属 EE，见 OrgSwitcher 的注释）。
+     */
+    headerTitleRender: (logo, title) => (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+        {logo}
+        {title}
+        <OrgSwitcher />
+      </span>
+    ),
+    /**
+     * 顶栏中部：全局搜索（文件名 / 标签 → 跳转文件工作台）。
+     *
+     * <p>该回调是「替换」语义：`splitMenus: true` 时 ProLayout 走 TopNavHeader，会把
+     * 一级菜单作为第二个入参（`dom`）传进来，直接返回 `<GlobalSearch />` 会让一级菜单
+     * 从顶栏消失。因此 `dom` 存在时必须与它并列渲染。
+     */
+    headerContentRender: (_props, dom) =>
+      dom ? (
+        <>
+          {dom}
+          <GlobalSearch />
+        </>
+      ) : (
+        <GlobalSearch />
+      ),
+    /**
+     * 顶栏右侧：通知 / 文档 / 版本 / 语言（头像由 avatarProps 渲染）。
+     *
+     * <p>原先挂在顶栏的上传进度弹层已下线：传输是跨页面的长任务，
+     * 改由右下角的传输监控悬浮窗承载（见 `TransferMonitor`），
+     * 顶栏右侧专注「通知 + 头像 + 设置」。
+     */
     actionsRender: () => {
       // `locale: false` opts out of the language switcher. ProLayout's own
       // `locale` prop is a locale string, so narrow to the boolean toggle here.
       const localeEnabled =
         (initialState?.settings as { locale?: boolean })?.locale !== false;
       return [
-        <GlobalUploadProgress key="upload" />,
         <NotificationBell key="notify" />,
         <DocLink key="doc" />,
         <VersionDropdown key="version" />,
         localeEnabled && <LangDropdown key="lang" />,
       ].filter(Boolean);
     },
+    /** 侧栏底部：即时通讯抽屉与传输中心入口（浮层入口不占主菜单） */
+    menuFooterRender: (props) => <SiderFooter collapsed={props?.collapsed} />,
     avatarProps: {
       src: initialState?.currentUser?.avatar,
       // 真实登录用户（昵称优先、回退账号）；未登录时 AvatarDropdown 自身渲染加载态
@@ -195,6 +252,19 @@ export const layout: RunTimeLayoutConfig = ({
     //   content: initialState?.currentUser?.name,
     // },
     footerRender: () => <Footer />,
+    /**
+     * 内容区外壳：主内容之外挂两块全局浮层。
+     *
+     * <p>放在这里而不是 rootContainer —— 登录页（`layout: false`）不该出现它们，
+     * 而 `childrenRender` 只在布局内生效。
+     */
+    childrenRender: (dom) => (
+      <>
+        {dom}
+        <ChatDrawer />
+        <TransferMonitor />
+      </>
+    ),
     onPageChange: () => {
       const { location } = history;
       // 如果没有登录，重定向到 login

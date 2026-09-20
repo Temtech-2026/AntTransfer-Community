@@ -14,11 +14,15 @@ const mockHistory = {
 const mockFetchProfile = vi.fn();
 const mockFetchMyPermission = vi.fn();
 const mockFetchMyMenus = vi.fn();
+const mockGetLocale = vi.fn(() => 'zh-CN');
+const mockSetLocale = vi.fn();
 
 vi.mock('@umijs/max', () => ({
   history: mockHistory,
   Link: ({ children }: any) => children,
   request: vi.fn(),
+  getLocale: () => mockGetLocale(),
+  setLocale: (...args: unknown[]) => mockSetLocale(...args),
 }));
 
 // 只替换 /auth/me 这种 IO；toCurrentUser 等纯转换走真实实现，接线才被真正验证
@@ -79,27 +83,33 @@ describe('app getInitialState', () => {
     mockFetchMyMenus.mockResolvedValue([]);
   });
 
-  it('should fetch currentUser when not on login page', async () => {
-    const { getInitialState } = await import('./app');
-    mockFetchProfile.mockResolvedValue({
-      username: 'zhangsan',
-      nickname: 'Test User',
-      roles: ['SUPER_ADMIN'],
-    });
+  // 该用例在用例内动态 `import('./app')`，会拉起整个应用模块图（本地约 5s）；
+  // 全量并发跑时受机器负载影响可能远超默认 15s，故显式放宽超时。
+  it(
+    'should fetch currentUser when not on login page',
+    async () => {
+      const { getInitialState } = await import('./app');
+      mockFetchProfile.mockResolvedValue({
+        username: 'zhangsan',
+        nickname: 'Test User',
+        roles: ['SUPER_ADMIN'],
+      });
 
-    const state = await getInitialState();
+      const state = await getInitialState();
 
-    expect(mockFetchProfile).toHaveBeenCalled();
-    expect(state.currentUser).toEqual({
-      name: 'Test User',
-      access: 'admin',
-    });
-    expect(state.settingDrawerOpen).toBe(false);
-    expect(state.fetchUserInfo).toBeDefined();
-    // 权限与菜单一并写入 initialState，供 access.ts / menuDataRender 消费
-    expect(state.permissions?.permCodes).toEqual(['file:download']);
-    expect(state.menus).toEqual([]);
-  });
+      expect(mockFetchProfile).toHaveBeenCalled();
+      expect(state.currentUser).toEqual({
+        name: 'Test User',
+        access: 'admin',
+      });
+      expect(state.settingDrawerOpen).toBe(false);
+      expect(state.fetchUserInfo).toBeDefined();
+      // 权限与菜单一并写入 initialState，供 access.ts / menuDataRender 消费
+      expect(state.permissions?.permCodes).toEqual(['file:download']);
+      expect(state.menus).toEqual([]);
+    },
+    60000,
+  );
 
   it('should redirect to login when currentUser fetch fails (401)', async () => {
     const { getInitialState } = await import('./app');
@@ -169,6 +179,43 @@ describe('app getInitialState', () => {
 
     const user = await state.fetchUserInfo?.();
     expect(user).toEqual({ name: 'Fetched User', access: 'admin' });
+  });
+});
+
+describe('app getInitialState 界面语言归一化', () => {
+  /**
+   * 浏览器语言可能落在受支持集合之外（`src/locales` 只有 zh-CN / en-US）。
+   * 不收敛的话 `formatMessage` 会回退成中文 `defaultMessage` 甚至原始 key，
+   * 现象就是用户说的「切换语言后界面文案没变」。
+   */
+  async function initialLocaleFor(browserLocale: string) {
+    mockGetLocale.mockReturnValue(browserLocale);
+    mockHistory.location = {
+      pathname: '/user/login',
+      search: '',
+      hash: '',
+    };
+    const { getInitialState } = await import('./app');
+    await getInitialState();
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('中文语系但无语言包（zh-TW）收敛为 zh-CN', async () => {
+    await initialLocaleFor('zh-TW');
+    expect(mockSetLocale).toHaveBeenCalledWith('zh-CN', false);
+  });
+
+  it('非中文语系且无语言包（ja-JP）收敛为 en-US', async () => {
+    await initialLocaleFor('ja-JP');
+    expect(mockSetLocale).toHaveBeenCalledWith('en-US', false);
+  });
+
+  it('已在受支持集合内时不写回，避免每次启动都动 localStorage', async () => {
+    await initialLocaleFor('en-US');
+    expect(mockSetLocale).not.toHaveBeenCalled();
   });
 });
 

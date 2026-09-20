@@ -95,10 +95,21 @@ export default defineConfig({
    */
   routePrefetch: {},
   /**
-   * @name manifest 配置
-   * @description 生成资源清单，配合 routePrefetch 使用
+   * @name PWA manifest
+   * @description umi 4.7.3 已无内置 manifest 特性（`preset-umi/dist/features` 下不存在该特性），
+   * 原先的 `manifest: {}` 属失效配置，`src/manifest.json` 也不会被任何人消费——
+   * 构建产物里既没有 manifest.json，也没有指向它的 <link>，PWA 实际不成立。
+   * 现改为：manifest 放在 `public/manifest.json`，随静态资源原样拷贝到产物根目录，
+   * 再由 links 注入 <link rel="manifest">。改品牌名请改 public/manifest.json。
    */
-  manifest: {},
+  links: [
+    {
+      rel: 'manifest',
+      href: `${PUBLIC_PATH.replace(/\/+$/, '')}/manifest.json`,
+      // 不用 join(PUBLIC_PATH, ...)：path.join 在 Windows 上产出反斜杠路径
+      // （`\manifest.json`），注入 HTML 后虽多被浏览器容错，但不该依赖这种行为。
+    },
+  ],
   //============== 以下都是max的插件配置 ===============
   /**
    * @name 数据流插件

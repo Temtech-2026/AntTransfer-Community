@@ -16,10 +16,10 @@
  *  - /audit：审计日志只读（仅 SUPER_ADMIN / AUDITOR）
  *  - 其余路径落入 404
  *
- * ⚠️ **非菜单路由**：侧边栏只渲染带 `name` 的路由，以下两条刻意不给 `name`——
- * 「菜单口径收敛」的落点，避免演示 / 工具页混进业务导航：
- *  - `/welcome`：项目介绍页，仅由顶栏 DocLink 进入；
- *  - `/upload`：分片上传示例页（离线 mock 演示），被 GlobalUploadProgress 默认队列的「去查看」指向。
+ * 侧边栏只渲染带 `name` 的路由，**菜单顺序 = 路由声明顺序**（过滤逻辑见
+ * services/access/menu-render.ts，保持原数组顺序，不重排）：
+ *  - `/welcome`：项目介绍页，侧栏第一项（`utils/redirect.ts` 的 DEFAULT_REDIRECT_PATH 指向它）；
+ *  - `/upload`：分片上传示例页（离线 mock 演示），当前带 `name`、会出现在侧栏。
  *
  * 权限接线（两层，前端只负责「不渲染」，后端 `@RequiresPerm` 才是安全边界）：
  *  1. `wrappers: ['@/components/PermGuard']` —— 越权访问就地 403（策略 D，不跳登录）；
@@ -50,18 +50,19 @@ export default [
     ],
   },
   {
+    // 侧栏第一项：菜单顺序 = 路由声明顺序，故置于 `/workbench` 之前
+    path: '/welcome',
+    name: 'welcome',
+    icon: 'home',
+    component: './Welcome',
+    wrappers: ['@/components/PermGuard'],
+  },
+  {
     // 工作台 = web 首页（PRD US-11）：只看得到自己的聚合数据，故不在 ROUTE_PERM_RULES 登记权限点
     path: '/workbench',
     name: 'workbench',
     icon: 'dashboard',
     component: './workbench',
-    wrappers: ['@/components/PermGuard'],
-  },
-  {
-    path: '/welcome',
-    name: 'welcome',
-    icon: 'home',
-    component: './Welcome',
     wrappers: ['@/components/PermGuard'],
   },
   {

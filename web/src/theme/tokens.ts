@@ -124,6 +124,23 @@ export function resolveIsDark(
   }
 }
 
+/**
+ * 三栏式外壳的尺寸口径。
+ *
+ * <p>「顶栏 / 左侧功能栏 / 主内容区」三块的宽高在这里统一声明：
+ * ProLayout 配置、抽屉与悬浮窗都从这里取，避免同一个尺寸在多处各写一份而失去一致性。
+ */
+export const SHELL = {
+  /** 顶栏高度：低于 56 会放不下「组织切换器 + 搜索框 + 三枚动作图标」 */
+  headerHeight: 56,
+  /** 左侧功能栏宽度：能完整显示「共享空间」这类四字菜单外加图标 */
+  siderWidth: 208,
+  /** 即时通讯抽屉宽度（方案口径 350~400px） */
+  chatDrawerWidth: 380,
+  /** 传输监控悬浮窗宽度 */
+  transferPanelWidth: 320,
+} as const;
+
 /** 写入主题偏好并广播事件，供 rootContainer 与 ProLayout 同步换肤。 */
 export function persistThemePreference(navTheme: string | undefined): void {
   try {
