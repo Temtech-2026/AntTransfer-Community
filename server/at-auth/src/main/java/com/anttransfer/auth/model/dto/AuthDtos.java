@@ -46,4 +46,23 @@ public final class AuthDtos {
             @NotBlank(message = "refreshToken 不能为空")
             String refreshToken) {
     }
+
+    /**
+     * 自助改密请求：先校验原口令（身份再确认），再落新口令。
+     *
+     * <p>这里只做「形状」约束（非空 + 上限），<b>强度策略不在此处</b>——长度 / 字符组合 /
+     * 与原口令的差异统一由 {@code PasswordPolicy} 判定并返回 {@code 1030}，
+     * 避免同一个策略散落在注解与服务两处、两边口径漂移。
+     * 上限 64 是硬安全边界：BCrypt 对超过 72 字节的输入会静默截断，
+     * 不设上限等于让「超长口令」在散列层面失真。</p>
+     */
+    public record ChangePasswordRequest(
+            @NotBlank(message = "原密码不能为空")
+            @Size(max = 128, message = "原密码长度超出限制")
+            String oldPassword,
+
+            @NotBlank(message = "新密码不能为空")
+            @Size(max = 64, message = "新密码长度超出限制")
+            String newPassword) {
+    }
 }

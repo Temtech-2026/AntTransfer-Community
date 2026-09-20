@@ -16,19 +16,26 @@
 package com.anttransfer.auth.service;
 
 import com.anttransfer.auth.config.AuthProperties;
+import com.anttransfer.auth.model.dto.AuthDtos.ChangePasswordRequest;
 import com.anttransfer.auth.model.vo.AuthVos.TokenResponse;
 import com.anttransfer.auth.model.vo.AuthVos.UserSummary;
 import com.anttransfer.auth.model.entity.SysUser;
 import com.anttransfer.auth.repository.UserMapper;
 import com.anttransfer.auth.security.JwtTokenProvider;
+import com.anttransfer.auth.security.PasswordPolicy;
 import com.anttransfer.auth.security.SecurityUtils;
+import com.anttransfer.common.audit.OperationLog;
 import com.anttransfer.common.exception.AuthException;
+import com.anttransfer.common.exception.BusinessException;
 import com.anttransfer.common.result.ErrorCode;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 认证编排：登录 / 刷新 / 登出 / 我的信息。
@@ -52,19 +59,22 @@ public class AuthService {
     private final TokenSessionService sessionService;
     private final LoginAttemptService attemptService;
     private final AuthProperties properties;
+    private final AuthAuditLogger auditLogger;
 
     public AuthService(UserMapper userMapper,
                        PasswordEncoder passwordEncoder,
                        JwtTokenProvider tokenProvider,
                        TokenSessionService sessionService,
                        LoginAttemptService attemptService,
-                       AuthProperties properties) {
+                       AuthProperties properties,
+                       AuthAuditLogger auditLogger) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.tokenProvider = tokenProvider;
         this.sessionService = sessionService;
         this.attemptService = attemptService;
         this.properties = properties;
+        this.auditLogger = auditLogger;
     }
 
     /**
@@ -145,6 +155,64 @@ public class AuthService {
     public void logout() {
         Long userId = SecurityUtils.getLoginUser().getId();
         sessionService.revokeAll(userId);
+    }
+
+    /**
+     * 本人自助改密：原口令再确认 → 强度策略 → 落新散列 → <b>全端吊销</b> → 审计。
+     *
+     * <p><b>为什么必须全端吊销（含发起这次请求的当前会话）：</b>改密的语义是「旧凭据从此不可信」。
+     * 若把当前端排除在外，那么「口令疑似泄露 → 用户改密自救」这条路径就是假的——
+     * 攻击者手里的 access token 仍能用满 30 min，refresh 也还能换新。因此这里一律 epoch+1，
+     * 响应成功后由前端清空本地令牌并引导重新登录。</p>
+     *
+     * <p><b>为什么走 {@code revokeAllInCurrentTransaction} 而不是 {@code revokeAll}：</b>
+     * 口令更新与会话吊销必须原子——若分两个事务，可能出现「口令已换、会话未吊销」的中间态
+     * （反之「会话已吊销、口令未换」会让用户无端被踢且旧口令仍可用）。两者并入同一事务，
+     * Redis 镜像在提交后清理（见 {@link TokenSessionService}）。</p>
+     *
+     * <p><b>不做失败计数：</b>这是已登录态下的身份再确认，不是爆破入口（要走到这里先得有合法令牌），
+     * 计数反而会给出「用别人的令牌试口令」的可观测通道。</p>
+     *
+     * @throws AuthException    未登录 / 账号已被停用或锁定（1001 / 1005 / 1004）
+     * @throws BusinessException 原口令不符（1029）或新口令不合规（1030）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void changePassword(ChangePasswordRequest request) {
+        Long userId = SecurityUtils.getLoginUser().getId();
+        SysUser user = userMapper.selectById(userId);
+        if (user == null) {
+            // 令牌有效但账号行已消失（并发删除）：按未登录处理，让前端回登录页
+            throw new AuthException(ErrorCode.NOT_LOGIN);
+        }
+        if (user.getStatus() != null && user.getStatus() == SysUser.STATUS_DISABLED) {
+            throw new AuthException(ErrorCode.ACCOUNT_DISABLED);
+        }
+        if (user.getStatus() != null && user.getStatus() == SysUser.STATUS_LOCKED) {
+            throw new AuthException(ErrorCode.ACCOUNT_LOCKED);
+        }
+        // 1. 身份再确认：原口令不符直接拒绝（不改任何状态，也不计数）
+        if (!passwordEncoder.matches(request.oldPassword(), user.getPasswordHash())) {
+            throw new BusinessException(ErrorCode.OLD_PASSWORD_MISMATCH);
+        }
+        // 2. 强度策略（含「不得与原口令相同」）
+        PasswordPolicy.assertCompliant(request.newPassword(), request.oldPassword());
+
+        // 3. 落新散列
+        String newHash = passwordEncoder.encode(request.newPassword());
+        int affected = userMapper.updatePassword(userId, newHash, userId);
+        if (affected == 0) {
+            // 与 3 之间的并发删除：抛出以回滚（本次没有改动任何行，回滚是空操作）
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
+
+        // 4. 全端吊销：与口令更新同事务，提交后清 Redis 镜像
+        sessionService.revokeAllInCurrentTransaction(userId);
+
+        // 5. 审计（成功行入本事务；失败绝不抛异常影响改密结果）
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("username", user.getUsername());
+        detail.put("revokedSessions", true);
+        auditLogger.success(OperationLog.ACTION_PASSWORD_CHANGE, OperationLog.TARGET_USER, userId, detail);
     }
 
     /**

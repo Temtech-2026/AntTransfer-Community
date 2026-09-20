@@ -363,6 +363,42 @@
   [docs/development/README.md](docs/development/README.md) § 测试策略建立入口（与 `architecture.md`
   § 🎯 本阶段 DoD「阶段范围 DoD」明确区分，避免两套 DoD 混淆）。
 
+- 🔐 **账号自助改密 + 停用即时吊销（GAP-03 / GAP-02 同批收口，2026-09-20）**：
+  - 🔑 **新增自助改密端点 `PUT /api/v1/auth/password`**（body `{oldPassword, newPassword}`）：
+    `AuthService#changePassword` 按序执行「账号状态校验 → 原口令 `matches` → `PasswordPolicy` →
+    `updatePassword` → 全端吊销 → 审计」；成功后 `token_epoch + 1`（**含发起本次请求的当前会话**），
+    故前端拿到 `code=0` 也必须清本地令牌并回登录页，否则后续请求只会拿到 401 + `1001`；
+  - 🧪 新增 `PasswordPolicy`：长度 8~64、须同时包含字母与数字、不得含空白、**不得与原口令相同**；
+    上限 64 是 BCrypt 72 字节截断的安全边界；
+  - 📇 新增错误码 `1029 OLD_PASSWORD_MISMATCH` / `1030 PASSWORD_POLICY_VIOLATION`（均 HTTP 400 + 策略 E）：
+    属「请求被拒、**会话仍有效**」——就地提示并把错误挂到具体字段，**不得清令牌、不得跳登录**；
+    前端 `result.ts` 策略表与 `requestErrorConfig.test.ts` 同步断言；
+  - 🧾 新增审计动作 `OperationLog.ACTION_PASSWORD_CHANGE = "PASSWORD_CHANGE"`：
+    detail 仅记 `username` 与 `revokedSessions`，**不落任何口令明文 / 摘要**；
+  - 🛠️ **停用即时吊销（GAP-02 真正的根因修复）**：原实现「只递增 `token_epoch`、未清 Redis 纪元镜像键
+    `at:token:access:{userId}`」时，`JwtAuthenticationFilter` 回源会读到**未提交的旧纪元**并**自愈回填**，
+    把刚写下的吊销抹掉（最坏拖到 access TTL **30 min**，这才是「2 分钟窗口」的真实来源）。
+    现 `TokenSessionService` 新增 `revokeAllInCurrentTransaction(userId)`
+    （`@Transactional(MANDATORY)`，参与调用方事务，避免管理面持 `sys_user` 行锁时另开事务自锁），
+    与既有 `revokeAll`（`REQUIRES_NEW`）共用同一个私有方法 `bumpEpochAndEvictAfterCommit`
+    （DB 纪元为唯一权威 + **事务提交后**（`afterCommit`）清 Redis 镜像键，且清理异常被吞掉只告警：
+    缓存清理失败最多退化为窗口期，**不会**把已提交的登出 / 改密翻成 500 或整笔回滚）；`UserAdminPortAdapter` 的
+    `resetPassword` / `changeStatus(停用)` / `deleteUser` 统一改调该方法 —— 停用**当场失效**，优于原「2 分钟内」验收；
+  - 🧪 回归：`AuthServiceTest`（成功吊销 + 审计 / 1029 / 1030 / 1005 且不校验原口令）、新增 `PasswordPolicyTest`
+    （长度边界 / 组合 / 空白 / 与原口令相同 / null / 合规放行）、`AuthFlowIntegrationTest` 增
+    `changePassword_shouldRevokeAllSessionsAndRotateCredential` 与 `disableUser_shouldRevokeSessionsImmediately`
+    （管理员停用后原 access 立即 401 + `1001`）；
+  - 💻 前端：`services/auth#changePassword`（**成功才清本地令牌**，失败保留）+ `AvatarDropdown` 新增
+    「修改密码」入口与二次确认弹窗（当前 / 新 / 确认新口令），i18n 中英齐备；回归护栏
+    `web/src/services/auth/api.test.ts`（成功清令牌 / 失败保留令牌成对断言）；
+  - 📄 文档同步：[api/README.md](docs/api/README.md) §5 端点表与「自助改密结果分两类」说明、
+    [error-codes.md](docs/api/error-codes.md) 新增 1029 / 1030 行 + 「GAP-02 收口说明」副作用表、
+    [prd/README.md](docs/prd/README.md) §4.1「登录 / 注销 / 改密」与「停用 / 启用」两行置 ✅、
+    [AT-DIFF-todos.md](docs/development/AT-DIFF-todos.md) GAP-02 / GAP-03 置「已关闭」并留决策留痕。
+  - ℹ️ 备注：GAP-02 方案 B（`JwtAuthenticationFilter` 逐请求校验 `sys_user.status` + Redis 快照兜底）
+    **未实现** —— 按「不做非必需动作」原则不顺手扩面，当前 A 路径已覆盖全部管理面入口，
+    重启条件记于 AT-DIFF-todos。
+
 ### 🔄 Changed（变更）
 
 - ⚠️ **授权收敛（破坏性）**：`sql/V8__restrict_file_destroy_to_super_admin.sql` 从 DEPT_ADMIN 回收
@@ -593,6 +629,17 @@
   `UnsupportedClassVersionError`（65.0 无法被只认到 61.0 的 JVM 加载）——报错落在运行期、根因却在环境变量。
   现 JDK 不对即失败并直接给出修复指引（`mvnw -v` 可查看当前 JVM）。口径：校验的就是「运行 Maven 的 JDK」
   （它同时是 `spring-boot:run` 派生 JVM 的来源，二者必然一致），下界 21、不设上界（JDK 22/25 照常放行）。
+
+### 🐛 Fixed（修复）
+
+- 🌐 **侧栏菜单切换语言后「只有个别项翻译生效、其余菜单名不变」**：Ant Design Pro 脚手架自带的 8 个语言包
+  只翻译了示例页菜单，项目自建菜单键（`menu.workbench` / `menu.upload` / `menu.file` / `menu.shares` /
+  `menu.message` / `menu.chat` / `menu.approval` / `menu.permissionMap` / `menu.audit` / `menu.system*`）
+  原先只补在 `zh-CN`、`en-US`；其余 6 种语言（`zh-TW` / `ja-JP` / `pt-BR` / `id-ID` / `fa-IR` / `bn-BD`）
+  因缺键被 `react-intl` 回退到 `formatMessage` 的 `defaultMessage`，也就是**把路由名 `workbench` / `upload`
+  原样显示**，表现为「只有 `menu.welcome`（脚手架共有键）会变，其余都不变」。现按路由口径补齐 15 个键 × 6 语言，
+  并新增回归用例 [`web/src/locales/menu-i18n.test.ts`](web/src/locales/menu-i18n.test.ts)——
+  必需键直接由 `config/routes.ts` 派生，**新增菜单若漏翻译任一语言会立即失败**。
 
 ### 🔒 Security（安全）
 

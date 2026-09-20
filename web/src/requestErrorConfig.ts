@@ -14,13 +14,13 @@
  * 3. 其余非 0 码统一经 {@link presentError} 按策略提示，5xxx 附 `traceId` 便于上报排障。
  */
 import type { RequestConfig } from '@umijs/max';
-import { history, request } from '@umijs/max';
+import { getIntl, history, request } from '@umijs/max';
 import { message, notification } from 'antd';
 
 import { withAcceptLanguageHeader } from './utils/locale';
 import {
   BAD_CREDENTIALS_CODE,
-  DEFAULT_ERROR_MESSAGE,
+  DEFAULT_ERROR_MESSAGE_ID,
   HandleStrategy,
   isFlowBranch,
   isResult,
@@ -39,6 +39,19 @@ const REFRESH_URL = '/api/v1/auth/token/refresh';
 
 /** 重放标记：防止 401 重试死循环 */
 const RETRY_FLAG = '__anttransferRetried';
+
+/**
+ * 非 React 环境的文案取值入口（组件内一律仍用 `useIntl`）。
+ *
+ * <p>请求拦截器不在组件树里，拿不到 `intl` 上下文，只能走 Umi 的 `getIntl()`
+ * （与 OfflineBanner / ErrorBoundary 的用法一致）。
+ */
+export function translateMessage(
+  id: string,
+  values?: Record<string, string | number>,
+): string {
+  return getIntl().formatMessage({ id }, values);
+}
 
 /**
  * refresh 单飞（single-flight）：并发多个 401 时只发一次刷新请求，
@@ -115,8 +128,12 @@ function presentError(result: Result, opts?: { silent?: boolean }): void {
   if (opts?.silent) {
     return;
   }
-  const { code, message: text, traceId } = result;
+  const { code, message: rawText, traceId } = result;
   const strategy = resolveStrategy(code);
+  // 后端下发的 message 已按 Accept-Language 本地化，直接透出；
+  // 只有前端自造的兜底占位（DEFAULT_ERROR_MESSAGE_ID）才需要就地翻译。
+  const text =
+    rawText === DEFAULT_ERROR_MESSAGE_ID ? translateMessage(rawText) : rawText;
 
   switch (strategy) {
     // A 成功 / B 流程分支：绝不提示。B 类 HTTP 200 且 code≠0 属正常分支，
@@ -148,14 +165,14 @@ function presentError(result: Result, opts?: { silent?: boolean }): void {
 
     case HandleStrategy.THROTTLE:
       // 429：限流或锁定，提示退避
-      message.warning(`${text}，请稍后重试`);
+      message.warning(translateMessage('app.request.retryLater', { message: text }));
       return;
 
     case HandleStrategy.SYSTEM:
       // 5xx：统一兜底文案 + traceId，便于用户上报
       notification.error({
         message: text,
-        description: traceId ? `traceId：${traceId}` : undefined,
+        description: traceId ? translateMessage('app.request.traceId', { traceId }) : undefined,
         placement: 'topRight',
       });
       return;
@@ -244,7 +261,7 @@ export const errorConfig: RequestConfig = {
         if (res?.success === false) {
           throw createBizError({
             code: res.errorCode ?? 5001,
-            message: res.errorMessage ?? DEFAULT_ERROR_MESSAGE,
+            message: res.errorMessage ?? DEFAULT_ERROR_MESSAGE_ID,
             data: res.data,
             traceId: '',
           });
@@ -288,16 +305,19 @@ export const errorConfig: RequestConfig = {
 
       // ③ 无响应体：网络层异常
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-        message.error('网络不可用，请检查网络连接后重试');
+        message.error(translateMessage('app.request.offline'));
         return;
       }
       if (error?.response?.status) {
         message.error(
-          `${DEFAULT_ERROR_MESSAGE}（HTTP ${error.response.status}）`,
+          translateMessage('app.request.http', {
+            message: translateMessage(DEFAULT_ERROR_MESSAGE_ID),
+            status: error.response.status,
+          }),
         );
         return;
       }
-      message.error(DEFAULT_ERROR_MESSAGE);
+      message.error(translateMessage(DEFAULT_ERROR_MESSAGE_ID));
     },
   },
 
@@ -320,3 +340,5 @@ export const errorConfig: RequestConfig = {
 // refreshTokenOnce：供分片上传的 XHR 通道复用同一「单飞刷新」逻辑，
 // 避免上传流另起一套刷新实现导致 refresh 轮换竞态（新令牌被旧请求覆盖）。
 export { presentError, redirectToLogin, refreshTokenOnce, resolveStrategy };
+// translateMessage：供 services/request 的 XHR 通道复用同一套「无响应体兜底文案」，
+// 避免上传/下载路径另起一份文案导致口径漂移。

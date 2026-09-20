@@ -51,7 +51,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * ① 登录成功返回双 Token；② 未登录访问受保护接口 → 401(1001)；
  * ③ 登录无权限（AUDITOR 访问 file 系接口）→ 403(1003)；④ 有权限（SUPER_ADMIN）→ 200；
  * ⑤ 审计员调用写接口 → 403(1003)；⑥ 登出后旧 access token 立即失效 → 401(1001)；
- * ⑦ refresh 轮换：旧 refresh 复用 → 401(1006)（重放打击）；⑧ 错误密码登录 → 401(1007)。</p>
+ * ⑦ refresh 轮换：旧 refresh 复用 → 401(1006)（重放打击）；⑧ 错误密码登录 → 401(1007)；
+ * ⑨ 本人自助改密 → 原口令错 400(1029) / 弱口令 400(1030) / 成功后旧 token 立即失效且旧口令不可登录；
+ * ⑩ 管理面停用 → 被停用账号的在途 access token <b>当场</b>失效（GAP-02：不允许等 TTL 自然过期）。</p>
  *
  * <p>依赖说明：需要 Docker（Testcontainers）；本机无 Docker 时自动跳过（disabledWithoutDocker）。
  * 安全断言不落到真实业务表：审计员等测试账号仅在本次容器化实例内插入，随容器销毁。</p>
@@ -220,6 +222,85 @@ class AuthFlowIntegrationTest {
         assertEquals(1007, bodyCode(resp));
     }
 
+    /* ============================ 9. 本人自助改密 → 全端吊销 + 凭据轮换 ============================ */
+
+    @Test
+    @Order(9)
+    void changePassword_shouldRevokeAllSessionsAndRotateCredential() {
+        // 专用账号，避免污染 admin / auditor 这两个被其他用例依赖的口令
+        jdbc.update("delete from sys_user where id = 30001");
+        jdbc.update("""
+                insert into sys_user
+                    (id, username, password_hash, nickname, remark, tenant_id, status, token_epoch, deleted)
+                values (30001, 'it_pwd', ?, '集成测试改密账号', 'it', 0, 0, 0, 0)
+                """, ADMIN_HASH);
+        String token = loginToken("it_pwd", "Admin@123");
+
+        // 原口令不符 → 400 / 1029
+        ResponseEntity<String> wrongOld = putWithToken("/v1/auth/password",
+                "{\"oldPassword\":\"nope-wrong\",\"newPassword\":\"NewPass456\"}", token);
+        assertEquals(HttpStatus.BAD_REQUEST, wrongOld.getStatusCode());
+        assertEquals(1029, bodyCode(wrongOld));
+
+        // 新口令强度不足（7 位）→ 400 / 1030
+        ResponseEntity<String> weak = putWithToken("/v1/auth/password",
+                "{\"oldPassword\":\"Admin@123\",\"newPassword\":\"Short12\"}", token);
+        assertEquals(HttpStatus.BAD_REQUEST, weak.getStatusCode());
+        assertEquals(1030, bodyCode(weak));
+
+        // 合规改密 → 200
+        ResponseEntity<String> changed = putWithToken("/v1/auth/password",
+                "{\"oldPassword\":\"Admin@123\",\"newPassword\":\"NewPass456\"}", token);
+        assertEquals(HttpStatus.OK, changed.getStatusCode());
+        assertEquals(0, bodyCode(changed));
+
+        // 连发起本次请求的 access token 也当场作废（改密 = 旧凭据全部不可信）
+        ResponseEntity<String> afterChange = getWithToken("/v1/auth/me", token);
+        assertEquals(HttpStatus.UNAUTHORIZED, afterChange.getStatusCode());
+        assertEquals(1001, bodyCode(afterChange));
+
+        // 旧口令不再可登录（1007），新口令可以
+        assertEquals(1007, bodyCode(postJsonRaw("/v1/auth/token",
+                "{\"username\":\"it_pwd\",\"password\":\"Admin@123\"}")));
+        assertNotNull(loginToken("it_pwd", "NewPass456"));
+
+        jdbc.update("delete from sys_user where id = 30001");
+    }
+
+    /* ============================ 10. 管理面停用 → 在途会话即时失效（GAP-02） ============================ */
+
+    @Test
+    @Order(10)
+    void disableUser_shouldRevokeSessionsImmediately() {
+        jdbc.update("delete from sys_user where id = 30002");
+        jdbc.update("""
+                insert into sys_user
+                    (id, username, password_hash, nickname, remark, tenant_id, status, token_epoch, deleted)
+                values (30002, 'it_disable', ?, '集成测试停用账号', 'it', 0, 0, 0, 0)
+                """, ADMIN_HASH);
+        String victimToken = loginToken("it_disable", "Admin@123");
+        assertEquals(0, bodyCode(getWithToken("/v1/auth/me", victimToken)));
+
+        String adminToken = loginToken("admin", "Admin@123");
+        ResponseEntity<String> disabled = patchWithToken("/v1/system/users/30002/status",
+                "{\"status\":1}", adminToken);
+        assertEquals(HttpStatus.OK, disabled.getStatusCode());
+        assertEquals(0, bodyCode(disabled));
+
+        // 关键断言：停用响应返回的那一刻，其 access token 就已失效。
+        // 若只递增 token_epoch 而没清 Redis 纪元镜像（GAP-02 根因），这里会读到旧纪元而放行，
+        // 旧令牌能一直用到 access TTL（30 min）自然过期——本断言就是那个回归的探针。
+        ResponseEntity<String> afterDisable = getWithToken("/v1/auth/me", victimToken);
+        assertEquals(HttpStatus.UNAUTHORIZED, afterDisable.getStatusCode());
+        assertEquals(1001, bodyCode(afterDisable));
+
+        // 且不能再登录（1005 账号禁用）
+        assertEquals(1005, bodyCode(postJsonRaw("/v1/auth/token",
+                "{\"username\":\"it_disable\",\"password\":\"Admin@123\"}")));
+
+        jdbc.update("delete from sys_user where id = 30002");
+    }
+
     /* ============================ helpers ============================ */
 
     private String loginToken(String username, String password) {
@@ -253,6 +334,20 @@ class AuthFlowIntegrationTest {
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(token);
         return rest.exchange(path, HttpMethod.POST, new HttpEntity<>(headers), String.class);
+    }
+
+    private ResponseEntity<String> putWithToken(String path, String body, String token) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(token);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        return rest.exchange(path, HttpMethod.PUT, new HttpEntity<>(body, headers), String.class);
+    }
+
+    private ResponseEntity<String> patchWithToken(String path, String body, String token) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(token);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        return rest.exchange(path, HttpMethod.PATCH, new HttpEntity<>(body, headers), String.class);
     }
 
     private JsonNode read(ResponseEntity<String> resp) throws Exception {

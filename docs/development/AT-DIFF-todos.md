@@ -30,9 +30,13 @@ IDE 提示（任选其一）：
 > 仅本文档登记），故上表 grep 计数仍为 3 处（02/03/05）。
 
 > 另：2026-09-14 复核 `docs/prd/README.md` §4.1 后端现状时新识别 **8 项实现缺口**（**非口径差异**，
-> 属「§4 要求的动作代码里还没有」），登记在文末「🧱 后端功能缺口登记（GAP-01 ~ GAP-08）」，
+> 属「§4 要求的动作代码里还没有」），登记在文末「🧱 后端功能缺口登记（GAP-01 ~ GAP-09）」，
 > 同样不落 `TODO` 标记、同样按「整体完工后关闭」处理；其中 3 项（共享空间 / 审批端点 / 分片上传）
 > 已由 **D-5 / D-11** 覆盖，未重复登记。
+>
+> **GAP-09** 为 2026-09-20 落地「文件列表安全状态徽标」时新识别的缺口：
+> 前端已按**可选字段**实现（有则显示、无则整条不渲染），故不阻塞、也不影响正确性，
+> 仅登记「服务端补齐后即可生效」的字段需求。
 
 > 发布门禁建议：进入版本收尾前，将「TODO[AT-DIFF- 为 0」纳入 checklist
 > （对应 docs/deployment/README.md 上线清单），防止带未裁决口径发版。
@@ -207,7 +211,7 @@ IDE 提示（任选其一）：
 
 ---
 
-## 🧱 后端功能缺口登记（GAP-01 ~ GAP-08）
+## 🧱 后端功能缺口登记（GAP-01 ~ GAP-09）
 
 > **来源**：2026-09-14 以 `server/` 实际代码为准复核 `docs/prd/README.md` §4.1「实现现状核查」时，
 > 在**已落地部分中发现的缺口**。与 AT-DIFF 的区别：AT-DIFF 记的是「外部计划书 vs 已冻结契约的口径差异（待裁决）」，
@@ -224,18 +228,20 @@ IDE 提示（任选其一）：
 >
 > **关闭时机**：与 AT-DIFF 一致——上传 / 审批 / 分享三条主线跑通后的加固期逐条改进。
 > 其中 ~~**GAP-01 建议提前**（默认 1 MB 会直接挡掉大文件上传验收）~~ **✅ 已随分片上传主线落地（2026-09-14）**，
-> **GAP-02 / GAP-03 同批**（账号生命周期动作）。
+> ~~**GAP-02 / GAP-03 同批**（账号生命周期动作）~~ **✅ 已于 2026-09-20 同批关闭**
+> （自助改密端点 + 停用即时吊销，含 Redis 纪元镜像键回填缺陷修复）。
 
 | ID | 缺口 | 级别 | 代码现状锚点 |
 | --- | --- | --- | --- |
 | [GAP-01](#gap-01上传大小上限未配置) | ~~上传上限未配置，沿用 Spring 默认单文件 1 MB~~ **✅ 主要缺口已关闭（2026-09-14）**：`spring.servlet.multipart` 64 MB / 80 MB + `anttransfer.transfer.*` | P0 配置缺口 | `server/at-bootstrap/src/main/resources/application.yml` |
-| [GAP-02](#gap-02账号停用未联动吊销会话) | 停用账号未吊销在途会话，不满足「2 分钟内失效」 | P0 验收缺口 | `at-permission/.../service/UserAdminService.java`、`at-auth/.../security/JwtAuthenticationFilter.java` |
-| [GAP-03](#gap-03无用户自助改密端点) | 无用户自助改密端点（仅管理面重置） | P0 功能缺口 | `at-auth/.../controller/AuthController.java` |
+| [GAP-02](#gap-02账号停用未联动吊销会话) | ~~停用账号未吊销在途会话，不满足「2 分钟内失效」~~ **✅ 已关闭（2026-09-20）**：停用同事务 `token_epoch+1` + 提交后清 Redis 镜像键，**当场失效** | P0 验收缺口 | `at-auth/.../service/TokenSessionService.java`、`at-auth/.../service/UserAdminPortAdapter.java` |
+| [GAP-03](#gap-03无用户自助改密端点) | ~~无用户自助改密端点（仅管理面重置）~~ **✅ 已关闭（2026-09-20）**：新增 `PUT /api/v1/auth/password` | P0 功能缺口 | `at-auth/.../controller/AuthController.java`、`at-auth/.../security/PasswordPolicy.java` |
 | [GAP-04](#gap-04健康检查与优雅启停缺失) | 无健康检查端点、未开优雅启停、compose 中 server 无探针 | P0 部署缺口 | `at-bootstrap/src/main/resources/application.yml`、`docker-compose.yml` |
 | [GAP-05](#gap-05三权分立缺角色互斥校验) | 角色互斥无数据层约束 / 服务层校验 | P1 合规缺口 | `at-permission`（`mutex` 全仓零命中） |
 | [GAP-06](#gap-06敏感级别缺变更端点与变更审计) | 敏感级别无变更端点、无级别变更审计、无「提级需审批」联动 | P1 合规缺口 | `at-file/.../model/entity/FileNode.java`、`at-permission/.../config/ApprovalProperties.java` |
 | [GAP-07](#gap-07全文搜索未建索引) | 检索 `keyword` 走 LIKE 模糊匹配，未建全文索引 | P1 能力 / 性能缺口 | `at-file/.../controller/FileController.java`（`NodeQuery`） |
 | [GAP-08](#gap-08轻-im-缺-提及与消息保留策略) | 轻 IM 缺 @ 提及与「消息保留 ≥ 30 天」策略 | P1 验收缺口 | `at-collaboration/.../service/ChatService.java` |
+| [GAP-09](#gap-09安全徽标所需字段未下发) | 安全徽标所需字段未下发：`watermarkEnabled` / `expireAt` | P1 能力缺口 | `at-file/.../model/vo/FileNodeVO.java`、`web/src/pages/file/components/SecurityBadges.tsx` |
 
 ---
 
@@ -260,35 +266,65 @@ IDE 提示（任选其一）：
 
 ### GAP-02：账号停用未联动吊销会话
 
-- **现象**：管理员停用某账号后，该用户持**已有 access token** 仍可继续访问，直至令牌自然过期（TTL 30 min）。
-- **证据**：
+> **✅ 状态：已关闭（2026-09-20）**。原「现象 / 证据 / 影响」已不成立，保留作决策留痕。
+
+- ~~**现象**：管理员停用某账号后，该用户持**已有 access token** 仍可继续访问，直至令牌自然过期（TTL 30 min）。~~
+- **证据（原）**：
   - `at-permission` 的 `UserAdminService#changeStatus`（权限点 `system:user:status`）只写 `sys_user.status`，
     **未调用任何会话吊销入口**；
   - `TokenSessionService#revokeAll`（DB `token_epoch + 1` 为唯一权威 + 事务提交后清 Redis）仅由 `logout`、
     `refresh` 遇停用、refresh 重放三类路径触发；
   - `JwtAuthenticationFilter` 仅校验签名 / 过期 / `token_epoch`，**不逐请求校验 `sys_user.status`**。
-- **影响**：§4 验收「账号停用 / 启用（停用 2 分钟内会话失效）」**不达标**，最坏 30 min；
-  窗口期内被停用账号仍可读写其权限内资源（离职 / 违规处置场景敏感）。
-- **回头需完成**（可叠加）：
-  - **A（推荐，即时吊销）**：`changeStatus` 在停用时经 **`UserAdminPort` 扩展方法**触发吊销
-    （实现落 at-auth、接口留 at-common，守住「at-permission 不反向依赖 at-auth」的模块边界）；
-  - **B（兜底，逐请求校验）**：`JwtAuthenticationFilter` 增加用户状态校验（走 Redis 快照，避免每请求打 DB），
-    并把停用状态写入该快照，使绕过 A 的路径失效。
-- **触发时机**：账号治理加固期；与 **GAP-03** 同批。
+  - **复审补记（2026-09-20，真正的根因）**：即使照方案 A 直接调 `revokeAll` 也不够——`revokeAll` 是
+    `REQUIRES_NEW`（为登出 / refresh 重放设计的自提交语义），与管理面「停用 + 审计」事务彼此独立；
+    更要命的是「只递增 `token_epoch` 而不清 Redis 纪元镜像键 `at:token:access:{userId}`」时，
+    `JwtAuthenticationFilter` 回源会读到**未提交的旧纪元**并**自愈回填**，把刚写下的吊销抹掉，
+    最坏拖到 access TTL（30 min）——这才是「2 分钟窗口」的真实来源。
+- ~~**影响**：§4 验收「账号停用 / 启用（停用 2 分钟内会话失效）」**不达标**，最坏 30 min。~~
+- **已落地**：
+  - `TokenSessionService` 新增 `revokeAllInCurrentTransaction(userId)`（`@Transactional(propagation = MANDATORY)`），
+    与既有 `revokeAll`（`REQUIRES_NEW`）共用同一个私有方法 `bumpEpochAndEvictAfterCommit`：
+    **DB `token_epoch + 1` 为唯一权威 + 事务提交后清 Redis 镜像键**，两者语义差异只在传播行为；
+  - Redis 清理放在**事务提交之后**（`afterCommit` 回调）并吞掉异常：`token_epoch + 1` 先提交，
+    「清缓存失败」最多退化为窗口期，**不会**把已成功的登出 / 改密翻成 500 或整笔回滚
+    （改密回滚 = 用户以为改了其实没改）；
+  - `UserAdminPortAdapter#resetPassword / changeStatus(停用) / deleteUser` 统一改调
+    `revokeAllInCurrentTransaction`（替换原先内联 / 裸 `bumpTokenEpoch`），**参与管理面同一事务**，
+    避免在持 `sys_user` 行锁时另开 `REQUIRES_NEW` 事务自锁；
+  - 结果：停用**当场失效**，优于 §4 的「2 分钟内」。
+- **交叉引用**：`docs/api/error-codes.md` 的 1005 行与「GAP-02 收口说明」；
+  集成回归 `AuthFlowIntegrationTest#disableUser_shouldRevokeSessionsImmediately`（管理员停用后原 access 立即 401 + 1001）。
+- **触发时机**：✅ 已随账号生命周期主线（GAP-03 同批）落地。
 
 ### GAP-03：无用户自助改密端点
 
-- **现象**：用户无法自行修改口令，只能由管理员重置。
-- **证据**：`AuthController`（`/v1/auth`）仅暴露 `POST /token`、`POST /token/refresh`、`POST /logout`、`GET /me`；
+> **✅ 状态：已关闭（2026-09-20）**。原「现象 / 证据 / 影响」已不成立，保留作决策留痕。
+
+- ~~**现象**：用户无法自行修改口令，只能由管理员重置。~~
+- **证据（原）**：`AuthController`（`/v1/auth`）仅暴露 `POST /token`、`POST /token/refresh`、`POST /logout`、`GET /me`；
   改密只存在于管理面 `POST /v1/system/users/{id}/reset-password`
   （`UserAdminPortAdapter#resetPassword`，SQL 内联 `token_epoch + 1`）。
-- **影响**：§4 P0「本地账号登录 / 注销 / 改密」仅完成登录 / 注销。**「改密后全端令牌吊销」语义已具备**
-  （重置路径已带 `token_epoch + 1`），缺的是用户自助入口——「首次登录强制改密」「口令到期更换」
-  「疑似泄露自救」等场景无法闭环。
-- **回头需完成**：新增 `PUT /v1/auth/password`（校验旧口令 + 强度策略 + 复用 `token_epoch + 1` 全端吊销 +
-  审计「谁修改了自己的口令」）；同步 `docs/api/README.md` 端点表与 `docs/development/frontend-permission-map.md`，
-  前端补设置页入口与二次确认。
-- **触发时机**：账号与安全设置主线；与 **GAP-02** 同批。
+- ~~**影响**：§4 P0「本地账号登录 / 注销 / 改密」仅完成登录 / 注销。~~
+- **已落地**：`PUT /api/v1/auth/password`（body `{oldPassword, newPassword}`），链路：
+  - `AuthService#changePassword`（`@Transactional(rollbackFor = Exception.class)`）按序执行
+    「账号状态校验（停用 → 1005）→ 原口令 `matches`（不符 → **1029**）→ `PasswordPolicy`（不合规 → **1030**）→
+    `UserAdminPort#updatePassword` → `revokeAllInCurrentTransaction` 全端吊销 → 审计」；
+  - `PasswordPolicy`（at-auth）：长度 8~64、须同时含字母与数字、不得含空白、**不得与原口令相同**；
+    上限 64 是 BCrypt 72 字节截断的安全边界；
+  - 错误码：`1029 OLD_PASSWORD_MISMATCH` / `1030 PASSWORD_POLICY_VIOLATION`，均 HTTP 400 + 策略 E
+    （**就地修正，不跳登录**——请求被拒 ≠ 会话失效）；
+  - 审计：`OperationLog.ACTION_PASSWORD_CHANGE = "PASSWORD_CHANGE"`，detail 仅记 `username` 与
+    `revokedSessions`，**不落任何口令明文 / 摘要**；
+  - 前端：`services/auth#changePassword`（成功才清本地令牌）+ `AvatarDropdown` 新增「修改密码」入口
+    与二次确认弹窗（旧 / 新 / 确认），i18n 中英齐备；回归护栏 `web/src/services/auth/api.test.ts`。
+- **交叉引用**：`docs/api/README.md` §5 端点表与「自助改密结果分两类」说明；
+  `docs/prd/README.md` §4.1「本地账号登录 / 注销 / 改密」已置 ✅。
+- **触发时机**：✅ 已随账号与安全设置主线（GAP-02 同批）落地。
+
+> ℹ️ **GAP-02 方案 B（`JwtAuthenticationFilter` 逐请求校验 `sys_user.status`，Redis 快照兜底）未实现**，
+> 按「不做非必需动作」原则不顺手扩面：当前 A 路径已覆盖全部管理面入口（重置口令 / 停用 / 删除），
+> 且「登录与刷新时强校验」兜住了重新认证路径。若后续出现绕过管理面的禁用写入（如直接改库 / DBA 运维），
+> 再以独立条目重启方案 B。
 
 ### GAP-04：健康检查与优雅启停缺失
 
@@ -356,3 +392,27 @@ IDE 提示（任选其一）：
   ② 保留策略：明确「≥ 30 天」的下限与归档 / 清理动作（可复用 **D-10** 的 `AuditArchiveScheduler`
   同构方案与分布式锁要求）。
 - **触发时机**：协作主线（Phase 3，at-collaboration 落地）时；清理任务与 **D-10** 同批。
+
+### GAP-09：安全徽标所需字段未下发
+
+- **现象**：文件列表新增的「安全状态徽标」中，**水印**与**即将失效**两条永远不会亮起；
+  回收站也无法给出「距清理还剩几天」。前端已按可选字段实现完毕，缺的只是服务端下发。
+- **证据**：
+  - `FileNodeVO` 的字段清单为 `id / name / ext / level / sizeBytes / updateTime / folderId /
+    parentId / tags / status / recycleTime`，**无** `watermarkEnabled`、**无** `expireAt`
+    （前端在 `web/src/services/file/types.ts` 的 `FileNodeSecurityExt` 里声明为可选扩展，
+    `securityMarks()` 只在字段为 `true` / 可解析出时间时才产出徽标 —— 有则显示，无则整条不渲染）。
+  - 回收站保留期由 `FileProperties.recycleRetentionDays`（默认 30 天，PRD US-09）决定，是**可配置项**，
+    CE 没有任何端点把它暴露给前端；因此 `recycleTime` 虽已下发，前端只能算「已停留 N 天」，
+    算不出「剩余 N 天」（写死 30 会在管理员改配置后立刻失真）。
+- **影响**：不影响正确性，但「安全状态可视化」缺了最要紧的两条信号 —— 水印是机密级文件的核心保护
+  （用户需要知道「这份文件流出后能不能溯源」），失效期决定链接何时自己断掉。
+  与 **GAP-06** 同根：密级目前只有**标签**，没有**治理动作**。
+- **回头需完成**：① `FileNodeVO` 增加可选 `watermarkEnabled`：来源需先定口径（按文件密级策略继承，
+  还是按该文件当前生效分享的配置），并与附录 C 已预留的 `WatermarkProvider` 扩展点（见 **D-2**，
+  命名待回写）保持一致；② 增加可选 `expireAt`：**先定语义** —— 是「节点自身的有效期」
+  还是「该节点上所有生效授权的最近失效时刻」，两者在产品上是不同的事，定完再落字段；
+  ③ 三个保留期相关字段（或将保留期本身）下发，或直接下发 `purgeAt` 清理时刻，
+  让前端能显示「剩余 N 天」；④ 同步 `docs/api/README.md` 的 FileNode 字段表与前端类型
+  （前端已按可选实现，服务端补齐后**无需改前端**）。
+- **触发时机**：安全可视化 / 合规加固期，**与 GAP-06（密级变更治理）同批**。

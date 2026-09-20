@@ -15,6 +15,7 @@
  */
 package com.anttransfer.auth.controller;
 
+import com.anttransfer.auth.model.dto.AuthDtos.ChangePasswordRequest;
 import com.anttransfer.auth.model.dto.AuthDtos.LoginRequest;
 import com.anttransfer.auth.model.dto.AuthDtos.RefreshTokenRequest;
 import com.anttransfer.auth.model.vo.AuthVos.TokenResponse;
@@ -24,6 +25,7 @@ import com.anttransfer.common.result.Result;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -84,6 +86,23 @@ public class AuthController {
     @PostMapping("/logout")
     public Result<Void> logout() {
         authService.logout();
+        return Result.ok();
+    }
+
+    /**
+     * 本人自助改密：原口令再确认 + 强度策略，成功后<b>全端</b>令牌失效（含当前会话）。
+     *
+     * <p>非白名单端点（须持有合法 access token）。响应 200 只代表口令已换；
+     * 前端须随即清除本地令牌并引导重新登录——因为连发起本次请求的令牌也已被 epoch+1 作废。</p>
+     *
+     * <p>路径用「动作端点」形态 {@code PUT /v1/auth/password}（与 {@code /v1/auth/token} 同一约定：
+     * 认证域端点按动作命名，不做资源 CRUD）。与 docs/api/README.md §1 模块表第 22 行
+     * 「at-auth 负责本人资料 / 个人中心自助改密」的口径一致，仅把承载前缀定为 {@code /v1/auth}
+     * 而非 {@code /v1/users}——改密是凭据动作而非资料资源，归入认证域更内聚。</p>
+     */
+    @PutMapping("/password")
+    public Result<Void> changePassword(@Valid @RequestBody ChangePasswordRequest request) {
+        authService.changePassword(request);
         return Result.ok();
     }
 

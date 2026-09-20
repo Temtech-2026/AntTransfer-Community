@@ -14,6 +14,19 @@ export interface AuthUserSummary {
   roles?: string[] | null;
 }
 
+/**
+ * 本人自助改密请求（对应 {@code AuthDtos.ChangePasswordRequest}）。
+ *
+ * <p>这里只描述形状；强度策略（长度 8~64、字母 + 数字、不得与原口令相同）的<b>权威判定在后端</b>，
+ * 前端表单规则只是「少一次往返」的提前拦截，两边口径不一致时以后端返回的 1030 为准。</p>
+ */
+export interface ChangePasswordRequest {
+  /** 当前口令（用于「确有账号控制权」的再确认） */
+  oldPassword: string;
+  /** 新口令，上限 64（BCrypt 72 字节截断的安全边界） */
+  newPassword: string;
+}
+
 /** 令牌对响应（对应 {@code AuthVos.TokenResponse}）。 */
 export interface TokenResponse {
   accessToken: string;

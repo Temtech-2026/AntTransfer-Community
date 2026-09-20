@@ -9,7 +9,7 @@ import { requestData } from '@/services/request';
 import { tokenStore } from '@/utils/token';
 
 import { AUTH_ENDPOINTS } from './endpoints';
-import type { AuthUserSummary, TokenResponse } from './types';
+import type { AuthUserSummary, ChangePasswordRequest, TokenResponse } from './types';
 
 /**
  * 账号密码登录，成功后立即落盘双令牌。
@@ -55,4 +55,24 @@ export async function logout(): Promise<void> {
   } finally {
     tokenStore.clear();
   }
+}
+
+/**
+ * 本人自助改密（原口令再确认 + 强度校验）。
+ *
+ * <p>成功后<b>服务端已全端吊销</b>（`token_epoch + 1` 并在提交后清 Redis 会话 / 纪元镜像键），连
+ * 发起本次请求的 access token 也当场作废。因此这里在成功分支立即清本地令牌——与 `loginByPassword` 对称，
+ * 「令牌落盘 / 清盘」都收敛在 API 层，调用方只需负责清内存态并回登录页。</p>
+ *
+ * <p>失败时（1029 原口令不符 / 1030 强度不合规 / 1005 账号停用）<b>不清令牌</b>：请求本身
+ * 被拒，会话仍然有效，弹窗应保持打开让用户就地修正。用 `silent` 是为了让这些码由表单
+ * 就地呈现，而不是被全局 `message.error` 抢先弹一次。</p>
+ */
+export async function changePassword(payload: ChangePasswordRequest): Promise<void> {
+  await requestData<void>(AUTH_ENDPOINTS.changePassword, {
+    method: 'PUT',
+    data: payload,
+    silent: true,
+  });
+  tokenStore.clear();
 }

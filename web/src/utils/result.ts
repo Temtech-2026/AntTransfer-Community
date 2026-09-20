@@ -46,8 +46,23 @@ export const TOKEN_EXPIRED_CODE = 1002;
 export const ACCOUNT_LOCKED_CODE = 1004;
 /** 账号或密码错误：由登录接口返回，不得触发跳登录 */
 export const BAD_CREDENTIALS_CODE = 1007;
-/** 网络异常等拿不到响应体时的兜底文案 */
-export const DEFAULT_ERROR_MESSAGE = '网络异常，请检查网络后重试';
+/**
+ * 原口令不正确：本人自助改密时「当前口令」再确认失败。
+ *
+ * <p>属请求需修正（策略 E）：弹窗保持打开、定位到「当前密码」字段，**不跳登录**——
+ * 会话本身仍然有效，跳登录等于把一次输错放大成一次强制重新认证。</p>
+ */
+export const OLD_PASSWORD_MISMATCH_CODE = 1029;
+/** 新口令不符合安全要求（长度 / 组合 / 与原口令相同），需就地修正后重试。 */
+export const PASSWORD_POLICY_VIOLATION_CODE = 1030;
+/**
+ * 网络异常等拿不到响应体时的兜底文案 **i18n id**。
+ *
+ * <p>这里刻意只存 id 而不存中文：`utils/result` 是纯契约层，不应内嵌任何语言文案。
+ * 渲染方用 `intl.formatMessage` / `getIntl().formatMessage` 取值；
+ * 若该 id 作为 `Result.message` 一路透传到 {@link presentError}，由后者按「哨兵」识别并翻译。
+ */
+export const DEFAULT_ERROR_MESSAGE_ID = 'app.request.default';
 
 /**
  * 处理策略（docs/api/error-codes.md §二）
@@ -99,6 +114,8 @@ const STRATEGY_BY_CODE: Record<number, HandleStrategy> = {
   1012: HandleStrategy.DENY, // 非群成员：403 就地提示，绝不跳登录（与 1003 同为策略 D）
   1013: HandleStrategy.BAD_REQUEST, // 会话目标无效
   1014: HandleStrategy.BAD_REQUEST, // 消息类型不允许用于会话
+  1029: HandleStrategy.BAD_REQUEST, // 原口令不正确：就地提示，弹窗不关、不跳登录
+  1030: HandleStrategy.BAD_REQUEST, // 新口令不合规：就地提示，按策略文案修正后重试
 
   // 2xxx 参数校验
   2001: HandleStrategy.BAD_REQUEST,

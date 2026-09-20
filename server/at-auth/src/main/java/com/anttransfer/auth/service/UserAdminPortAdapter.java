@@ -51,6 +51,14 @@ import java.util.Optional;
  * 必须同生共死：只写下 {@code sys_user_role} 而没写 {@code sys_user}，
  * 或停了账号却没回收其审批类授权，都会留下「看着对、其实漏一半」的状态。</p>
  *
+ * <p><b>会话吊销走「同事务递增纪元」而非 {@code revokeAll}：</b>重置口令 / 停用 / 删除
+ * 都要求旧令牌<b>即刻</b>失效（而不是等 access 自然过期）。这里统一调
+ * {@link TokenSessionService#revokeAllInCurrentTransaction(Long)}——它在<b>调用方事务内</b>
+ * 递增 {@code token_epoch} 并登记「提交后清 Redis 镜像」。
+ * 不能改用 {@code revokeAll}（{@code REQUIRES_NEW}）：本方法此刻已持锁写了同一行
+ * {@code sys_user}，内层新事务会去抢自己持有的行锁而自锁等待；也不能只递增纪元而不清缓存，
+ * 否则纪元镜像仍是旧值，比对照样通过，吊销等于没做（GAP-02 的根因）。</p>
+ *
  * <p><b>所有写操作都校验受影响行数：</b>0 行意味着目标已被并发删除，
  * 此时抛 {@code 1015} 而不是静默成功——静默成功会让调用方以为改完了，
  * 前端刷新后却发现没有任何变化，且审计链路无从判断到底发生过什么。</p>
@@ -65,6 +73,7 @@ public class UserAdminPortAdapter implements UserAdminPort {
     private final UserMapper userMapper;
     private final DeptMapper deptMapper;
     private final PasswordEncoder passwordEncoder;
+    private final TokenSessionService sessionService;
 
     @Override
     public Optional<UserRow> findById(Long userId) {
@@ -134,8 +143,9 @@ public class UserAdminPortAdapter implements UserAdminPort {
     public void resetPassword(Long userId, String rawPassword, Long operatorId) {
         String hash = passwordEncoder.encode(rawPassword);
         requireAffected(userMapper.updatePassword(userId, hash, operatorId), userId, "重置密码");
-        // 改密必须吊销在途会话：否则旧 refresh token 仍能换出可用 access token，重置形同虚设
-        userMapper.bumpTokenEpoch(userId);
+        // 改密必须吊销在途会话：否则旧 refresh token 仍能换出可用 access token，重置形同虚设。
+        // 走同事务递增纪元 + 提交后清缓存，保证「提交那一刻」旧令牌就作废（见类注）。
+        sessionService.revokeAllInCurrentTransaction(userId);
         log.info("系统管理面重置密码：userId={}, operator={}", userId, operatorId);
     }
 
@@ -144,7 +154,8 @@ public class UserAdminPortAdapter implements UserAdminPort {
     public void changeStatus(Long userId, int status, Long operatorId) {
         requireAffected(userMapper.updateStatus(userId, status, operatorId), userId, "变更账号状态");
         if (status == STATUS_DISABLED) {
-            userMapper.bumpTokenEpoch(userId);
+            // 停用即吊销：纪元 +1 与「提交后清缓存」必须成对，只做前者等于没生效（GAP-02）
+            sessionService.revokeAllInCurrentTransaction(userId);
         }
         log.info("系统管理面变更账号状态：userId={}, status={}, operator={}", userId, status, operatorId);
     }
@@ -160,7 +171,8 @@ public class UserAdminPortAdapter implements UserAdminPort {
     @Transactional(rollbackFor = Exception.class)
     public void softDelete(Long userId, Long operatorId) {
         requireAffected(userMapper.deleteById(userId), userId, "删除用户");
-        userMapper.bumpTokenEpoch(userId);
+        // 已注销账号不得靠残留令牌继续访问（access 缓存里还留着旧纪元的镜像）
+        sessionService.revokeAllInCurrentTransaction(userId);
         log.info("系统管理面删除用户：userId={}, operator={}", userId, operatorId);
     }
 

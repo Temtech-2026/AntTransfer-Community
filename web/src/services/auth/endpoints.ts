@@ -22,4 +22,12 @@ export const AUTH_ENDPOINTS = {
 
   /** 当前登录用户摘要（含角色编码），页面刷新后恢复会话用。 */
   me: '/api/v1/auth/me',
+
+  /**
+   * 本人自助改密：原口令再确认 + 强度校验，成功后<b>全端</b>令牌立即失效（含当前会话）。
+   *
+   * <p>非白名单端点。调用方拿到成功响应后必须清本地令牌并回登录页——后端已把
+   * {@code token_epoch + 1}，连本次请求用的 access token 也当场作废。</p>
+   */
+  changePassword: '/api/v1/auth/password',
 } as const;

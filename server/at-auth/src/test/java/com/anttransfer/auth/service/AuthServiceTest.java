@@ -16,32 +16,42 @@
 package com.anttransfer.auth.service;
 
 import com.anttransfer.auth.config.AuthProperties;
+import com.anttransfer.auth.model.LoginUser;
+import com.anttransfer.auth.model.dto.AuthDtos.ChangePasswordRequest;
 import com.anttransfer.auth.model.vo.AuthVos.TokenResponse;
 import com.anttransfer.auth.model.entity.SysUser;
 import com.anttransfer.auth.repository.UserMapper;
 import com.anttransfer.auth.security.JwtTokenProvider;
+import com.anttransfer.common.audit.OperationLog;
 import com.anttransfer.common.exception.AuthException;
+import com.anttransfer.common.exception.BusinessException;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.Duration;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * {@link AuthService} 单测：登录锁定阈值 / 状态校验 / 令牌签发。
+ * {@link AuthService} 单测：登录锁定阈值 / 状态校验 / 令牌签发 / 本人自助改密。
  */
 class AuthServiceTest {
 
@@ -49,6 +59,7 @@ class AuthServiceTest {
     private PasswordEncoder passwordEncoder;
     private LoginAttemptService attemptService;
     private TokenSessionService sessionService;
+    private AuthAuditLogger auditLogger;
     private AuthService authService;
     private AuthProperties properties;
 
@@ -58,6 +69,7 @@ class AuthServiceTest {
         passwordEncoder = mock(PasswordEncoder.class);
         sessionService = mock(TokenSessionService.class);
         attemptService = mock(LoginAttemptService.class);
+        auditLogger = mock(AuthAuditLogger.class);
 
         AuthProperties props = new AuthProperties();
         props.setAccessTokenSecret("unit-test-secret-0123456789-abcdefghijklmnop");
@@ -73,7 +85,22 @@ class AuthServiceTest {
                 new JwtTokenProvider(props),
                 sessionService,
                 attemptService,
-                props);
+                props,
+                auditLogger);
+    }
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
+    /** 把当前线程伪装成已通过 JwtAuthenticationFilter 的登录态（改密依赖 SecurityUtils 取 userId）。 */
+    private void loginAs(Long userId, String username) {
+        LoginUser principal = new LoginUser();
+        principal.setId(userId);
+        principal.setUsername(username);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(principal, null, List.of()));
     }
 
     private SysUser normalUser(long id, String username) {
@@ -159,5 +186,80 @@ class AuthServiceTest {
         AuthException e = assertThrows(AuthException.class, () -> authService.login("ghost", "x"));
         assertEquals(1007, e.getErrorCode().getCode());
         verify(attemptService, times(1)).recordFailure("ghost");
+    }
+
+    @Test
+    void changePassword_success_shouldRotateHashRevokeAllSessionsAndAudit() {
+        loginAs(1L, "alice");
+        SysUser user = normalUser(1L, "alice");
+        when(userMapper.selectById(1L)).thenReturn(user);
+        when(passwordEncoder.matches("OldPass123", user.getPasswordHash())).thenReturn(true);
+        when(passwordEncoder.encode("NewPass456")).thenReturn("$2a$10$new");
+        when(userMapper.updatePassword(eq(1L), eq("$2a$10$new"), eq(1L))).thenReturn(1);
+
+        authService.changePassword(new ChangePasswordRequest("OldPass123", "NewPass456"));
+
+        verify(userMapper).updatePassword(1L, "$2a$10$new", 1L);
+        // 改密必须全端吊销（含发起请求的当前会话），否则「口令泄露后自救」是假的
+        verify(sessionService).revokeAllInCurrentTransaction(1L);
+        verify(auditLogger).success(eq(OperationLog.ACTION_PASSWORD_CHANGE),
+                eq(OperationLog.TARGET_USER), eq(1L), anyMap());
+    }
+
+    @Test
+    void changePassword_wrongOldPassword_shouldThrow1029AndChangeNothing() {
+        loginAs(1L, "alice");
+        SysUser user = normalUser(1L, "alice");
+        when(userMapper.selectById(1L)).thenReturn(user);
+        when(passwordEncoder.matches("bad-old", user.getPasswordHash())).thenReturn(false);
+
+        BusinessException e = assertThrows(BusinessException.class,
+                () -> authService.changePassword(new ChangePasswordRequest("bad-old", "NewPass456")));
+
+        assertEquals(1029, e.getCode());
+        verify(userMapper, never()).updatePassword(anyLong(), anyString(), anyLong());
+        verify(sessionService, never()).revokeAllInCurrentTransaction(anyLong());
+        verifyNoInteractions(auditLogger);
+    }
+
+    @Test
+    void changePassword_weakOrReusedPassword_shouldThrow1030AndNotRevoke() {
+        loginAs(1L, "alice");
+        SysUser user = normalUser(1L, "alice");
+        when(userMapper.selectById(1L)).thenReturn(user);
+        when(passwordEncoder.matches(anyString(), anyString())).thenReturn(true);
+
+        // 长度不足
+        BusinessException tooShort = assertThrows(BusinessException.class,
+                () -> authService.changePassword(new ChangePasswordRequest("OldPass123", "Ab1")));
+        assertEquals(1030, tooShort.getCode());
+        // 缺数字
+        BusinessException noDigit = assertThrows(BusinessException.class,
+                () -> authService.changePassword(new ChangePasswordRequest("OldPass123", "OnlyLetters")));
+        assertEquals(1030, noDigit.getCode());
+        // 与原口令相同
+        BusinessException sameAsOld = assertThrows(BusinessException.class,
+                () -> authService.changePassword(new ChangePasswordRequest("OldPass123", "OldPass123")));
+        assertEquals(1030, sameAsOld.getCode());
+
+        // 三次违规都不得留下任何副作用（不落库、不吊销、不记成功审计）
+        verify(userMapper, never()).updatePassword(anyLong(), anyString(), anyLong());
+        verify(sessionService, never()).revokeAllInCurrentTransaction(anyLong());
+        verifyNoInteractions(auditLogger);
+    }
+
+    @Test
+    void changePassword_disabledAccount_shouldThrow1005BeforeVerifyingOldPassword() {
+        loginAs(3L, "dave");
+        SysUser disabled = normalUser(3L, "dave");
+        disabled.setStatus(SysUser.STATUS_DISABLED);
+        when(userMapper.selectById(3L)).thenReturn(disabled);
+
+        AuthException e = assertThrows(AuthException.class,
+                () -> authService.changePassword(new ChangePasswordRequest("OldPass123", "NewPass456")));
+
+        assertEquals(1005, e.getErrorCode().getCode());
+        verify(passwordEncoder, never()).matches(anyString(), anyString());
+        verify(sessionService, never()).revokeAllInCurrentTransaction(anyLong());
     }
 }

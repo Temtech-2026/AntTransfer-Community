@@ -37,7 +37,9 @@ import java.time.LocalDateTime;
  * <p><b>动作字典集中于此</b>：{@code action} 列在 DDL 中是 {@code varchar(64)} 无枚举约束，
  * 常量集中一处便于「查表即知全集」；按前缀即可看出归属域
  * （{@code FILE_*} / {@code FOLDER_*} / {@code SHARE_*} / {@code VERSION_*} / {@code PACK_*}
- * / {@code USER_*} / {@code ROLE_*} / {@code APPLY}/{@code APPROVE}…）。</p>
+ * / {@code USER_*} / {@code ROLE_*} / {@code PASSWORD_CHANGE}）与动作语义
+ * （{@code APPLY} / {@code APPROVE} / {@code REJECT} / {@code TRANSFER} /
+ * {@code GRANT} / {@code REVOKE} …）。</p>
  *
  * <p><b>UA 落位说明</b>：{@code sys_operation_log} 无 {@code user_agent} 列（该列仅存在于
  * {@code sys_login_log}），故 UA 与业务上下文一并序列化进 {@code detail}（JSON，脱敏后落库），
@@ -146,6 +148,19 @@ public class OperationLog extends BaseEntity {
     public static final String ACTION_REVOKE = "REVOKE";
     /** 审计动作：授权到期系统回收（无操作人，userId 为空） */
     public static final String ACTION_GRANT_EXPIRE = "GRANT_EXPIRE";
+
+    /* ============================== 认证域（本人操作） ============================== */
+
+    /**
+     * 审计动作：本人自助改密（{@code PUT /api/v1/auth/password}）。
+     *
+     * <p>与 {@link #ACTION_USER_PASSWORD_RESET} 的区别：那条是「管理员重置<b>他人</b>口令」，
+     * 操作人是管理员、目标是他号；本条是「账号主本人改自己的口令」，操作人与目标同一个。
+     * 分开编码是为了让审计查询能一眼区分「本人自救」与「管理干预」。</p>
+     *
+     * <p>{@code detail} 只记发起者与吊销结果，<b>绝不记录口令明文 / 哈希</b>。</p>
+     */
+    public static final String ACTION_PASSWORD_CHANGE = "PASSWORD_CHANGE";
 
     /* ============================== 域标识 ============================== */
 

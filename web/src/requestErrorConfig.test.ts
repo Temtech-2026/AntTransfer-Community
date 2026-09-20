@@ -2,6 +2,7 @@ import { history } from '@umijs/max';
 import { message, notification } from 'antd';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { testFormatMessage } from './locales/testTranslate';
 import { errorConfig, presentError } from './requestErrorConfig';
 import { HandleStrategy, resolveStrategy } from './utils/result';
 import { tokenStore } from './utils/token';
@@ -18,12 +19,26 @@ vi.mock('antd', () => ({
   },
 }));
 
-vi.mock('@umijs/max', () => ({
-  request: vi.fn(),
-  history: {
-    push: vi.fn(),
-  },
-}));
+vi.mock('@umijs/max', async () => {
+  // 拦截器不在组件树里，走 getIntl()；这里接上真实 zh-CN 语言包，
+  // 保证「语言包缺键」能在单测阶段立刻暴露（与 useIntl 的 mock 同一口径）。
+  const { testFormatMessage } = await vi.importActual<
+    typeof import('./locales/testTranslate')
+  >('./locales/testTranslate');
+  return {
+    request: vi.fn(),
+    history: {
+      push: vi.fn(),
+    },
+    // 兼容两种调用形态：`formatMessage({ id, values })` 与 `formatMessage({ id }, values)`
+    getIntl: () => ({
+      formatMessage: (
+        descriptor: { id: string; values?: Record<string, unknown> },
+        values?: Record<string, unknown>,
+      ) => testFormatMessage({ id: descriptor.id, values: values ?? descriptor.values }),
+    }),
+  };
+});
 
 vi.mock('./utils/token', () => ({
   tokenStore: {
@@ -99,6 +114,9 @@ describe('resolveStrategy（错误码 → 处理策略）', () => {
     expect(resolveStrategy(1011)).toBe(HandleStrategy.STATE_CONFLICT);
     expect(resolveStrategy(1013)).toBe(HandleStrategy.BAD_REQUEST);
     expect(resolveStrategy(1014)).toBe(HandleStrategy.BAD_REQUEST);
+    // 本人自助改密：1029 原口令不正确 / 1030 新口令不合规 —— 就地修正字段，绝不跳登录
+    expect(resolveStrategy(1029)).toBe(HandleStrategy.BAD_REQUEST);
+    expect(resolveStrategy(1030)).toBe(HandleStrategy.BAD_REQUEST);
     // 文件管理新增（4013~4023）：E 类请求修正 / F 类状态冲突
     expect(resolveStrategy(4013)).toBe(HandleStrategy.BAD_REQUEST);
     expect(resolveStrategy(4019)).toBe(HandleStrategy.BAD_REQUEST);
@@ -193,7 +211,10 @@ describe('errorHandler（按策略呈现）', () => {
     errorHandler(httpError(4103, '超出传输并发或流量限制', 429), {});
 
     expect(message.warning).toHaveBeenCalledWith(
-      '超出传输并发或流量限制，请稍后重试',
+      testFormatMessage({
+        id: 'app.request.retryLater',
+        values: { message: '超出传输并发或流量限制' },
+      }),
     );
   });
 
@@ -202,7 +223,10 @@ describe('errorHandler（按策略呈现）', () => {
 
     expect(notification.error).toHaveBeenCalledWith({
       message: '系统繁忙，请稍后重试',
-      description: 'traceId：trace-abc',
+      description: testFormatMessage({
+        id: 'app.request.traceId',
+        values: { traceId: 'trace-abc' },
+      }),
       placement: 'topRight',
     });
   });
@@ -230,7 +254,13 @@ describe('errorHandler（按策略呈现）', () => {
     errorHandler(error, {});
 
     expect(message.error).toHaveBeenCalledWith(
-      '网络异常，请检查网络后重试（HTTP 502）',
+      testFormatMessage({
+        id: 'app.request.http',
+        values: {
+          message: testFormatMessage({ id: 'app.request.default' }),
+          status: 502,
+        },
+      }),
     );
   });
 
@@ -246,7 +276,8 @@ describe('errorHandler（按策略呈现）', () => {
     try {
       errorHandler(error, {});
       expect(message.error).toHaveBeenCalledWith(
-        '网络不可用，请检查网络连接后重试',
+        // 文案取自语言包，避免测试里再抄一份中文而与语言包脱节
+        testFormatMessage({ id: 'app.request.offline' }),
       );
     } finally {
       Object.defineProperty(navigator, 'onLine', {
