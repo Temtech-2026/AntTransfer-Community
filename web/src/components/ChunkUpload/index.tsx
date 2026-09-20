@@ -9,6 +9,7 @@
  */
 
 import { UploadOutlined } from '@ant-design/icons';
+import { useIntl } from '@umijs/max';
 import {
   Alert,
   Button,
@@ -61,17 +62,18 @@ export interface ChunkUploadProps {
   uploader?: UseChunkUploadResult;
 }
 
-const STATUS_TEXT: Record<UploadTaskStatus, string> = {
-  pending: '待上传',
-  hashing: '计算校验值',
-  prechecking: '秒传检测',
-  querying: '查询已传分片',
-  uploading: '上传中',
-  paused: '已暂停',
-  merging: '合并中',
-  success: '已完成',
-  error: '失败',
-  canceled: '已取消',
+/** 任务状态 → i18n id（与上传页共用 `upload.status.*`，避免两处口径漂移）。 */
+const STATUS_ID: Record<UploadTaskStatus, string> = {
+  pending: 'upload.status.pending',
+  hashing: 'upload.status.hashing',
+  prechecking: 'upload.status.prechecking',
+  querying: 'upload.status.querying',
+  uploading: 'upload.status.uploading',
+  paused: 'upload.status.paused',
+  merging: 'upload.status.merging',
+  success: 'upload.status.success',
+  error: 'upload.status.error',
+  canceled: 'upload.status.canceled',
 };
 
 const STATUS_COLOR: Record<UploadTaskStatus, string> = {
@@ -112,35 +114,43 @@ function formatSpeed(bytesPerSecond: number): string {
   return bytesPerSecond > 0 ? `${formatBytes(bytesPerSecond)}/s` : '--';
 }
 
+/** 文案函数签名：把 id + 参数翻成当前语言文本（由调用方注入，保持本函数纯净可测） */
+type Translate = (id: string, values?: Record<string, string | number>) => string;
+
 /** 进度文案：哈希阶段不占用进度条，改由文案提示，避免进度条来回抖动 */
-function progressLabel(task: UploadTaskView): string {
+export function progressLabel(t: Translate, task: UploadTaskView): string {
   if (task.instant) {
-    return '秒传完成';
+    return t('component.chunkUpload.instantDone');
   }
   if (task.status === 'hashing') {
-    return '正在计算文件校验值…';
+    return t('component.chunkUpload.progress.hashing');
   }
   if (task.status === 'prechecking') {
-    return '正在检测是否可秒传…';
+    return t('component.chunkUpload.progress.prechecking');
   }
   if (task.status === 'querying') {
-    return '正在获取已上传分片…';
+    return t('component.chunkUpload.progress.querying');
   }
   if (task.status === 'merging') {
-    return '正在合并分片…';
+    return t('component.chunkUpload.progress.merging');
   }
   if (task.status === 'paused') {
-    return `已暂停（已完成 ${task.received.length}/${task.chunkCount} 片）`;
+    return t('component.chunkUpload.progress.paused', {
+      received: task.received.length,
+      total: task.chunkCount,
+    });
   }
   if (task.status === 'error') {
-    return task.errorMessage ?? '上传失败';
+    return task.errorMessage ?? t('component.chunkUpload.progress.failed');
   }
   if (task.status === 'uploading') {
-    return `${task.received.length}/${task.chunkCount} 片 · ${formatSpeed(task.speed)}${
-      task.retryCount > 0 ? ` · 已重试 ${task.retryCount} 次` : ''
-    }`;
+    return `${t('component.chunkUpload.progress.uploading', {
+      received: task.received.length,
+      total: task.chunkCount,
+      speed: formatSpeed(task.speed),
+    })}${task.retryCount > 0 ? t('component.chunkUpload.progress.retried', { count: task.retryCount }) : ''}`;
   }
-  return `${task.chunkCount} 片`;
+  return t('component.chunkUpload.progress.chunks', { count: task.chunkCount });
 }
 
 export function ChunkUpload(props: ChunkUploadProps) {
@@ -154,12 +164,16 @@ export function ChunkUpload(props: ChunkUploadProps) {
     multiple = true,
     disabled,
     showTuning = true,
-    title = '文件上传',
+    title,
     onTaskSuccess,
     onTaskError,
     onAllFinished,
     uploader,
   } = props;
+
+  const intl = useIntl();
+  const t: Translate = (id, values) => intl.formatMessage({ id }, values);
+  const displayTitle = title ?? intl.formatMessage({ id: 'component.chunkUpload.title' });
 
   const { token } = theme.useToken();
   const [chunkSize, setChunkSize] = useState(
@@ -225,9 +239,11 @@ export function ChunkUpload(props: ChunkUploadProps) {
     <Card
       title={
         <Space size={12}>
-          <span>{title}</span>
+          <span>{displayTitle}</span>
           {summary.uploading > 0 ? (
-            <Text type="secondary">{summary.uploading} 个任务进行中</Text>
+            <Text type="secondary">
+              {intl.formatMessage({ id: 'component.chunkUpload.busy' }, { count: summary.uploading })}
+            </Text>
           ) : null}
         </Space>
       }
@@ -238,10 +254,10 @@ export function ChunkUpload(props: ChunkUploadProps) {
             disabled={summary.uploading === 0}
             onClick={pauseAll}
           >
-            全部暂停
+            {intl.formatMessage({ id: 'upload.action.pauseAll' })}
           </Button>
           <Button size="small" onClick={clearFinished}>
-            清除已结束
+            {intl.formatMessage({ id: 'upload.action.clearFinished' })}
           </Button>
         </Space>
       }
@@ -251,16 +267,26 @@ export function ChunkUpload(props: ChunkUploadProps) {
           type="info"
           showIcon
           style={{ marginBottom: token.marginMD }}
-          title={`检测到 ${resumable.length} 个未完成的上传`}
+          title={intl.formatMessage(
+            { id: 'component.chunkUpload.resumableCount' },
+            { count: resumable.length },
+          )}
           description={
             <Space orientation="vertical" size={4} style={{ width: '100%' }}>
               <Text type="secondary">
-                为避免重复传输，请重新选择同一文件，系统将跳过服务端已收到的分片继续上传。
+                {intl.formatMessage({ id: 'component.chunkUpload.resumableNote' })}
               </Text>
               {resumable.slice(0, 5).map((record) => (
                 <Text key={record.key} ellipsis>
-                  {record.fileName}（{formatBytes(record.size)}，已完成{' '}
-                  {record.receivedCount}/{record.chunkCount} 片）
+                  {intl.formatMessage(
+                    { id: 'upload.resumable.record' },
+                    {
+                      name: record.fileName,
+                      size: formatBytes(record.size),
+                      received: record.receivedCount,
+                      total: record.chunkCount,
+                    },
+                  )}
                 </Text>
               ))}
               <Space>
@@ -269,7 +295,7 @@ export function ChunkUpload(props: ChunkUploadProps) {
                   type="primary"
                   onClick={() => reselectRef.current?.click()}
                 >
-                  重新选择文件继续
+                  {intl.formatMessage({ id: 'component.chunkUpload.resumableSelect' })}
                 </Button>
               </Space>
             </Space>
@@ -291,10 +317,14 @@ export function ChunkUpload(props: ChunkUploadProps) {
         <p className="ant-upload-drag-icon">
           <UploadOutlined />
         </p>
-        <p className="ant-upload-text">点击或拖拽文件到此处上传</p>
+        <p className="ant-upload-text">
+          {intl.formatMessage({ id: 'component.chunkUpload.draggerText' })}
+        </p>
         <p className="ant-upload-hint">
-          支持大文件分片上传、秒传与断点续传；单文件失败会自动重试{' '}
-          {maxRetries ?? 3} 次
+          {intl.formatMessage(
+            { id: 'component.chunkUpload.draggerHint' },
+            { count: maxRetries ?? 3 },
+          )}
         </p>
       </Upload.Dragger>
 
@@ -305,7 +335,9 @@ export function ChunkUpload(props: ChunkUploadProps) {
           style={{ marginTop: token.marginMD, alignItems: 'center' }}
         >
           <Space size={6}>
-            <Text type="secondary">分片大小</Text>
+            <Text type="secondary">
+              {intl.formatMessage({ id: 'component.chunkUpload.chunkSize' })}
+            </Text>
             <Select
               size="small"
               value={chunkSize}
@@ -321,7 +353,9 @@ export function ChunkUpload(props: ChunkUploadProps) {
             />
           </Space>
           <Space size={6}>
-            <Text type="secondary">并发数</Text>
+            <Text type="secondary">
+              {intl.formatMessage({ id: 'component.chunkUpload.concurrency' })}
+            </Text>
             <Select
               size="small"
               value={concurrency}
@@ -334,7 +368,7 @@ export function ChunkUpload(props: ChunkUploadProps) {
             />
           </Space>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            变更对后续分片生效
+            {intl.formatMessage({ id: 'component.chunkUpload.tuningNote' })}
           </Text>
         </Space>
       ) : null}
@@ -345,11 +379,19 @@ export function ChunkUpload(props: ChunkUploadProps) {
             style={{ width: '100%', justifyContent: 'space-between' }}
             align="center"
           >
-            <Text strong>整体进度</Text>
+            <Text strong>
+              {intl.formatMessage({ id: 'component.chunkUpload.overallProgress' })}
+            </Text>
             <Text type="secondary">
-              {summary.finished}/{tasks.length} 个文件 ·{' '}
-              {formatBytes(summary.uploadedBytes)} /{' '}
-              {formatBytes(summary.totalBytes)}
+              {intl.formatMessage(
+                { id: 'component.chunkUpload.overallSummary' },
+                {
+                  finished: summary.finished,
+                  total: tasks.length,
+                  uploaded: formatBytes(summary.uploadedBytes),
+                  totalSize: formatBytes(summary.totalBytes),
+                },
+              )}
             </Text>
           </Space>
           <Progress
@@ -385,17 +427,22 @@ export function ChunkUpload(props: ChunkUploadProps) {
                   </Text>
                   <Tag color={STATUS_COLOR[task.status]}>
                     {task.instant && task.status === 'success'
-                      ? '秒传成功'
-                      : STATUS_TEXT[task.status]}
+                      ? intl.formatMessage({ id: 'component.chunkUpload.instantSuccess' })
+                      : intl.formatMessage({ id: STATUS_ID[task.status] })}
                   </Tag>
                   {task.retryCount > 0 && task.status === 'uploading' ? (
-                    <Tooltip title="网络抖动时自动指数退避重试">
-                      <Tag color="orange">重试 {task.retryCount}</Tag>
+                    <Tooltip title={intl.formatMessage({ id: 'component.chunkUpload.retryTooltip' })}>
+                      <Tag color="orange">
+                        {intl.formatMessage(
+                          { id: 'component.chunkUpload.retryTag' },
+                          { count: task.retryCount },
+                        )}
+                      </Tag>
                     </Tooltip>
                   ) : null}
                 </Space>
                 <Text type="secondary" style={{ fontSize: 12 }}>
-                  {formatBytes(task.size)} · {progressLabel(task)}
+                  {formatBytes(task.size)} · {progressLabel(t, task)}
                 </Text>
                 {task.status === 'error' && task.errorMessage ? (
                   <Text type="danger" style={{ fontSize: 12 }}>
@@ -407,7 +454,7 @@ export function ChunkUpload(props: ChunkUploadProps) {
               <Space size={4} wrap>
                 {BUSY_STATUSES.includes(task.status) ? (
                   <Button size="small" onClick={() => pause(task.id)}>
-                    暂停
+                    {intl.formatMessage({ id: 'upload.action.pause' })}
                   </Button>
                 ) : null}
                 {task.status === 'paused' || task.status === 'error' ? (
@@ -418,16 +465,18 @@ export function ChunkUpload(props: ChunkUploadProps) {
                       task.status === 'error' ? retry(task.id) : resume(task.id)
                     }
                   >
-                    {task.status === 'error' ? '重试' : '继续'}
+                    {task.status === 'error'
+                      ? intl.formatMessage({ id: 'common.action.retry' })
+                      : intl.formatMessage({ id: 'upload.action.resume' })}
                   </Button>
                 ) : null}
                 {!['success', 'canceled', 'error'].includes(task.status) ? (
                   <Button size="small" danger onClick={() => cancel(task.id)}>
-                    取消
+                    {intl.formatMessage({ id: 'common.action.cancel' })}
                   </Button>
                 ) : (
                   <Button size="small" onClick={() => remove(task.id)}>
-                    移除
+                    {intl.formatMessage({ id: 'upload.action.remove' })}
                   </Button>
                 )}
               </Space>
@@ -451,7 +500,7 @@ export function ChunkUpload(props: ChunkUploadProps) {
 
       {tasks.length === 0 && resumable.length === 0 ? (
         <Text type="secondary" style={{ display: 'block', marginTop: 12 }}>
-          暂无上传任务
+          {intl.formatMessage({ id: 'upload.empty' })}
         </Text>
       ) : null}
 

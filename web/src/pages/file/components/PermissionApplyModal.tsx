@@ -7,6 +7,7 @@
  * 供审批链路直接判定层级（而不是审批人自己去查文件密级）。</p>
  */
 
+import { useIntl } from '@umijs/max';
 import {
   Alert,
   Button,
@@ -30,9 +31,9 @@ import {
   type ApplyType,
   type ApprovalRequest,
   type FileNode,
-  levelApplyHint,
+  levelApplyHintId,
   levelColor,
-  levelText,
+  levelTextId,
   submitPermissionApplication,
 } from '@/services/file';
 
@@ -55,15 +56,16 @@ export default function PermissionApplyModal({
   node,
   onClose,
 }: PermissionApplyModalProps) {
+  const intl = useIntl();
   const [form] = Form.useForm<ApplyFormValues>();
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState<ApprovalRequest | null>(null);
 
   /** 权限类型跟随表单实时变化：不同权限的风险与上限不同，提示要跟着变。 */
   const [applyType, setApplyType] = useState<ApplyType>('ACCESS');
-  const activeHint = APPLY_TYPE_OPTIONS.find(
+  const activeHintId = APPLY_TYPE_OPTIONS.find(
     (item) => item.value === applyType,
-  )?.hint;
+  )?.hintId;
 
   const handleSubmit = async () => {
     if (!node) {
@@ -84,7 +86,10 @@ export default function PermissionApplyModal({
       });
       setSubmitted(result);
     } catch (error) {
-      message.error((error as Error)?.message || '提交申请失败');
+      message.error(
+        (error as Error)?.message ||
+          intl.formatMessage({ id: 'file.apply.submitFailed' }),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -93,10 +98,10 @@ export default function PermissionApplyModal({
   return (
     <Modal
       open={open}
-      title="申请文件权限"
+      title={intl.formatMessage({ id: 'file.apply.title' })}
       width={560}
       onCancel={onClose}
-      destroyOnClose
+      destroyOnHidden
       afterOpenChange={(visible) => {
         if (visible) {
           form.resetFields();
@@ -109,12 +114,12 @@ export default function PermissionApplyModal({
         submitted
           ? [
               <Button key="done" type="primary" onClick={onClose}>
-                知道了
+                {intl.formatMessage({ id: 'common.action.gotIt' })}
               </Button>,
             ]
           : [
               <Button key="cancel" onClick={onClose}>
-                取消
+                {intl.formatMessage({ id: 'common.action.cancel' })}
               </Button>,
               <Button
                 key="submit"
@@ -122,7 +127,7 @@ export default function PermissionApplyModal({
                 loading={submitting}
                 onClick={handleSubmit}
               >
-                提交申请
+                {intl.formatMessage({ id: 'file.apply.submit' })}
               </Button>,
             ]
       }
@@ -130,11 +135,14 @@ export default function PermissionApplyModal({
       {submitted ? (
         <Result
           status="success"
-          title="申请已提交"
-          subTitle={`申请单号：${submitted.applicationNo ?? submitted.id}，可在「我的申请」中查看进度`}
+          title={intl.formatMessage({ id: 'file.apply.submittedTitle' })}
+          subTitle={intl.formatMessage(
+            { id: 'file.apply.submittedSubTitle' },
+            { no: submitted.applicationNo ?? submitted.id },
+          )}
           extra={
             <Text type="secondary">
-              审批通过后权限自动生效，无需重复提交；被驳回时可查看审批意见后补充说明再提。
+              {intl.formatMessage({ id: 'file.apply.submittedExtra' })}
             </Text>
           }
         />
@@ -145,14 +153,18 @@ export default function PermissionApplyModal({
           initialValues={{ applyType: 'ACCESS' }}
         >
           <Descriptions column={1} size="small" style={{ marginBottom: 12 }}>
-            <Descriptions.Item label="申请文件">
+            <Descriptions.Item
+              label={intl.formatMessage({ id: 'file.apply.field.file' })}
+            >
               <Text ellipsis style={{ maxWidth: 320 }}>
                 {node?.name ?? '-'}
               </Text>
             </Descriptions.Item>
-            <Descriptions.Item label="文件密级">
+            <Descriptions.Item
+              label={intl.formatMessage({ id: 'file.apply.field.level' })}
+            >
               <Tag color={levelColor(node?.level)}>
-                {levelText(node?.level)}
+                {intl.formatMessage({ id: levelTextId(node?.level) })}
               </Tag>
             </Descriptions.Item>
           </Descriptions>
@@ -168,54 +180,80 @@ export default function PermissionApplyModal({
                   : 'info'
             }
             showIcon
-            title="敏感等级提示"
-            description={levelApplyHint(node?.level)}
+            title={intl.formatMessage({ id: 'file.apply.levelAlertTitle' })}
+            description={intl.formatMessage({
+              id: levelApplyHintId(node?.level),
+            })}
           />
 
           <Form.Item
             name="applyType"
-            label="权限类型"
-            rules={[{ required: true, message: '请选择权限类型' }]}
+            label={intl.formatMessage({ id: 'file.apply.field.applyType' })}
+            rules={[
+              {
+                required: true,
+                message: intl.formatMessage({
+                  id: 'file.apply.field.applyTypeRequired',
+                }),
+              },
+            ]}
           >
             <Radio.Group
               onChange={(event) =>
                 setApplyType(event.target.value as ApplyType)
               }
               options={APPLY_TYPE_OPTIONS.map((item) => ({
-                label: item.label,
+                label: intl.formatMessage({ id: item.labelId }),
                 value: item.value,
               }))}
             />
           </Form.Item>
-          {activeHint ? (
+          {activeHintId ? (
             <div style={{ marginTop: -8, marginBottom: 12 }}>
               <Text type="secondary" style={{ fontSize: 12 }}>
-                {activeHint}
+                {intl.formatMessage({ id: activeHintId })}
               </Text>
             </div>
           ) : null}
 
           <Form.Item
             name="purpose"
-            label="使用目的"
+            label={intl.formatMessage({ id: 'file.apply.field.purpose' })}
             rules={[
-              { required: true, message: '请填写使用目的' },
-              { min: 10, message: '请至少填写 10 个字，便于审批人判断' },
-              { max: 500, message: '最多 500 个字' },
+              {
+                required: true,
+                message: intl.formatMessage({
+                  id: 'file.apply.field.purposeRequired',
+                }),
+              },
+              {
+                min: 10,
+                message: intl.formatMessage({
+                  id: 'file.apply.field.purposeMin',
+                }),
+              },
+              {
+                max: 500,
+                message: intl.formatMessage({
+                  id: 'file.apply.field.purposeMax',
+                }),
+              },
             ]}
           >
             <Input.TextArea
               rows={4}
               maxLength={500}
               showCount
-              placeholder="例如：用于季度经营分析报告的数据核对，仅本人使用，不外发"
+              placeholder={intl.formatMessage({
+                id: 'file.apply.field.purposePlaceholder',
+              })}
             />
           </Form.Item>
 
           <Form.Item
             name="desiredExpireAt"
-            label="期望有效期"
-            extra="留空表示申请长期权限（更难过审）；建议按实际需要填写，到期自动回收"
+            label={intl.formatMessage({ id: 'file.apply.field.expireAt' })}
+            extra={intl.formatMessage({ id: 'file.apply.field.expireAtExtra' })}
           >
             <DatePicker
               showTime
@@ -224,13 +262,15 @@ export default function PermissionApplyModal({
               disabledDate={(current) =>
                 current && current < dayjs().startOf('day')
               }
-              placeholder="选择到期时间"
+              placeholder={intl.formatMessage({
+                id: 'file.apply.field.expireAtPlaceholder',
+              })}
             />
           </Form.Item>
 
           <Space size={4}>
             <Text type="secondary" style={{ fontSize: 12 }}>
-              提交后申请人身份、申请时间由服务端记录，不可代他人申请。
+              {intl.formatMessage({ id: 'file.apply.footnote' })}
             </Text>
           </Space>
         </Form>

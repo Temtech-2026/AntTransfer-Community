@@ -10,6 +10,7 @@ import {
   del,
   downloadBinary,
   get,
+  patch,
   post,
   requestPage,
   saveBlob,
@@ -160,6 +161,21 @@ export function pageRecycleFiles(query: FileNodeQuery = {}): Promise<PageResult<
 /** 移入回收站（需 `file:edit`）：不是物理删除，用户仍可在回收站还原。 */
 export function recycleNode(nodeId: number): Promise<void> {
   return del<void>(FILE_ENDPOINTS.remove(nodeId));
+}
+
+/** 批量移入回收站（需 `file:edit`）：返回实际生效条数（服务端单次上限 200）。 */
+export function batchRecycleNodes(nodeIds: number[]): Promise<number> {
+  return post<number>(FILE_ENDPOINTS.batchRecycle, { nodeIds });
+}
+
+/**
+ * 移动条目到目标父目录（需 `file:edit`）。
+ *
+ * <p>`targetFolderId = 0` 表示根目录——这是服务端的约定（见 `MoveRequest`），
+ * 不要在前端把 0 「归一成 undefined」，那会被校验拦成「目标目录不能为空」。</p>
+ */
+export function moveNode(nodeId: number, targetFolderId: number): Promise<FileNode> {
+  return patch<FileNode>(FILE_ENDPOINTS.move(nodeId), { targetFolderId });
 }
 
 /** 从回收站还原（需 `file:edit`）。 */

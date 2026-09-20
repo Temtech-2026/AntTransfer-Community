@@ -12,6 +12,7 @@
  */
 
 import { ModalForm, ProFormDigit, ProFormSelect, ProFormText } from '@ant-design/pro-components';
+import { useIntl } from '@umijs/max';
 import React, { useMemo } from 'react';
 
 import {
@@ -41,12 +42,13 @@ interface CreateShareFormValues {
 }
 
 const CreateShareModal: React.FC<CreateShareModalProps> = ({ onClose, onCreated }) => {
+  const intl = useIntl();
   // 打开即随机一个提取码：可直接使用，也可改成便于口头转达的自定义码
   const defaultExtractCode = useMemo(() => randomExtractCode(), []);
 
   return (
     <ModalForm<CreateShareFormValues>
-      title="创建外发分享"
+      title={intl.formatMessage({ id: 'shares.create.title' })}
       open
       width={520}
       modalProps={{ onCancel: onClose, maskClosable: false }}
@@ -70,10 +72,17 @@ const CreateShareModal: React.FC<CreateShareModalProps> = ({ onClose, onCreated 
     >
       <ProFormSelect
         name="fileId"
-        label="外发文件"
-        placeholder="输入文件名搜索"
+        label={intl.formatMessage({ id: 'shares.create.file' })}
+        placeholder={intl.formatMessage({
+          id: 'shares.create.filePlaceholder',
+        })}
         showSearch
-        rules={[{ required: true, message: '请选择要外发的文件' }]}
+        rules={[
+          {
+            required: true,
+            message: intl.formatMessage({ id: 'shares.create.fileRequired' }),
+          },
+        ]}
         // 文件域分页参数是 current/pageSize（NodeQuery），与分享域的 page/size 不同口径
         params={{ current: 1, pageSize: 20 }}
         request={async (params) => {
@@ -81,44 +90,81 @@ const CreateShareModal: React.FC<CreateShareModalProps> = ({ onClose, onCreated 
           const page = await pageFiles({ current: 1, pageSize: 20, keyword });
           return page.records.map((node) => ({ label: node.name, value: node.id }));
         }}
-        fieldProps={{ filterOption: false, notFoundContent: '没有匹配的文件' }}
+        fieldProps={{
+          filterOption: false,
+          notFoundContent: intl.formatMessage({
+            id: 'shares.create.fileNotFound',
+          }),
+        }}
       />
 
       <ProFormSelect
         name="expireDays"
-        label="有效期"
-        options={SHARE_EXPIRE_PRESETS}
-        rules={[{ required: true, message: '请选择有效期' }]}
-        extra={`最长 ${SHARE_LIMITS.maxExpireDays} 天，到期后链接自动失效`}
+        label={intl.formatMessage({ id: 'shares.create.expire' })}
+        options={SHARE_EXPIRE_PRESETS.map((days) => ({
+          value: days,
+          label: intl.formatMessage({ id: 'file.share.presetDays' }, { days }),
+        }))}
+        rules={[
+          {
+            required: true,
+            message: intl.formatMessage({ id: 'shares.create.expireRequired' }),
+          },
+        ]}
+        extra={intl.formatMessage(
+          { id: 'shares.create.expireExtra' },
+          { days: SHARE_LIMITS.maxExpireDays },
+        )}
       />
 
       <ProFormDigit
         name="downloadLimit"
-        label="下载次数上限"
+        label={intl.formatMessage({ id: 'shares.create.downloadLimit' })}
         min={1}
         max={SHARE_LIMITS.maxDownloadLimit}
-        rules={[{ required: true, message: '请输入下载次数上限' }]}
+        rules={[
+          {
+            required: true,
+            message: intl.formatMessage({
+              id: 'shares.create.downloadLimitRequired',
+            }),
+          },
+        ]}
         fieldProps={{ precision: 0 }}
-        extra={`1 ~ ${SHARE_LIMITS.maxDownloadLimit} 次，用完后链接自动失效`}
+        extra={intl.formatMessage(
+          { id: 'shares.create.downloadLimitExtra' },
+          { max: SHARE_LIMITS.maxDownloadLimit },
+        )}
       />
 
       <ProFormText
         name="extractCode"
-        label="提取码"
+        label={intl.formatMessage({ id: 'shares.create.extractCode' })}
         rules={[
-          { required: true, message: '请输入提取码' },
+          {
+            required: true,
+            message: intl.formatMessage({
+              id: 'shares.create.extractCodeRequired',
+            }),
+          },
           {
             validator: async (_rule, value?: string) => {
               if (isValidExtractCode(value)) {
                 return;
               }
               throw new Error(
-                `提取码需为 ${SHARE_LIMITS.extractCodeMin}~${SHARE_LIMITS.extractCodeMax} 位字母或数字`,
+                intl.formatMessage(
+                  { id: 'shares.create.extractCodeRule' },
+                  {
+                    min: SHARE_LIMITS.extractCodeMin,
+                    max: SHARE_LIMITS.extractCodeMax,
+                  },
+                ),
               );
             },
           },
         ]}
-        extra="服务端只保存散列，创建成功后请立即转达给对方，之后无法再次查看"
+        extra={intl.formatMessage({ id: 'shares.create.extractCodeExtra' })}
         fieldProps={{ maxLength: SHARE_LIMITS.extractCodeMax, autoComplete: 'off' }}
       />
     </ModalForm>

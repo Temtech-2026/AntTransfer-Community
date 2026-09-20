@@ -63,9 +63,14 @@ describe('folderPath（面包屑）', () => {
     expect(folderPath(TREE, 999)).toEqual([]);
   });
 
-  it('文案始终以「全部文件」起头', () => {
-    expect(folderPathText(TREE, 111)).toBe('全部文件 / 研发 / 后端 / 归档');
-    expect(folderPathText(TREE, undefined)).toBe('全部文件');
+  it('根目录文案由调用方传入（不内嵌语言文案）', () => {
+    const root = '全部文件';
+    expect(folderPathText(TREE, 111, root)).toBe('全部文件 / 研发 / 后端 / 归档');
+    expect(folderPathText(TREE, undefined, root)).toBe('全部文件');
+  });
+
+  it('不传根目录文案时只拼接各级目录名', () => {
+    expect(folderPathText(TREE, 111)).toBe('研发 / 后端 / 归档');
   });
 });
 

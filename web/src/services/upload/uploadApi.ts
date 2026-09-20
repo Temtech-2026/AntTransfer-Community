@@ -13,6 +13,7 @@
 
 import { request } from '@umijs/max';
 
+import { translateMessage } from '@/requestErrorConfig';
 import { currentAcceptLanguage } from '@/utils/locale';
 import { isResult, type Result, SUCCESS_CODE } from '@/utils/result';
 import { tokenStore } from '@/utils/token';
@@ -111,7 +112,7 @@ function toApiError(error: unknown): UploadApiError {
   if (isResult(body)) {
     const result = body as Result<unknown>;
     return new UploadApiError({
-      message: result.message || '上传失败',
+      message: result.message || translateMessage('upload.error.generic'),
       code: result.code,
       httpStatus: status,
       traceId: result.traceId,
@@ -120,8 +121,8 @@ function toApiError(error: unknown): UploadApiError {
   }
   const message =
     (error as any)?.message === 'Network Error'
-      ? '网络异常，请检查网络后重试'
-      : ((error as any)?.message ?? '上传失败');
+      ? translateMessage('upload.error.network')
+      : ((error as any)?.message ?? translateMessage('upload.error.generic'));
   return new UploadApiError({
     message,
     httpStatus: status,
@@ -141,7 +142,7 @@ async function callJson<T>(
     })) as Result<T>;
     if (!isResult(body)) {
       throw new UploadApiError({
-        message: '服务端响应结构不符合统一契约',
+        message: translateMessage('upload.error.badContract'),
         retryable: true,
       });
     }
@@ -169,7 +170,7 @@ export async function precheck(
     const fileId = body.data?.fileId ?? body.data?.id;
     if (!fileId) {
       throw new UploadApiError({
-        message: '秒传命中但未返回 fileId',
+        message: translateMessage('upload.error.instantWithoutFileId'),
         retryable: true,
       });
     }
@@ -181,7 +182,7 @@ export async function precheck(
     const uploadId = data.uploadId;
     if (!uploadId) {
       throw new UploadApiError({
-        message: '秒传未命中但未返回 uploadId',
+        message: translateMessage('upload.error.missWithoutUploadId'),
         code: body.code,
         retryable: true,
       });
@@ -322,13 +323,18 @@ function xhrSend(init: {
     };
     xhr.onerror = () => {
       init.signal?.removeEventListener('abort', onAbort);
-      reject(new UploadApiError({ message: '网络异常', retryable: true }));
+      reject(
+        new UploadApiError({
+          message: translateMessage('upload.error.network'),
+          retryable: true,
+        }),
+      );
     };
     xhr.ontimeout = () => {
       init.signal?.removeEventListener('abort', onAbort);
       reject(
         new UploadApiError({
-          message: '上传超时',
+          message: translateMessage('upload.error.timeout'),
           httpStatus: 408,
           retryable: true,
         }),
@@ -418,7 +424,7 @@ export async function uploadPart(
       return { status, result: null };
     }
     throw new UploadApiError({
-      message: `分片上传失败（HTTP ${status}）`,
+      message: translateMessage('upload.error.partHttp', { status }),
       httpStatus: status,
       retryable: isRetryableStatus(status),
     });

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { testFormatMessage } from '@/locales/testTranslate';
+
 import {
   SHARE_LIMITS,
   buildFileQuery,
@@ -7,12 +9,16 @@ import {
   buildShareUrl,
   isValidExtractCode,
   levelColor,
-  levelText,
+  levelTextId,
   randomExtractCode,
-  shareStatusText,
+  shareStatusId,
   sortExprOf,
   toOptionalNumber,
 } from './types';
+
+/** 服务层只给 id，测试用真实 zh-CN 语言包解析，保证 id 一定存在。 */
+const t = (id: string, values?: Record<string, unknown>) =>
+  testFormatMessage({ id, values });
 
 describe('toOptionalNumber（宽松归一）', () => {
   it('数字与数字字符串归一为数值', () => {
@@ -109,26 +115,29 @@ describe('buildFileQuery（查询体组装）', () => {
 });
 
 describe('密级展示口径', () => {
-  it('已知密级给中文标签与语义色', () => {
-    expect(levelText(1)).toBe('公开');
-    expect(levelText(3)).toBe('机密');
+  it('已知密级映射到语言包 id，并能解析出中文标签', () => {
+    expect(levelTextId(1)).toBe('file.level.public');
+    expect(levelTextId(3)).toBe('file.level.classified');
+    expect(t(levelTextId(1))).toBe('公开');
+    expect(t(levelTextId(3))).toBe('机密');
     expect(levelColor(1)).toBe('success');
     expect(levelColor(3)).toBe('error');
   });
 
   it('未知密级按未定级处理', () => {
-    expect(levelText(undefined)).toBe('未定级');
-    expect(levelText(9)).toBe('未定级');
+    expect(levelTextId(undefined)).toBe('file.level.unknown');
+    expect(levelTextId(9)).toBe('file.level.unknown');
+    expect(t(levelTextId(9))).toBe('未定级');
     expect(levelColor(undefined)).toBe('default');
   });
 });
 
 describe('分享状态与提取码', () => {
-  it('分享状态文案', () => {
-    expect(shareStatusText(0)).toBe('生效中');
-    expect(shareStatusText(1)).toBe('已撤销');
-    expect(shareStatusText(2)).toBe('已失效');
-    expect(shareStatusText(undefined)).toBe('未知');
+  it('分享状态映射到语言包 id', () => {
+    expect(shareStatusId(0)).toBe('file.shareStatus.active');
+    expect(shareStatusId(1)).toBe('file.shareStatus.revoked');
+    expect(shareStatusId(2)).toBe('file.shareStatus.expired');
+    expect(shareStatusId(undefined)).toBe('file.shareStatus.unknown');
   });
 
   it('随机提取码长度被夹到合法区间', () => {
@@ -166,13 +175,18 @@ describe('分享链接与复制文案', () => {
   });
 
   it('复制文案必须同时给出链接与提取码', () => {
-    const text = buildShareCopyText('https://x/share/t', 'ABC123', '2026-09-21 00:00:00');
+    const text = buildShareCopyText(
+      t,
+      'https://x/share/t',
+      'ABC123',
+      '2026-09-21 00:00:00',
+    );
     expect(text).toContain('链接：https://x/share/t');
     expect(text).toContain('提取码：ABC123');
     expect(text).toContain('有效期至：2026-09-21 00:00:00');
   });
 
   it('未传提取码 / 有效期时不产生空行', () => {
-    expect(buildShareCopyText('https://x/share/t')).toBe('链接：https://x/share/t');
+    expect(buildShareCopyText(t, 'https://x/share/t')).toBe('链接：https://x/share/t');
   });
 });

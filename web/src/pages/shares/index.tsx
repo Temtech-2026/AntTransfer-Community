@@ -18,7 +18,7 @@ import {
   ProTable,
   type ProColumns,
 } from '@ant-design/pro-components';
-import { useAccess } from '@umijs/max';
+import { useAccess, useIntl } from '@umijs/max';
 import { Button, Modal, Space, Tag, Typography, message } from 'antd';
 import React, { useRef, useState } from 'react';
 
@@ -29,12 +29,12 @@ import {
   pageMyShares,
   revokeShare,
   type ShareLink,
-  shareStatusText,
+  shareStatusId,
 } from '@/services/file';
 
 import CreateShareModal from './components/CreateShareModal';
 
-/** 分享状态对应的标签颜色（与 shareStatusText 一一对应）。 */
+/** 分享状态对应的标签颜色（与 shareStatusId 一一对应）。 */
 function shareStatusColor(status?: number | null): string {
   switch (status) {
     case 0:
@@ -61,6 +61,7 @@ async function copyToClipboard(text: string): Promise<boolean> {
 
 const SharesPage: React.FC = () => {
   const access = useAccess();
+  const intl = useIntl();
   const { confirm } = useDangerConfirm();
   const actionRef = useRef<ActionType | undefined>(undefined);
   const [createOpen, setCreateOpen] = useState(false);
@@ -70,11 +71,11 @@ const SharesPage: React.FC = () => {
   const handleCopy = async (record: ShareLink) => {
     const url = buildShareUrl(record.token);
     if (await copyToClipboard(url)) {
-      message.success('链接已复制；提取码不会回显，请沿用创建时的提取码');
+      message.success(intl.formatMessage({ id: 'shares.copy.success' }));
       return;
     }
     Modal.info({
-      title: '请手动复制链接',
+      title: intl.formatMessage({ id: 'shares.copy.manualTitle' }),
       content: <Typography.Text copyable>{url}</Typography.Text>,
     });
   };
@@ -87,7 +88,7 @@ const SharesPage: React.FC = () => {
    */
   const handleRevoke = async (record: ShareLink) => {
     await revokeShare(record.token);
-    message.success('分享已取消，链接立即失效');
+    message.success(intl.formatMessage({ id: 'shares.revoke.success' }));
     actionRef.current?.reload();
   };
 
@@ -97,20 +98,20 @@ const SharesPage: React.FC = () => {
     actionRef.current?.reload();
     const url = buildShareUrl(link.token);
     Modal.success({
-      title: '分享已创建',
+      title: intl.formatMessage({ id: 'shares.created.title' }),
       width: 560,
-      okText: '我知道了',
+      okText: intl.formatMessage({ id: 'shares.created.ok' }),
       content: (
         <Space orientation="vertical" size="small" style={{ width: '100%' }}>
           <Typography.Text copyable={{ text: url }}>{url}</Typography.Text>
           <Typography.Text>
-            提取码：
+            {intl.formatMessage({ id: 'shares.created.code' })}
             <Typography.Text strong copyable={{ text: extractCode }}>
               {extractCode}
             </Typography.Text>
           </Typography.Text>
           <Typography.Text type="secondary">
-            服务端只保存提取码散列，关闭本窗口后无法再次查看，请立即转达给对方。
+            {intl.formatMessage({ id: 'shares.created.note' })}
           </Typography.Text>
         </Space>
       ),
@@ -119,61 +120,79 @@ const SharesPage: React.FC = () => {
 
   if (!canShare) {
     return (
-      <PageContainer title="分享管理">
-        <EmptyState variant="denied" description="当前账号没有外发分享权限（file:share），请联系管理员开通" />
+      <PageContainer
+        title={intl.formatMessage({ id: 'shares.page.title' })}
+      >
+        <EmptyState
+          variant="denied"
+          description={intl.formatMessage({ id: 'shares.denied' })}
+        />
       </PageContainer>
     );
   }
 
   const columns: ProColumns<ShareLink>[] = [
     {
-      title: '文件名',
+      title: intl.formatMessage({ id: 'file.column.name' }),
       dataIndex: 'fileName',
       ellipsis: true,
-      render: (_, record) => record.fileName || '（文件已删除）',
+      render: (_, record) =>
+        record.fileName ||
+        intl.formatMessage({ id: 'shares.column.deletedFile' }),
     },
     {
-      title: '状态',
+      title: intl.formatMessage({ id: 'shares.column.status' }),
       dataIndex: 'status',
       width: 100,
       render: (_, record) => (
-        <Tag color={shareStatusColor(record.status)}>{shareStatusText(record.status)}</Tag>
+        <Tag color={shareStatusColor(record.status)}>
+          {intl.formatMessage({ id: shareStatusId(record.status) })}
+        </Tag>
       ),
     },
     {
-      title: '有效期至',
+      title: intl.formatMessage({ id: 'shares.column.expireAt' }),
       dataIndex: 'expireAt',
       width: 180,
       valueType: 'dateTime',
     },
     {
-      title: '已用次数',
+      title: intl.formatMessage({ id: 'shares.column.used' }),
       dataIndex: 'downloadedCount',
       width: 140,
       render: (_, record) =>
-        `${record.downloadedCount ?? 0} / ${record.downloadLimit ?? '不限'}`,
+        `${record.downloadedCount ?? 0} / ${
+          record.downloadLimit ??
+          intl.formatMessage({ id: 'shares.column.unlimited' })
+        }`,
     },
     {
-      title: '剩余次数',
+      title: intl.formatMessage({ id: 'shares.column.remaining' }),
       dataIndex: 'remainingCount',
       width: 100,
       render: (_, record) => record.remainingCount ?? '-',
     },
     {
-      title: '提取码',
+      title: intl.formatMessage({ id: 'shares.column.extractCode' }),
       dataIndex: 'extractCodeRequired',
       width: 100,
       render: (_, record) =>
-        record.extractCodeRequired ? <Tag color="blue">已开启</Tag> : <Tag>未开启</Tag>,
+        record.extractCodeRequired ? (
+          <Tag color="blue">
+            {intl.formatMessage({ id: 'shares.column.extractOn' })}
+          </Tag>
+        ) : (
+          <Tag>{intl.formatMessage({ id: 'shares.column.extractOff' })}</Tag>
+        ),
     },
     {
-      title: '创建时间',
+      title: intl.formatMessage({ id: 'shares.column.createTime' }),
       dataIndex: 'createTime',
       width: 180,
       valueType: 'dateTime',
     },
     {
-      title: '操作',
+      title: intl.formatMessage({ id: 'file.column.action' }),
       valueType: 'option',
       width: 160,
       fixed: 'right',
@@ -185,10 +204,14 @@ const SharesPage: React.FC = () => {
             type="link"
             size="small"
             disabled={!active}
-            title={active ? undefined : '仅生效中的分享可复制'}
+            title={
+              active
+                ? undefined
+                : intl.formatMessage({ id: 'shares.copy.disabled' })
+            }
             onClick={() => void handleCopy(record)}
           >
-            复制链接
+            {intl.formatMessage({ id: 'shares.action.copy' })}
           </Button>,
           <Button
             key="revoke"
@@ -198,16 +221,19 @@ const SharesPage: React.FC = () => {
             disabled={!active}
             onClick={() =>
               confirm({
-                title: '取消这个分享链接？',
-                content:
-                  '取消后链接立即失效，已发给对方的提取码一并作废。如需再次外发，只能重新创建并生成新链接。',
+                title: intl.formatMessage({
+                  id: 'shares.revoke.confirmTitle',
+                }),
+                content: intl.formatMessage({
+                  id: 'shares.revoke.confirmContent',
+                }),
                 level: 'critical',
-                okText: '确认取消分享',
+                okText: intl.formatMessage({ id: 'shares.revoke.confirmOk' }),
                 onOk: () => handleRevoke(record),
               })
             }
           >
-            取消分享
+            {intl.formatMessage({ id: 'shares.action.revoke' })}
           </Button>,
         ];
       },
@@ -216,11 +242,11 @@ const SharesPage: React.FC = () => {
 
   return (
     <PageContainer
-      title="分享管理"
-      subTitle="我创建的外发链接；提取码不回显，取消后不可恢复"
+      title={intl.formatMessage({ id: 'shares.page.title' })}
+      subTitle={intl.formatMessage({ id: 'shares.page.subtitle' })}
     >
       <ProTable<ShareLink>
-        headerTitle="我的分享"
+        headerTitle={intl.formatMessage({ id: 'shares.table.title' })}
         actionRef={actionRef}
         rowKey="token"
         columns={columns}
@@ -245,7 +271,7 @@ const SharesPage: React.FC = () => {
             icon={<PlusOutlined />}
             onClick={() => setCreateOpen(true)}
           >
-            创建分享
+            {intl.formatMessage({ id: 'shares.action.create' })}
           </Button>,
         ]}
       />

@@ -22,8 +22,10 @@ export const FILE_ENDPOINTS = {
   recycle: '/api/v1/files/recycle',
   /** 移入回收站（需 file:edit）——DELETE 语义是「移入回收站」而不是物理删除 */
   remove: (nodeId: number | string) => `/api/v1/files/${nodeId}`,
-  /** 批量移入回收站（需 file:edit） */
+  /** 批量移入回收站（需 file:edit，单次上限 200） */
   batchRecycle: '/api/v1/files/batch/recycle',
+  /** 移动条目到目标父目录（需 file:edit；targetFolderId=0 表示根） */
+  move: (nodeId: number | string) => `/api/v1/files/${nodeId}/move`,
   /** 从回收站还原（需 file:edit） */
   restore: (nodeId: number | string) => `/api/v1/files/${nodeId}/restore`,
   /** 彻底销毁（需 file:destroy，不可撤销） */

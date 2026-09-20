@@ -22,33 +22,44 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import access, { type AccessModel } from '@/access';
 import { formatBytes } from '@/components/ChunkUpload';
+import { testFormatMessage } from '@/locales/testTranslate';
 import { DataScope } from '@/services/access';
 import {
   type FileNode,
   fetchFolderTree,
-  levelText,
+  levelTextId,
   pageFiles,
   pageRecycleFiles,
 } from '@/services/file';
 
 import FileWorkbenchPage from './index';
 
+/** 断言用：从 zh-CN 语言包取文案，键写错即失败（不在测试里另抄一份中文）。 */
+const t = (id: string, values?: Record<string, unknown>) =>
+  testFormatMessage({ id, values });
+
 /** 可变的权限模型：`useAccess()` 每次渲染都读它，从而在同一个用例里切换权限 */
 const holder = vi.hoisted(() => ({ model: {} as unknown }));
 
-vi.mock('@umijs/max', () => ({
-  useAccess: () => holder.model,
-  useIntl: () => ({
-    formatMessage: (descriptor?: { defaultMessage?: string }) =>
-      descriptor?.defaultMessage ?? '',
-  }),
-  request: vi.fn(),
-  history: {
-    location: { pathname: '/file', search: '' },
-    push: vi.fn(),
-    replace: vi.fn(),
-  },
-}));
+vi.mock('@umijs/max', async () => {
+  const { testFormatMessage: translate } = await import('@/locales/testTranslate');
+  return {
+    useAccess: () => holder.model,
+    // 兼容两种调用形态：`formatMessage({ id, values })` 与 `formatMessage({ id }, values)`
+    useIntl: () => ({
+      formatMessage: (
+        descriptor: { id: string; values?: Record<string, unknown> },
+        values?: Record<string, unknown>,
+      ) => translate({ id: descriptor.id, values: values ?? descriptor.values }),
+    }),
+    request: vi.fn(),
+    history: {
+      location: { pathname: '/file', search: '' },
+      push: vi.fn(),
+      replace: vi.fn(),
+    },
+  };
+});
 
 vi.mock('@/services/file', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/file')>();
@@ -109,7 +120,10 @@ const waitForRow = async (name = '季度报告.pdf') => {
   await screen.findByText(name);
 };
 
-const queryAction = (label: string) => screen.queryByText(label);
+const queryAction = (id: string) => screen.queryByText(t(id));
+
+const buttonNamed = (id: string) =>
+  screen.queryByRole('button', { name: new RegExp(t(id)) });
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -129,14 +143,20 @@ describe('文件列表渲染', () => {
 
     // 大小与密级用各自格式化函数的结果断言，避免把展示格式写死在测试里
     expect(screen.getByText(formatBytes(2048))).toBeTruthy();
-    expect(screen.getByText(levelText(1))).toBeTruthy();
+    expect(screen.getByText(t(levelTextId(1)))).toBeTruthy();
 
-    for (const label of ['预览', '下载', '分享', '申请权限', '删除']) {
-      expect(queryAction(label), `有权限时「${label}」应渲染`).not.toBeNull();
+    for (const id of [
+      'file.action.preview',
+      'file.action.download',
+      'file.action.share',
+      'file.action.applyPerm',
+      'file.action.delete',
+    ]) {
+      expect(queryAction(id), `有权限时「${t(id)}」应渲染`).not.toBeNull();
     }
     // 工具栏
-    expect(screen.getByRole('button', { name: /上传文件/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /回收站/ })).toBeTruthy();
+    expect(buttonNamed('file.action.upload')).toBeTruthy();
+    expect(buttonNamed('file.action.enterRecycle')).toBeTruthy();
     // 数据源必须是「我的文件」而不是回收站
     expect(mockedPageFiles).toHaveBeenCalled();
     expect(mockedPageRecycle).not.toHaveBeenCalled();
@@ -147,13 +167,13 @@ describe('文件列表渲染', () => {
     renderPage();
     await waitForRow();
 
-    expect(queryAction('下载')).not.toBeNull();
+    expect(queryAction('file.action.download')).not.toBeNull();
     // 没有 file:preview / file:share / file:edit，这三个入口必须消失
-    expect(queryAction('预览')).toBeNull();
-    expect(queryAction('分享')).toBeNull();
-    expect(queryAction('删除')).toBeNull();
+    expect(queryAction('file.action.preview')).toBeNull();
+    expect(queryAction('file.action.share')).toBeNull();
+    expect(queryAction('file.action.delete')).toBeNull();
     // 关键：申请权限无门禁——没有权限的人正是要申请的人，加门禁会形成死锁
-    expect(queryAction('申请权限')).not.toBeNull();
+    expect(queryAction('file.action.applyPerm')).not.toBeNull();
   });
 
   it('上传入口由 file:upload 控制（对齐 frontend-permission-map 的「上传 / 秒传」一行）', async () => {
@@ -161,7 +181,7 @@ describe('文件列表渲染', () => {
     renderPage();
     await waitForRow();
 
-    expect(screen.queryByRole('button', { name: /上传文件/ })).toBeNull();
+    expect(buttonNamed('file.action.upload')).toBeNull();
   });
 
   it('回收站入口由 file:preview 控制：无该权限时进不去', async () => {
@@ -169,7 +189,7 @@ describe('文件列表渲染', () => {
     renderPage();
     await waitForRow();
 
-    expect(screen.queryByRole('button', { name: /回收站/ })).toBeNull();
+    expect(buttonNamed('file.action.enterRecycle')).toBeNull();
   });
 });
 
@@ -177,7 +197,7 @@ describe('回收站视角', () => {
   const enterRecycle = async () => {
     renderPage();
     await waitForRow();
-    fireEvent.click(screen.getByRole('button', { name: /回收站/ }));
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(t('file.action.enterRecycle')) }));
     await waitFor(() => expect(mockedPageRecycle).toHaveBeenCalled());
   };
 
@@ -185,14 +205,14 @@ describe('回收站视角', () => {
     await enterRecycle();
 
     // 撤回：预览 / 下载 / 分享 对已移入回收站的文件没有意义
-    expect(queryAction('预览')).toBeNull();
-    expect(queryAction('下载')).toBeNull();
-    expect(queryAction('分享')).toBeNull();
-    expect(queryAction('还原')).not.toBeNull();
-    expect(queryAction('彻底销毁')).not.toBeNull();
+    expect(queryAction('file.action.preview')).toBeNull();
+    expect(queryAction('file.action.download')).toBeNull();
+    expect(queryAction('file.action.share')).toBeNull();
+    expect(queryAction('file.action.restore')).not.toBeNull();
+    expect(queryAction('file.action.destroy')).not.toBeNull();
     // 工具栏出现返回入口与清空入口
-    expect(screen.getByRole('button', { name: /返回我的文件/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /清空回收站/ })).toBeTruthy();
+    expect(buttonNamed('file.action.backToFiles')).toBeTruthy();
+    expect(buttonNamed('file.action.emptyRecycle')).toBeTruthy();
     expect(mockedPageRecycle).toHaveBeenCalledWith(
       expect.objectContaining({ current: expect.any(Number) }),
     );
@@ -203,9 +223,9 @@ describe('回收站视角', () => {
     grant(['file:preview', 'file:edit']);
     await enterRecycle();
 
-    expect(queryAction('还原')).not.toBeNull();
-    expect(screen.queryByRole('button', { name: /清空回收站/ })).toBeNull();
+    expect(queryAction('file.action.restore')).not.toBeNull();
+    expect(buttonNamed('file.action.emptyRecycle')).toBeNull();
     // 行内的「彻底销毁」同样不可见
-    expect(queryAction('彻底销毁')).toBeNull();
+    expect(queryAction('file.action.destroy')).toBeNull();
   });
 });

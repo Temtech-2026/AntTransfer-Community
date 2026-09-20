@@ -62,7 +62,7 @@ export function folderChildren(
 /**
  * 面包屑路径：从根到当前目录（含当前目录本身）。
  *
- * <p>找不到时返回空数组——调用方仍会渲染「全部文件」这一层，不会出现悬空面包屑。</p>
+ * <p>找不到时返回空数组——调用方仍会渲染根目录这一层，不会出现悬空面包屑。</p>
  */
 export function folderPath(
   tree: FolderNode[] | null | undefined,
@@ -96,11 +96,17 @@ function walk(
   return [];
 }
 
-/** 路径 → 面包屑展示文案（用于日志 / 提示）。 */
+/**
+ * 路径 → 面包屑展示文案（用于日志 / 提示）。
+ *
+ * <p>根目录那一层的文案由调用方通过 `rootLabel` 传入（来自 i18n），
+ * 本模块不内嵌任何语言文案，避免英文语境下混出中文。</p>
+ */
 export function folderPathText(
   tree: FolderNode[] | null | undefined,
   folderId?: number | null,
+  rootLabel?: string,
 ): string {
   const names = folderPath(tree, folderId).map((node) => node.name);
-  return ['全部文件', ...names].join(' / ');
+  return [...(rootLabel ? [rootLabel] : []), ...names].join(' / ');
 }

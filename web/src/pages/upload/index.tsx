@@ -14,6 +14,7 @@ import {
   UnorderedListOutlined,
 } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
+import { useIntl } from '@umijs/max';
 import { Alert, Space, Steps, Table, Tag, Typography, theme } from 'antd';
 import { useMemo, useState } from 'react';
 
@@ -29,12 +30,25 @@ const CONCURRENCY = 3;
 /** 演示队列 id：同一 id 的多个组件/多次挂载共享同一份上传队列 */
 const DEMO_ID = 'upload-demo';
 
-const PIPELINE = [
-  { title: '计算校验值', description: 'Worker 内增量 SHA-256，主线程不卡' },
-  { title: '秒传预检', description: '摘要命中即完成，0 字节传输' },
-  { title: '查询已收分片', description: '以服务端清单为准' },
-  { title: '并发补传分片', description: '默认 3 并发，失败退避重试' },
-  { title: '合并校验', description: '服务端整件重算摘要后合并' },
+/** 上传链路步骤：只存 i18n id，文案在渲染时解析（否则切语言不会变） */
+const PIPELINE_STEPS = [
+  { titleId: 'upload.demo.step.hash.title', descId: 'upload.demo.step.hash.desc' },
+  {
+    titleId: 'upload.demo.step.precheck.title',
+    descId: 'upload.demo.step.precheck.desc',
+  },
+  {
+    titleId: 'upload.demo.step.query.title',
+    descId: 'upload.demo.step.query.desc',
+  },
+  {
+    titleId: 'upload.demo.step.upload.title',
+    descId: 'upload.demo.step.upload.desc',
+  },
+  {
+    titleId: 'upload.demo.step.merge.title',
+    descId: 'upload.demo.step.merge.desc',
+  },
 ];
 
 const USAGE_SNIPPET = `import { ChunkUpload } from '@/components/ChunkUpload';
@@ -58,8 +72,34 @@ interface FinishedItem {
 /** 已完成列表最多保留的条数，避免演示页无限增长 */
 const MAX_FINISHED = 8;
 
+/**
+ * 把文案里的反引号片段渲染成行内代码。
+ *
+ * <p>用「一条完整文案 + 反引号标记」而不是把句子拆成多个 JSX 片段，
+ * 是因为中英文的语序不同：拆开写会把语序固化在 JSX 里，英文只能凑合。</p>
+ */
+function CodeText({ text }: { text: string }) {
+  const parts = text.split('`');
+  return (
+    <>
+      {parts.map((part, index) =>
+        index % 2 === 1 ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: 片段由同一条文案切分而来，序号即稳定身份
+          <Text code key={`code-${index}`}>
+            {part}
+          </Text>
+        ) : (
+          // biome-ignore lint/suspicious/noArrayIndexKey: 片段由同一条文案切分而来，序号即稳定身份
+          <span key={`text-${index}`}>{part}</span>
+        ),
+      )}
+    </>
+  );
+}
+
 export default function UploadDemoPage() {
   const { token } = theme.useToken();
+  const intl = useIntl();
   const [finished, setFinished] = useState<FinishedItem[]>([]);
 
   const handleSuccess = (task: UploadTaskView) => {
@@ -80,25 +120,29 @@ export default function UploadDemoPage() {
   const columns = useMemo(
     () => [
       {
-        title: '文件名',
+        title: intl.formatMessage({ id: 'file.column.name' }),
         dataIndex: 'fileName',
         ellipsis: true,
       },
       {
-        title: '大小',
+        title: intl.formatMessage({ id: 'file.column.size' }),
         dataIndex: 'size',
         width: 110,
         render: (size: number) => formatBytes(size),
       },
       {
-        title: '方式',
+        title: intl.formatMessage({ id: 'upload.column.method' }),
         dataIndex: 'instant',
         width: 110,
         render: (instant: boolean) =>
           instant ? (
-            <Tag color="purple">秒传</Tag>
+            <Tag color="purple">
+              {intl.formatMessage({ id: 'upload.instant' })}
+            </Tag>
           ) : (
-            <Tag color="blue">分片上传</Tag>
+            <Tag color="blue">
+              {intl.formatMessage({ id: 'upload.column.chunked' })}
+            </Tag>
           ),
       },
       {
@@ -108,14 +152,23 @@ export default function UploadDemoPage() {
         render: (fileId?: string) => <Text code>{fileId ?? '-'}</Text>,
       },
     ],
-    [],
+    [intl],
+  );
+
+  const pipelineItems = useMemo(
+    () =>
+      PIPELINE_STEPS.map((step) => ({
+        title: intl.formatMessage({ id: step.titleId }),
+        description: intl.formatMessage({ id: step.descId }),
+      })),
+    [intl],
   );
 
   return (
     <PageContainer
       header={{
-        title: '分片上传',
-        subTitle: '秒传 · 断点续传 · 并发分片',
+        title: intl.formatMessage({ id: 'upload.demo.pageTitle' }),
+        subTitle: intl.formatMessage({ id: 'upload.demo.pageSubtitle' }),
       }}
     >
       <Space
@@ -124,25 +177,26 @@ export default function UploadDemoPage() {
         style={{ width: '100%' }}
       >
         <SectionCard
-          title="上传链路"
-          subTitle="摘要 → 秒传 → 补传 → 合并"
+          title={intl.formatMessage({ id: 'upload.demo.pipeline.title' })}
+          subTitle={intl.formatMessage({
+            id: 'upload.demo.pipeline.subtitle',
+          })}
           icon={<CloudUploadOutlined />}
         >
           <Steps
             size="small"
             responsive
             labelPlacement="vertical"
-            items={PIPELINE}
+            items={pipelineItems}
           />
           <Paragraph type="secondary" style={{ margin: '16px 0 0' }}>
-            大文件先在本机算出摘要，服务端据此判定能否秒传；未命中则只补传缺失分片，
-            任意时刻刷新页面，重新选择同一文件即可从服务端已收位置继续。
+            {intl.formatMessage({ id: 'upload.demo.pipeline.desc' })}
           </Paragraph>
         </SectionCard>
 
         <ChunkUpload
           id={DEMO_ID}
-          title="分片上传演示"
+          title={intl.formatMessage({ id: 'upload.demo.chunkTitle' })}
           chunkSize={CHUNK_SIZE}
           concurrency={CONCURRENCY}
           extra={{ spaceId: 'demo-space' }}
@@ -151,8 +205,11 @@ export default function UploadDemoPage() {
 
         {finished.length > 0 ? (
           <SectionCard
-            title="已完成文件"
-            subTitle={`最多保留最近 ${MAX_FINISHED} 条`}
+            title={intl.formatMessage({ id: 'upload.demo.finished.title' })}
+            subTitle={intl.formatMessage(
+              { id: 'upload.demo.finished.subtitle' },
+              { count: MAX_FINISHED },
+            )}
             icon={<UnorderedListOutlined />}
           >
             <Table<FinishedItem>
@@ -165,14 +222,14 @@ export default function UploadDemoPage() {
           </SectionCard>
         ) : null}
 
-        <SectionCard title="接入方式" subTitle="组件与 Hook 两种用法">
+        <SectionCard
+          title={intl.formatMessage({ id: 'upload.demo.usage.title' })}
+          subTitle={intl.formatMessage({ id: 'upload.demo.usage.subtitle' })}
+        >
           <Paragraph type="secondary">
-            组件已内置队列与进度展示；若要在业务页自己控制布局，可直接用 Hook
-            <Text code>useChunkUpload()</Text>，它返回
-            <Text code>tasks</Text> / <Text code>resumable</Text> 快照与
-            <Text code>start</Text> / <Text code>pause</Text> /
-            <Text code>resume</Text> / <Text code>retry</Text> /
-            <Text code>cancel</Text> 等动作。
+            <CodeText
+              text={intl.formatMessage({ id: 'upload.demo.usage.desc' })}
+            />
           </Paragraph>
           <pre
             style={{
@@ -189,28 +246,30 @@ export default function UploadDemoPage() {
           <Alert
             type="info"
             showIcon
-            title="如何试跑"
+            title={intl.formatMessage({ id: 'upload.demo.tryRun.title' })}
             description={
               <Space orientation="vertical" size={2}>
                 <Text>
-                  本页自带本地 mock（
-                  <Text code>src/pages/upload/_mock.ts</Text>，umi
-                  只加载页面目录下的
-                  <Text code>_mock.ts</Text>）：用{' '}
-                  <Text code>npm run start</Text>
-                  启动（自动开启
-                  mock）时，上传链路可离线走通，同一文件再传一次即命中秒传。
+                  <CodeText
+                    text={intl.formatMessage({
+                      id: 'upload.demo.tryRun.localMock',
+                    })}
+                  />
                 </Text>
                 <Text type="secondary">
-                  <LinkOutlined /> 用 <Text code>npm run dev</Text> 启动会关闭
-                  mock，并把
-                  <Text code>/api</Text> 代理到 <Text code>localhost:8080</Text>
-                  ，此时需要后端 at-transfer 的接口已就绪。
+                  <LinkOutlined />{' '}
+                  <CodeText
+                    text={intl.formatMessage({
+                      id: 'upload.demo.tryRun.dev',
+                    })}
+                  />
                 </Text>
                 <Text type="secondary">
-                  注意：与其它业务页一样，本页受登录守卫保护（未登录会跳到
-                  <Text code>/user/login</Text>）；登录接口目前没有 mock，需后端
-                  at-auth 就绪，因此 mock 只覆盖「上传链路」这一段。
+                  <CodeText
+                    text={intl.formatMessage({
+                      id: 'upload.demo.tryRun.auth',
+                    })}
+                  />
                 </Text>
               </Space>
             }

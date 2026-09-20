@@ -11,10 +11,10 @@
 /** 密级：1-公开 2-内部 3-机密（由服务端判定并下发）。 */
 export type DataLevel = 1 | 2 | 3;
 
-export const LEVEL_OPTIONS: Array<{ value: DataLevel; label: string }> = [
-  { value: 1, label: '公开' },
-  { value: 2, label: '内部' },
-  { value: 3, label: '机密' },
+export const LEVEL_OPTIONS: Array<{ value: DataLevel; labelId: string }> = [
+  { value: 1, labelId: 'file.level.public' },
+  { value: 2, labelId: 'file.level.internal' },
+  { value: 3, labelId: 'file.level.classified' },
 ];
 
 /** 密级标签色：机密用红，避免和「错误」以外的语义混淆。 */
@@ -24,25 +24,32 @@ const LEVEL_COLOR: Record<number, string> = {
   3: 'error',
 };
 
-export function levelText(level?: number | null): string {
-  return LEVEL_OPTIONS.find((item) => item.value === level)?.label ?? '未定级';
+const LEVEL_TEXT_ID: Record<number, string> = {
+  1: 'file.level.public',
+  2: 'file.level.internal',
+  3: 'file.level.classified',
+};
+
+/** 密级文案 id（未知密级按「未定级」）。 */
+export function levelTextId(level?: number | null): string {
+  return LEVEL_TEXT_ID[Number(level)] ?? 'file.level.unknown';
 }
 
 export function levelColor(level?: number | null): string {
   return LEVEL_COLOR[Number(level)] ?? 'default';
 }
 
-/** 申请权限弹窗里的密级风险提示（密级越高，审批链路与限制越严）。 */
-export function levelApplyHint(level?: number | null): string {
+/** 申请权限弹窗里的密级风险提示 id（密级越高，审批链路与限制越严）。 */
+export function levelApplyHintId(level?: number | null): string {
   switch (level) {
     case 3:
-      return '该文件为机密级：申请将进入多级审批，且不会授予下载与外发权限，仅按需临时开放预览。';
+      return 'file.level.applyHint.classified';
     case 2:
-      return '该文件为内部级：申请默认只授予预览与下载，外发分享需单独审批。';
+      return 'file.level.applyHint.internal';
     case 1:
-      return '该文件为公开级：审批较快，但仍需填写真实使用目的。';
+      return 'file.level.applyHint.public';
     default:
-      return '该文件尚未定级：审批人可能要求先完成定级。';
+      return 'file.level.applyHint.unknown';
   }
 }
 
@@ -78,6 +85,136 @@ export interface FileNode {
   createTime?: string | null;
   updateTime?: string | null;
   tags?: TagVO[];
+}
+
+/**
+ * 安全状态徽标。
+ *
+ * <p>与密级标签刻意分开：**标签说「内容有多敏感」，徽标说「当下受什么额外约束」**。
+ * 机密文件一定有密级标签，但只有真的开了水印、或真的快到失效期时，才多出对应徽标。</p>
+ */
+export type SecurityMarkKind = 'classified' | 'watermark' | 'expiring';
+
+/** 单个安全徽标（图标由展示层按 kind 决定，这里只给语义与文案 id）。 */
+export interface SecurityMark {
+  kind: SecurityMarkKind;
+  /** 徽标上的短文案 id */
+  labelId: string;
+  /** 悬浮解释的文案 id：说明这条约束对用户意味着什么，而不是复述 label */
+  hintId: string;
+  /** 文案里的插值（如剩余天数），由展示层交给 `intl` 填充 */
+  values?: Record<string, number>;
+}
+
+/**
+ * 安全态的**前端预留**扩展字段。
+ *
+ * <p>服务端 {@code FileNodeVO} 目前没有这些字段（已登记到后端扩展点清单）。
+ * 这里声明为可选并「有则显示、无则整条徽标不渲染」——前端**不猜**服务端未下发的能力，
+ * 否则会给用户一个「以为被水印保护了」的假安全感。</p>
+ */
+export interface FileNodeSecurityExt {
+  /** 预览 / 下载是否叠加动态水印 */
+  watermarkEnabled?: boolean | null;
+  /** 条目失效时间（`yyyy-MM-dd HH:mm:ss` 或 ISO 串） */
+  expireAt?: string | null;
+}
+
+/** 距失效期不足该天数时亮起「即将失效」徽标。 */
+export const EXPIRING_THRESHOLD_DAYS = 7;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * 解析服务端时间串为毫秒时间戳。
+ *
+ * <p>`yyyy-MM-dd HH:mm:ss` 里用空格分隔的形态在部分 JS 引擎（Safari）无法被 `new Date` 解析，
+ * 因此手工归一为 ISO 风格；解析不出就返回 undefined，由调用方当作「没有该信息」处理。</p>
+ */
+function parseDateTimeMs(value?: string | null): number | undefined {
+  const raw = value?.trim();
+  if (!raw) {
+    return undefined;
+  }
+  const ms = Date.parse(raw.replace(' ', 'T'));
+  return Number.isNaN(ms) ? undefined : ms;
+}
+
+/**
+ * 汇总一个条目的安全徽标（纯函数，便于单测）。
+ *
+ * <p>判定口径：</p>
+ * <ul>
+ *   <li><b>机密</b>（红锁）：密级 = 3。这是唯一由现有字段就能判定的徽标。</li>
+ *   <li><b>水印</b>（水滴）：服务端下发 `watermarkEnabled = true` 才显示。</li>
+ *   <li><b>即将失效</b>（沙漏）：`expireAt` 剩余不足 {@link EXPIRING_THRESHOLD_DAYS} 天；
+ *       已过期同样显示，且文案换成「已失效」——过期文件仍躺在列表里，正是需要提醒的场景。</li>
+ * </ul>
+ *
+ * @param nowMs 当前时刻（可注入，便于单测确定性）
+ */
+export function securityMarks(
+  node: FileNode & FileNodeSecurityExt,
+  nowMs: number = Date.now(),
+): SecurityMark[] {
+  const marks: SecurityMark[] = [];
+  if (Number(node.level) === 3) {
+    marks.push({
+      kind: 'classified',
+      labelId: 'file.security.classified.label',
+      hintId: 'file.security.classified.hint',
+    });
+  }
+  if (node.watermarkEnabled === true) {
+    marks.push({
+      kind: 'watermark',
+      labelId: 'file.security.watermark.label',
+      hintId: 'file.security.watermark.hint',
+    });
+  }
+  const expireMs = parseDateTimeMs(node.expireAt);
+  if (expireMs !== undefined) {
+    const remainDays = Math.ceil((expireMs - nowMs) / DAY_MS);
+    if (remainDays <= EXPIRING_THRESHOLD_DAYS) {
+      // 过期与原样保留两种语义分开：过期文件仍躺在列表里，正是需要提醒的场景
+      marks.push(
+        remainDays > 0
+          ? {
+              kind: 'expiring',
+              labelId: 'file.security.expiring.label',
+              hintId: 'file.security.expiring.hint',
+              values: { days: remainDays },
+            }
+          : {
+              kind: 'expiring',
+              labelId: 'file.security.expired.label',
+              hintId: 'file.security.expired.hint',
+            },
+      );
+    }
+  }
+  return marks;
+}
+
+/**
+ * 条目移入回收站至今已过去的天数（时间串解析不出时返回 undefined）。
+ *
+ * <p>**为什么展示「已停留 N 天」而不是「剩余 N 天」：** 保留期由服务端
+ * `at.file.recycle-retention-days` 决定（默认 30 天，PRD US-09），是**可配置项**。
+ * 前端若把 30 写死，管理员一改配置，界面就会自信地说错话；
+ * 而「已停留 N 天」只依赖 `recycleTime` 一个时间戳，永远为真。
+ * 要给出剩余天数，需服务端下发保留期或直接下发清理时刻（已登记 GAP-09）。</p>
+ */
+export function recycleElapsedDays(
+  recycleTime?: string | null,
+  nowMs: number = Date.now(),
+): number | undefined {
+  const ms = parseDateTimeMs(recycleTime);
+  if (ms === undefined) {
+    return undefined;
+  }
+  // 时钟回拨或服务端时间略超前时会出现负数，按 0 处理而不是显示「-1 天」
+  return Math.max(0, Math.floor((nowMs - ms) / DAY_MS));
 }
 
 /** 目录节点（`/v1/folders/tree` 返回顶层数组，children 递归嵌套）。 */
@@ -232,17 +369,23 @@ export function buildFileQuery(
  * <p>服务端的 `ext` 是单个值，因此筛选项按「具体扩展名」提交，分组只负责下拉里的视觉归类，
  * 不做前端聚合过滤——否则会出现「选了图片却只过滤出当前页里的图片」这类假筛选。</p>
  */
-export const EXT_GROUPS: Array<{ label: string; exts: string[] }> = [
-  { label: '文档', exts: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'md', 'csv'] },
-  { label: '图片', exts: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'] },
-  { label: '视频', exts: ['mp4', 'mov', 'avi', 'mkv', 'webm'] },
-  { label: '音频', exts: ['mp3', 'wav', 'flac', 'aac', 'ogg'] },
-  { label: '压缩包', exts: ['zip', 'rar', '7z', 'tar', 'gz'] },
+export const EXT_GROUPS: Array<{ labelId: string; exts: string[] }> = [
+  {
+    labelId: 'file.extGroup.doc',
+    exts: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'md', 'csv'],
+  },
+  {
+    labelId: 'file.extGroup.image',
+    exts: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'],
+  },
+  { labelId: 'file.extGroup.video', exts: ['mp4', 'mov', 'avi', 'mkv', 'webm'] },
+  { labelId: 'file.extGroup.audio', exts: ['mp3', 'wav', 'flac', 'aac', 'ogg'] },
+  { labelId: 'file.extGroup.archive', exts: ['zip', 'rar', '7z', 'tar', 'gz'] },
 ];
 
-/** ProTable 搜索项用的分组下拉数据（`options[].options`）。 */
+/** ProTable 搜索项用的分组下拉数据（`options[].options`）；`labelId` 由展示层翻译。 */
 export const EXT_SELECT_OPTIONS = EXT_GROUPS.map((group) => ({
-  label: group.label,
+  labelId: group.labelId,
   options: group.exts.map((ext) => ({ label: `.${ext}`, value: ext })),
 }));
 
@@ -325,17 +468,17 @@ export interface ShareLink {
   createTime?: string | null;
 }
 
-/** 分享状态文案。 */
-export function shareStatusText(status?: number | null): string {
+/** 分享状态文案 id。 */
+export function shareStatusId(status?: number | null): string {
   switch (status) {
     case 0:
-      return '生效中';
+      return 'file.shareStatus.active';
     case 1:
-      return '已撤销';
+      return 'file.shareStatus.revoked';
     case 2:
-      return '已失效';
+      return 'file.shareStatus.expired';
     default:
-      return '未知';
+      return 'file.shareStatus.unknown';
   }
 }
 
@@ -356,12 +499,13 @@ export const SHARE_LIMITS = {
   extractCodeDefault: 6,
 } as const;
 
-/** 有效期快捷选项。 */
-export const SHARE_EXPIRE_PRESETS = [
-  { label: '1 天', value: 1 },
-  { label: '7 天', value: 7 },
-  { label: '30 天', value: 30 },
-];
+/**
+ * 有效期快捷选项（天数）。
+ *
+ * <p>只给数值，文案由 `file.share.presetDays` 插值——中文是「7 天」、英文是「7 days」，
+ * 若在这里写死就会在英文界面漏出中文。</p>
+ */
+export const SHARE_EXPIRE_PRESETS = [1, 7, 30];
 
 /** 提取码字符集：去掉 0/O/1/l/I 等易混字符，便于人工口头转达。 */
 const EXTRACT_CODE_CHARSET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -406,14 +550,29 @@ export function buildShareUrl(token: string, origin?: string): string {
   return `${base}/share/${encodeURIComponent(token)}`;
 }
 
-/** 分享卡片的复制文案：链接与提取码必须一起给出（提取码不回显，只能由前端拼）。 */
-export function buildShareCopyText(url: string, extractCode?: string, expireAt?: string): string {
-  const lines = [`链接：${url}`];
+/** 文案翻译器：由展示层注入 `intl.formatMessage` 的等价物，服务层因此不必依赖任何 i18n 库。 */
+export type MessageTranslator = (
+  id: string,
+  values?: Record<string, unknown>,
+) => string;
+
+/**
+ * 分享卡片的复制文案：链接与提取码必须一起给出（提取码不回显，只能由前端拼）。
+ *
+ * @param t 翻译器（展示层传 `(id, values) => intl.formatMessage({ id }, values)`）
+ */
+export function buildShareCopyText(
+  t: MessageTranslator,
+  url: string,
+  extractCode?: string,
+  expireAt?: string,
+): string {
+  const lines = [t('file.shareCopy.url', { url })];
   if (extractCode) {
-    lines.push(`提取码：${extractCode}`);
+    lines.push(t('file.shareCopy.code', { code: extractCode }));
   }
   if (expireAt) {
-    lines.push(`有效期至：${expireAt}`);
+    lines.push(t('file.shareCopy.expireAt', { time: expireAt }));
   }
   return lines.join('\n');
 }
@@ -423,11 +582,31 @@ export function buildShareCopyText(url: string, extractCode?: string, expireAt?:
 /** 申请类型（权限类型）。 */
 export type ApplyType = 'ACCESS' | 'DOWNLOAD' | 'EDIT' | 'SHARE';
 
-export const APPLY_TYPE_OPTIONS: Array<{ value: ApplyType; label: string; hint: string }> = [
-  { value: 'ACCESS', label: '访问（预览）', hint: '仅在线预览，不能下载或外发' },
-  { value: 'DOWNLOAD', label: '下载', hint: '可下载原件，使用需留痕' },
-  { value: 'EDIT', label: '编辑', hint: '可改名 / 移动 / 新增版本' },
-  { value: 'SHARE', label: '外发分享', hint: '可创建外发链接，风险最高' },
+export const APPLY_TYPE_OPTIONS: Array<{
+  value: ApplyType;
+  labelId: string;
+  hintId: string;
+}> = [
+  {
+    value: 'ACCESS',
+    labelId: 'file.applyType.access.label',
+    hintId: 'file.applyType.access.hint',
+  },
+  {
+    value: 'DOWNLOAD',
+    labelId: 'file.applyType.download.label',
+    hintId: 'file.applyType.download.hint',
+  },
+  {
+    value: 'EDIT',
+    labelId: 'file.applyType.edit.label',
+    hintId: 'file.applyType.edit.hint',
+  },
+  {
+    value: 'SHARE',
+    labelId: 'file.applyType.share.label',
+    hintId: 'file.applyType.share.hint',
+  },
 ];
 
 /** 资源类型：本页固定为文件。 */

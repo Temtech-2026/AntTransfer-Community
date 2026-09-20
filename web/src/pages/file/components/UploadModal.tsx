@@ -11,6 +11,7 @@
  * </ul>
  */
 
+import { useIntl } from '@umijs/max';
 import {
   Alert,
   Button,
@@ -41,17 +42,17 @@ export interface UploadModalProps {
 }
 
 /** 状态标签口径。 */
-const STATUS_META: Record<UploadTaskStatus, { text: string; color: string }> = {
-  pending: { text: '排队中', color: 'default' },
-  hashing: { text: '计算摘要', color: 'processing' },
-  prechecking: { text: '秒传预检', color: 'processing' },
-  querying: { text: '查询分片', color: 'processing' },
-  uploading: { text: '上传中', color: 'processing' },
-  paused: { text: '已暂停', color: 'warning' },
-  merging: { text: '合并中', color: 'processing' },
-  success: { text: '已完成', color: 'success' },
-  error: { text: '失败', color: 'error' },
-  canceled: { text: '已取消', color: 'default' },
+const STATUS_META: Record<UploadTaskStatus, { textId: string; color: string }> = {
+  pending: { textId: 'upload.status.pending', color: 'default' },
+  hashing: { textId: 'upload.status.hashing', color: 'processing' },
+  prechecking: { textId: 'upload.status.prechecking', color: 'processing' },
+  querying: { textId: 'upload.status.querying', color: 'processing' },
+  uploading: { textId: 'upload.status.uploading', color: 'processing' },
+  paused: { textId: 'upload.status.paused', color: 'warning' },
+  merging: { textId: 'upload.status.merging', color: 'processing' },
+  success: { textId: 'upload.status.success', color: 'success' },
+  error: { textId: 'upload.status.error', color: 'error' },
+  canceled: { textId: 'upload.status.canceled', color: 'default' },
 };
 
 /** 进行中的状态：这些状态下「暂停」有意义。 */
@@ -83,6 +84,7 @@ function TaskRow({
   uploader: UseChunkUploadResult;
 }) {
   const { token } = theme.useToken();
+  const intl = useIntl();
   const meta = STATUS_META[task.status];
   const running = RUNNING_STATUSES.includes(task.status);
   const finished = task.status === 'success';
@@ -106,11 +108,22 @@ function TaskRow({
             {task.fileName}
           </Text>
           {/* 秒传命中：没传一个字节，必须让用户看到「为什么这么快」 */}
-          {task.instant ? <Tag color="green">秒传</Tag> : null}
-          <Tag color={meta.color}>{meta.text}</Tag>
+          {task.instant ? (
+            <Tag color="green">
+              {intl.formatMessage({ id: 'upload.instant' })}
+            </Tag>
+          ) : null}
+          <Tag color={meta.color}>
+            {intl.formatMessage({ id: meta.textId })}
+          </Tag>
           <Text type="secondary" style={{ fontSize: 12 }}>
             {formatBytes(task.size)}
-            {task.chunkCount > 0 ? ` · ${received}/${task.chunkCount} 片` : ''}
+            {task.chunkCount > 0
+              ? intl.formatMessage(
+                  { id: 'upload.chunkProgress' },
+                  { received, total: task.chunkCount },
+                )
+              : ''}
             {task.status === 'uploading'
               ? ` · ${formatBytes(task.speed)}/s`
               : ''}
@@ -124,7 +137,7 @@ function TaskRow({
               type="link"
               onClick={() => uploader.pause(task.id)}
             >
-              暂停
+              {intl.formatMessage({ id: 'upload.action.pause' })}
             </Button>
           ) : null}
           {task.status === 'paused' ? (
@@ -133,7 +146,7 @@ function TaskRow({
               type="link"
               onClick={() => uploader.resume(task.id)}
             >
-              继续
+              {intl.formatMessage({ id: 'upload.action.resume' })}
             </Button>
           ) : null}
           {task.status === 'error' ? (
@@ -143,7 +156,7 @@ function TaskRow({
                 type="link"
                 onClick={() => uploader.retry(task.id)}
               >
-                重试
+                {intl.formatMessage({ id: 'common.action.retry' })}
               </Button>
               <Button
                 size="small"
@@ -151,7 +164,7 @@ function TaskRow({
                 danger
                 onClick={() => uploader.remove(task.id)}
               >
-                移除
+                {intl.formatMessage({ id: 'upload.action.remove' })}
               </Button>
             </>
           ) : null}
@@ -162,7 +175,7 @@ function TaskRow({
               danger
               onClick={() => uploader.cancel(task.id)}
             >
-              取消
+              {intl.formatMessage({ id: 'common.action.cancel' })}
             </Button>
           ) : null}
           {finished || task.status === 'canceled' ? (
@@ -171,7 +184,7 @@ function TaskRow({
               type="link"
               onClick={() => uploader.remove(task.id)}
             >
-              移除
+              {intl.formatMessage({ id: 'upload.action.remove' })}
             </Button>
           ) : null}
         </Space>
@@ -189,15 +202,23 @@ function TaskRow({
         }
         // 哈希 / 预检阶段进度条不动，用 status 文案说明，避免进度条来回抖动
         format={(percent) =>
-          task.status === 'hashing' ? '校验中' : `${percent}%`
+          task.status === 'hashing'
+            ? intl.formatMessage({ id: 'upload.verifying' })
+            : `${percent}%`
         }
       />
 
       {showStrip ? (
         <Space size={2} wrap={false} style={{ marginBottom: 4 }}>
           {Array.from({ length: task.chunkCount }, (_, index) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: 分片条由 chunkCount 生成、分片无独立实体，序号即稳定身份
-            <Tooltip key={`chunk-${index}`} title={`分片 ${index + 1}`}>
+            <Tooltip
+              // biome-ignore lint/suspicious/noArrayIndexKey: 分片条由 chunkCount 生成、分片无独立实体，序号即稳定身份
+              key={`chunk-${index}`}
+              title={intl.formatMessage(
+                { id: 'upload.chunkTooltip' },
+                { index: index + 1 },
+              )}
+            >
               <span
                 style={{
                   display: 'inline-block',
@@ -224,7 +245,10 @@ function TaskRow({
       ) : null}
       {task.retryCount > 0 && task.status !== 'error' ? (
         <Text type="secondary" style={{ fontSize: 12 }}>
-          已自动重试 {task.retryCount} 次
+          {intl.formatMessage(
+            { id: 'upload.retried' },
+            { count: task.retryCount },
+          )}
         </Text>
       ) : null}
     </div>
@@ -237,6 +261,7 @@ export default function UploadModal({
   uploader,
   onClose,
 }: UploadModalProps) {
+  const intl = useIntl();
   const reselectRef = useRef<HTMLInputElement | null>(null);
 
   const { tasks, resumable } = uploader;
@@ -270,7 +295,10 @@ export default function UploadModal({
   return (
     <Modal
       open={open}
-      title={`上传文件${folderId ? `（目录 #${folderId}）` : ''}`}
+      title={intl.formatMessage(
+        { id: folderId ? 'upload.titleWithFolder' : 'upload.title' },
+        { folderId },
+      )}
       width={760}
       onCancel={onClose}
       maskClosable={false}
@@ -280,23 +308,26 @@ export default function UploadModal({
           type="secondary"
           style={{ float: 'left', lineHeight: '32px' }}
         >
-          进行中 {uploading} · 已完成 {finished} · 共 {tasks.length}
+          {intl.formatMessage(
+            { id: 'upload.summary' },
+            { uploading, finished, total: tasks.length },
+          )}
         </Text>,
         <Button
           key="pauseAll"
           onClick={uploader.pauseAll}
           disabled={uploading === 0}
         >
-          全部暂停
+          {intl.formatMessage({ id: 'upload.action.pauseAll' })}
         </Button>,
         <Button key="resumeAll" onClick={uploader.resumeAll}>
-          全部继续
+          {intl.formatMessage({ id: 'upload.action.resumeAll' })}
         </Button>,
         <Button key="clear" onClick={uploader.clearFinished}>
-          清除已结束
+          {intl.formatMessage({ id: 'upload.action.clearFinished' })}
         </Button>,
         <Button key="close" type="primary" onClick={onClose}>
-          关闭
+          {intl.formatMessage({ id: 'common.action.close' })}
         </Button>,
       ]}
     >
@@ -307,9 +338,11 @@ export default function UploadModal({
         // 关掉 antd 自身的 action 上报：文件内容的发送全部由分片引擎负责
         action={undefined}
       >
-        <p className="ant-upload-text">点击或拖拽文件到此处</p>
+        <p className="ant-upload-text">
+          {intl.formatMessage({ id: 'upload.dropText' })}
+        </p>
         <p className="ant-upload-hint">
-          支持多选；大文件自动分片（默认 4 MiB）并计算摘要，命中秒传时无需传输
+          {intl.formatMessage({ id: 'upload.dropHint' })}
         </p>
       </Upload.Dragger>
 
@@ -318,25 +351,32 @@ export default function UploadModal({
           style={{ marginTop: 12 }}
           type="info"
           showIcon
-          title="检测到上次未完成的上传"
+          title={intl.formatMessage({ id: 'upload.resumable.title' })}
           description={
             <Space orientation="vertical" size={4} style={{ width: '100%' }}>
               {/* 关键口径：本地缓存只用于提示，真正从第几片开始传由服务端分片清单决定 */}
               <Text type="secondary" style={{ fontSize: 12 }}>
-                下面进度来自本地缓存，仅供参考；实际续传位置以服务端分片清单为准。
+                {intl.formatMessage({ id: 'upload.resumable.note' })}
               </Text>
               {resumable.map((record) => (
                 <Space key={record.key} size={4}>
                   <Text>
-                    {record.fileName}（{formatBytes(record.size)}，已完成{' '}
-                    {record.receivedCount}/{record.chunkCount} 片）
+                    {intl.formatMessage(
+                      { id: 'upload.resumable.record' },
+                      {
+                        name: record.fileName,
+                        size: formatBytes(record.size),
+                        received: record.receivedCount,
+                        total: record.chunkCount,
+                      },
+                    )}
                   </Text>
                   <Button
                     size="small"
                     type="link"
                     onClick={() => uploader.discardRecord(record.key)}
                   >
-                    忽略
+                    {intl.formatMessage({ id: 'upload.resumable.ignore' })}
                   </Button>
                 </Space>
               ))}
@@ -346,10 +386,10 @@ export default function UploadModal({
                   type="primary"
                   onClick={() => reselectRef.current?.click()}
                 >
-                  选择文件续传
+                  {intl.formatMessage({ id: 'upload.resumable.select' })}
                 </Button>
                 <Text type="secondary" style={{ fontSize: 12 }}>
-                  需选择与上次同名的同一文件（同名但内容已变会被识别并重新上传）
+                  {intl.formatMessage({ id: 'upload.resumable.hint' })}
                 </Text>
               </Space>
             </Space>
@@ -368,7 +408,9 @@ export default function UploadModal({
 
       <div style={{ marginTop: 12, maxHeight: 320, overflowY: 'auto' }}>
         {tasks.length === 0 ? (
-          <Text type="secondary">暂无上传任务</Text>
+          <Text type="secondary">
+            {intl.formatMessage({ id: 'upload.empty' })}
+          </Text>
         ) : (
           tasks.map((task) => (
             <TaskRow key={task.id} task={task} uploader={uploader} />

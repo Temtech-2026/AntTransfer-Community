@@ -15,6 +15,7 @@
  *   4003 完整性失败、4101 票据失效不重试。
  */
 
+import { translateMessage } from '@/requestErrorConfig';
 import {
   computeFileHashes,
   type FileHashResult,
@@ -159,7 +160,7 @@ function toMessage(error: unknown): string {
   if (error instanceof Error && error.message) {
     return error.message;
   }
-  return '上传失败';
+  return translateMessage('upload.error.generic');
 }
 
 export class ChunkUploadController {
@@ -359,6 +360,17 @@ export class ChunkUploadController {
     task.inflight.clear();
     task.status = 'paused';
     this.scheduleNotify();
+  }
+
+  /**
+   * 运行时调整并发分片数（「极速模式」开关）。
+   *
+   * <p>并发数在每轮分片调度时才被读取（见 `uploadMissingChunks`），
+   * 因此调整对正在推进的任务同样生效，不需要重新入队；
+   * 越界值由 `normalizeConcurrency` 截断到契约区间。
+   */
+  setConcurrency(concurrency?: number): void {
+    this.options.concurrency = normalizeConcurrency(concurrency);
   }
 
   pauseAll(): void {

@@ -8,6 +8,7 @@
  * 因此不能复用普通请求层，直接交给浏览器加载。</p>
  */
 
+import { useIntl } from '@umijs/max';
 import {
   Alert,
   Button,
@@ -38,13 +39,13 @@ export interface PreviewModalProps {
   onDownload?: (node: FileNode) => void;
 }
 
-/** 策略标签文案。 */
-const STRATEGY_TEXT: Record<PreviewInfo['strategy'], string> = {
-  text: '文本',
-  pdf: 'PDF',
-  image: '图片',
-  'download-only': '仅下载',
-  none: '不支持',
+/** 策略标签的文案 id。 */
+const STRATEGY_TEXT_ID: Record<PreviewInfo['strategy'], string> = {
+  text: 'file.preview.strategy.text',
+  pdf: 'file.preview.strategy.pdf',
+  image: 'file.preview.strategy.image',
+  'download-only': 'file.preview.strategy.downloadOnly',
+  none: 'file.preview.strategy.none',
 };
 
 export default function PreviewModal({
@@ -53,6 +54,7 @@ export default function PreviewModal({
   onClose,
   onDownload,
 }: PreviewModalProps) {
+  const intl = useIntl();
   const { token } = theme.useToken();
   const [loading, setLoading] = useState(false);
   const [info, setInfo] = useState<PreviewInfo | null>(null);
@@ -60,27 +62,33 @@ export default function PreviewModal({
   /** 递增请求号：弹窗快速切换文件时丢弃过期响应，避免闪现上一个文件的预览 */
   const requestSeq = useRef(0);
 
-  const load = useCallback(async (nodeId: number) => {
-    const seq = requestSeq.current + 1;
-    requestSeq.current = seq;
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await fetchPreview(nodeId);
-      if (requestSeq.current === seq) {
-        setInfo(result);
+  const load = useCallback(
+    async (nodeId: number) => {
+      const seq = requestSeq.current + 1;
+      requestSeq.current = seq;
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await fetchPreview(nodeId);
+        if (requestSeq.current === seq) {
+          setInfo(result);
+        }
+      } catch (err) {
+        if (requestSeq.current === seq) {
+          setInfo(null);
+          setError(
+            (err as Error)?.message ||
+              intl.formatMessage({ id: 'file.preview.loadFailed' }),
+          );
+        }
+      } finally {
+        if (requestSeq.current === seq) {
+          setLoading(false);
+        }
       }
-    } catch (err) {
-      if (requestSeq.current === seq) {
-        setInfo(null);
-        setError((err as Error)?.message || '预览信息加载失败');
-      }
-    } finally {
-      if (requestSeq.current === seq) {
-        setLoading(false);
-      }
-    }
-  }, []);
+    },
+    [intl],
+  );
 
   useEffect(() => {
     if (!open || !node) {
@@ -101,12 +109,12 @@ export default function PreviewModal({
         <Alert
           type="error"
           showIcon
-          title="预览失败"
+          title={intl.formatMessage({ id: 'file.preview.failedTitle' })}
           description={error}
           action={
             node ? (
               <Button size="small" onClick={() => void load(node.id)}>
-                重试
+                {intl.formatMessage({ id: 'common.action.retry' })}
               </Button>
             ) : null
           }
@@ -114,7 +122,9 @@ export default function PreviewModal({
       );
     }
     if (!info) {
-      return <Empty description="暂无预览内容" />;
+      return (
+        <Empty description={intl.formatMessage({ id: 'file.preview.empty' })} />
+      );
     }
 
     switch (strategy) {
@@ -125,7 +135,7 @@ export default function PreviewModal({
               <Alert
                 type="info"
                 showIcon
-                title="内容较长，仅展示前若干字符，完整内容请下载查看"
+                title={intl.formatMessage({ id: 'file.preview.truncated' })}
               />
             ) : null}
             <pre
@@ -170,8 +180,10 @@ export default function PreviewModal({
           <Alert
             type="warning"
             showIcon
-            title="该类型不支持在线预览"
-            description="为降低泄露风险，此格式不做服务端转码，请下载后在本地打开。"
+            title={intl.formatMessage({ id: 'file.preview.downloadOnlyTitle' })}
+            description={intl.formatMessage({
+              id: 'file.preview.downloadOnlyDescription',
+            })}
             action={
               node && onDownload ? (
                 <Button
@@ -179,7 +191,7 @@ export default function PreviewModal({
                   type="primary"
                   onClick={() => onDownload(node)}
                 >
-                  下载文件
+                  {intl.formatMessage({ id: 'file.preview.downloadFile' })}
                 </Button>
               ) : null
             }
@@ -190,8 +202,10 @@ export default function PreviewModal({
           <Alert
             type="info"
             showIcon
-            title="无法预览"
-            description="服务端未提供可用的预览方式，可能是格式不支持或预览能力未开启。"
+            title={intl.formatMessage({ id: 'file.preview.unavailableTitle' })}
+            description={intl.formatMessage({
+              id: 'file.preview.unavailableDescription',
+            })}
           />
         );
     }
@@ -206,9 +220,11 @@ export default function PreviewModal({
       title={
         <Space size={8}>
           <Text ellipsis style={{ maxWidth: 520 }}>
-            {node?.name ?? '预览'}
+            {node?.name ?? intl.formatMessage({ id: 'file.preview.title' })}
           </Text>
-          {strategy ? <Tag>{STRATEGY_TEXT[strategy]}</Tag> : null}
+          {strategy ? (
+            <Tag>{intl.formatMessage({ id: STRATEGY_TEXT_ID[strategy] })}</Tag>
+          ) : null}
         </Space>
       }
     >

@@ -10,6 +10,7 @@
  *    保证功能可用（只是会占用主线程）。
  */
 
+import { translateMessage } from '@/requestErrorConfig';
 import { UploadAbortError } from '@/services/upload/errors';
 import { Sha256 } from '@/utils/sha256';
 
@@ -128,7 +129,7 @@ async function runOnMainThread(
 
   for (let index = 0; index < chunkCount; index += 1) {
     if (options.signal?.aborted) {
-      throw new UploadAbortError('哈希计算已中止');
+      throw new UploadAbortError();
     }
     const start = index * chunkSize;
     const buffer = await file
@@ -185,12 +186,19 @@ function runInWorker(
         return;
       }
       if (message.type === 'error') {
-        finish(() => reject(new Error(message.message)));
+        // Worker 只传原始错误信息；缺省时由主线程补本地化文案
+        finish(() =>
+          reject(new Error(message.message || translateMessage('upload.error.hashFailed'))),
+        );
       }
     }
 
     function onError(event: ErrorEvent) {
-      finish(() => reject(new Error(event.message || '哈希 Worker 执行失败')));
+      finish(() =>
+        reject(
+          new Error(event.message || translateMessage('upload.error.hashWorkerFailed')),
+        ),
+      );
     }
 
     function onAbort() {
@@ -201,7 +209,7 @@ function runInWorker(
         // 忽略
       }
       disposeWorker();
-      finish(() => reject(new UploadAbortError('哈希计算已中止')));
+      finish(() => reject(new UploadAbortError()));
     }
 
     function cleanup() {
@@ -239,7 +247,7 @@ export function computeFileHashes(
 ): Promise<FileHashResult> {
   return enqueue(async () => {
     if (options.signal?.aborted) {
-      throw new UploadAbortError('哈希计算已中止');
+      throw new UploadAbortError();
     }
     const instance = ensureWorker();
     if (!instance) {

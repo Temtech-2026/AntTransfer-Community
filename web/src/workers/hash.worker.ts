@@ -121,7 +121,8 @@ ctx.onmessage = (event: MessageEvent) => {
       ctx.postMessage({
         type: 'error',
         jobId: request.jobId,
-        message: (error as Error)?.message ?? '哈希计算失败',
+        // Worker 内不做本地化：留空时由主线程客户端补上当前语言文案
+        message: (error as Error)?.message ?? '',
       });
     });
   }

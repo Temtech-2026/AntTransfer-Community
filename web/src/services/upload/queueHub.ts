@@ -16,7 +16,38 @@ import {
   ChunkUploadController,
   type ChunkUploadOptions,
 } from './ChunkUploadController';
+import { DEFAULT_CONCURRENCY, MAX_CONCURRENCY } from './constants';
 import type { UploadTaskStatus, UploadTaskView } from './types';
+
+/** 极速模式偏好 key（刷新后仍需保持，否则用户会以为开关没生效） */
+const FAST_MODE_STORAGE_KEY = 'at:upload:fast-mode:v1';
+
+/** 读取极速模式偏好；localStorage 不可用（隐私模式 / 单测）时回退关闭。 */
+function readFastMode(): boolean {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return false;
+    }
+    return window.localStorage.getItem(FAST_MODE_STORAGE_KEY) === '1';
+  } catch (_error) {
+    return false;
+  }
+}
+
+/** 持久化极速模式偏好（失败不阻断开关本身）。 */
+function persistFastMode(enabled: boolean): void {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return;
+    }
+    window.localStorage.setItem(FAST_MODE_STORAGE_KEY, enabled ? '1' : '0');
+  } catch (_error) {
+    // 忽略
+  }
+}
+
+/** 极速模式开关：全队列共享（并发数是契约上限内的同一口径） */
+let fastMode = readFastMode();
 
 /** 仍在推进的状态（未终结） */
 const ACTIVE_STATUS: UploadTaskStatus[] = [
@@ -53,6 +84,10 @@ export interface GlobalUploadSnapshot {
   percent: number;
   /** 是否存在未终结任务（顶栏据此决定是否展示进度条动画） */
   uploading: boolean;
+  /** 活跃任务速度之和（字节/秒），供传输面板画速度曲线 */
+  speed: number;
+  /** 极速模式是否开启（并发分片数取契约上限） */
+  fastMode: boolean;
 }
 
 const EMPTY_SNAPSHOT: GlobalUploadSnapshot = {
@@ -63,6 +98,8 @@ const EMPTY_SNAPSHOT: GlobalUploadSnapshot = {
   succeededCount: 0,
   percent: 0,
   uploading: false,
+  speed: 0,
+  fastMode: false,
 };
 
 interface QueueEntry {
@@ -72,7 +109,7 @@ interface QueueEntry {
 
 const entries = new Map<string, QueueEntry>();
 const listeners = new Set<() => void>();
-let snapshot: GlobalUploadSnapshot = EMPTY_SNAPSHOT;
+let snapshot: GlobalUploadSnapshot = { ...EMPTY_SNAPSHOT, fastMode };
 
 const isActive = (status: UploadTaskStatus): boolean =>
   ACTIVE_STATUS.includes(status);
@@ -95,6 +132,7 @@ function computeSnapshot(): GlobalUploadSnapshot {
   let succeededCount = 0;
   let totalBytes = 0;
   let uploadedBytes = 0;
+  let speed = 0;
 
   for (const [queueId, entry] of entries) {
     for (const task of entry.controller.getSnapshot()) {
@@ -107,6 +145,8 @@ function computeSnapshot(): GlobalUploadSnapshot {
       uploadedBytes += Math.min(task.size, task.uploadedBytes);
       if (isActive(task.status)) {
         activeCount += 1;
+        // 只累加活跃任务：已完成任务会保留末次速度，计入会让曲线虚高
+        speed += task.speed ?? 0;
       } else if (task.status === 'error') {
         failedCount += 1;
       } else if (task.status === 'success') {
@@ -136,6 +176,8 @@ function computeSnapshot(): GlobalUploadSnapshot {
     succeededCount,
     percent,
     uploading: activeCount > 0,
+    speed,
+    fastMode,
   };
 }
 
@@ -155,6 +197,11 @@ function ensure(
   if (existing) {
     return existing.controller;
   }
+  // 极速模式：新建队列按当前偏好起跑；已登记的队列由 setUploadFastMode 就地改写。
+  // 关闭极速模式时保留调用方显式传入的并发数，避免覆盖上传页自己的设置。
+  options.concurrency = fastMode
+    ? MAX_CONCURRENCY
+    : (options.concurrency ?? DEFAULT_CONCURRENCY);
   const controller = new ChunkUploadController(options);
   const unsubscribe = controller.subscribe(refresh);
   entries.set(id, { controller, unsubscribe });
@@ -186,15 +233,85 @@ export function disposeAllUploadQueues(): void {
     entry.controller.destroy();
   }
   entries.clear();
-  snapshot = EMPTY_SNAPSHOT;
+  // 保留极速模式偏好：销毁队列不等于用户关掉了加速开关
+  snapshot = { ...EMPTY_SNAPSHOT, fastMode };
   for (const listener of listeners) {
     listener();
   }
 }
 
+/** 遍历全部队列控制器（全局动作的唯一入口，避免各调用方各写一遍循环） */
+function eachController(action: (controller: ChunkUploadController) => void): void {
+  for (const entry of entries.values()) {
+    action(entry.controller);
+  }
+}
+
+/** 暂停全部队列（传输面板「全部暂停」） */
+export function pauseAllUploadQueues(): void {
+  eachController((controller) => controller.pauseAll());
+  refresh();
+}
+
+/** 继续全部队列：恢复暂停任务，并重试失败任务（控制器内部走同一入口） */
+export function resumeAllUploadQueues(): void {
+  eachController((controller) => controller.resumeAll());
+  refresh();
+}
+
+/** 清空全部已终结任务（进行中与失败任务保留，避免误清待处理项） */
+export function clearFinishedUploadTasks(): void {
+  eachController((controller) => controller.clearFinished());
+  refresh();
+}
+
+/**
+ * 暂停单个任务。
+ *
+ * <p>任务 id 只在所属队列内唯一（各队列都从 `upload-1` 起编号），因此必须带 queueId。
+ */
+export function pauseUploadTask(queueId: string, taskId: string): void {
+  entries.get(queueId)?.controller.pause(taskId);
+  refresh();
+}
+
+/** 继续 / 重试单个任务（控制器内部把 paused 与 error 走同一入口） */
+export function resumeUploadTask(queueId: string, taskId: string): void {
+  void entries.get(queueId)?.controller.resume(taskId);
+  refresh();
+}
+
+/**
+ * 极速模式：把并发分片数切到契约上限。
+ *
+ * <p>控制器在每轮分片调度时才读并发数，所以对进行中的任务同样生效
+ * （下一批分片按新并发发出），不需要重新入队。
+ */
+export function setUploadFastMode(enabled: boolean): void {
+  fastMode = enabled;
+  persistFastMode(enabled);
+  eachController((controller) => {
+    controller.setConcurrency(
+      enabled ? MAX_CONCURRENCY : DEFAULT_CONCURRENCY,
+    );
+  });
+  refresh();
+}
+
+/** 当前极速模式开关（面板直接读，避免额外订阅） */
+export function isUploadFastMode(): boolean {
+  return fastMode;
+}
+
 export const uploadQueueHub = {
   ensure,
   release: releaseUploadQueue,
+  pauseAll: pauseAllUploadQueues,
+  resumeAll: resumeAllUploadQueues,
+  pauseTask: pauseUploadTask,
+  resumeTask: resumeUploadTask,
+  clearFinished: clearFinishedUploadTasks,
+  setFastMode: setUploadFastMode,
   subscribe(listener: () => void): () => void {
     listeners.add(listener);
     return () => {
