@@ -15,6 +15,8 @@
  */
 package com.anttransfer.file.model.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -34,7 +36,8 @@ public class DownloadTicketVO {
     /** 一次性下载票据（消费即失效）。 */
     private String ticket;
 
-    /** 绑定的文件条目 ID。 */
+    /** 绑定的文件条目 ID（19 位雪花 ID，以字符串过线，理由见 {@link FileNodeVO}）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long nodeId;
 
     /** 票据有效期（秒）。 */

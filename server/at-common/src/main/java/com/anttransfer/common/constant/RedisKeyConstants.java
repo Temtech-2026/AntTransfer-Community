@@ -117,6 +117,18 @@ public final class RedisKeyConstants {
     public static final String SHARE_TICKET_PREFIX = PREFIX + "share:ticket:";
     /** 票据默认 TTL：5min（可由 {@code anttransfer.file.share.ticket-ttl} 覆盖；仅需覆盖「校验→取件」间隔） */
     public static final long SHARE_TICKET_TTL_SECONDS = 5 * 60L;
+    /**
+     * 访客核销后取件票据键前缀：at:share:pick:{ticket}。
+     *
+     * <p>核销（{@code POST /v1/shares/redeem}）时由一次性票据换发，绑定
+     * {@code shareId + fileId + accessType}，值为同一份 {@code TicketPayload} JSON。
+     * <b>与 {@link #SHARE_TICKET_PREFIX} 的关键差别是「可重复读」</b>：一次性票回答「谁有权取件」
+     * （GETDEL 一次即焚，红队 [V-05]），本票只回答「把这一次取件读完」——浏览器重试、
+     * {@code Range} 断点续传、多线程分段拉取都会重复请求同一取件地址，若按一次即焚实现，
+     * 这些正常行为会被判成 4004。次数闸门不受影响：下载次数已在核销瞬间由 DB 原子扣减，
+     * TTL 内重复读不会凭空多出下载额度。</p>
+     */
+    public static final String SHARE_PICK_PREFIX = PREFIX + "share:pick:";
 
     /* ======================== 文件管理：下载票据 ======================== */
 
@@ -216,6 +228,11 @@ public final class RedisKeyConstants {
     /** 生成访客一次性下载/预览票据键：at:share:ticket:{ticket} */
     public static String shareTicketKey(String ticket) {
         return SHARE_TICKET_PREFIX + ticket;
+    }
+
+    /** 生成访客核销后取件票据键：at:share:pick:{ticket} */
+    public static String sharePickKey(String ticket) {
+        return SHARE_PICK_PREFIX + ticket;
     }
 
     /** 生成登录用户下载票据键：at:file:ticket:{ticket} */

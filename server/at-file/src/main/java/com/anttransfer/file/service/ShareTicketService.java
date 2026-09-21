@@ -30,9 +30,20 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 
 /**
- * 访客一次性票据服务：签发 + GETDEL 核销。
+ * 访客票据服务：一次性票据（签发 + GETDEL 核销）+ 核销后取件票（签发 + 只读校验）。
  *
- * <p><b>票据语义</b>：访客通过「令牌 → 有效期 → 提取码 → 次数」校验链后得到的短期取件凭证，
+ * <p><b>为什么是两张票</b>：外发分享的访客侧取件要同时满足两个互相拉扯的要求——</p>
+ * <ol>
+ *     <li><b>不可重放</b>：票据是承载「已通过提取码校验」的凭证，被转发 / 并发复用就等于
+ *         绕过校验链，故一次性票据必须 {@code GETDEL} 取用即焚（红队 [V-05]）；</li>
+ *     <li><b>可断点续传</b>：取件要支持 {@code Range}，浏览器重试与多线程分段拉取会多次请求
+ *         同一个地址，一次性票据撑不住这些正常行为。</li>
+ * </ol>
+ * <p>于是拆成两段：核销一步是「一次性票据 → 扣次数 → 换发取件票」，取件一步凭取件票重复读。
+ * 次数闸门没有因此变松——下载次数在核销瞬间由 DB 原子扣减（{@code ShareLinkMapper}），
+ * 取件票只覆盖「这一次已付费的下载」，TTL 到期即失效。</p>
+ *
+ * <p><b>初始票据语义</b>：访客通过「令牌 → 有效期 → 提取码 → 次数」校验链后得到的短期取件凭证，
  * 绑定 {@code shareToken + fileId + accessType}，<b>取用即焚</b>（Redis {@code GETDEL}），
  * 因此同一票据无法被重放 / 并发复用（红队 [V-05]）。</p>
  *
@@ -103,6 +114,52 @@ public class ShareTicketService {
             return objectMapper.readValue(json, TicketPayload.class);
         } catch (Exception e) {
             log.warn("票据载荷解析失败，按无效票据处理：ticketHash={}", Integer.toHexString(ticket.hashCode()), e);
+            return null;
+        }
+    }
+
+    /**
+     * 签发核销后的取件票（<b>可重复使用至 TTL</b>）。
+     *
+     * <p>调用点在 {@code ShareAccessService#redeem}：一次性票据已 GETDEL、下载次数已扣减、
+     * 审计已落库，此时换发的票只用于把这一次取件的字节读完，因此用
+     * {@link RedisKeyConstants#sharePickKey} 而非一次性票据键，且校验时不销毁。</p>
+     *
+     * @param payload 核销时已复核过的载荷（shareId / fileId / accessType / 原到期时间戳）
+     * @return 明文取件票
+     */
+    public String issuePick(TicketPayload payload) {
+        String ticket = SecureTokens.randomToken();
+        try {
+            stringRedisTemplate.opsForValue().set(RedisKeyConstants.sharePickKey(ticket),
+                    objectMapper.writeValueAsString(payload), shareProperties.getTicketTtl());
+        } catch (Exception e) {
+            log.error("签发分享取件票失败：shareId={}, accessType={}", payload.shareId(), payload.accessType(), e);
+            throw new IllegalStateException("签发分享取件票失败", e);
+        }
+        log.debug("已签发分享取件票：shareId={}, accessType={}, ttl={}s",
+                payload.shareId(), payload.accessType(), shareProperties.getTicketTtl().toSeconds());
+        return ticket;
+    }
+
+    /**
+     * 校验取件票（<b>只校验、不销毁</b>）。
+     *
+     * @param ticket 明文取件票
+     * @return 票据载荷；不存在 / 已过期返回 {@code null}
+     */
+    public TicketPayload resolvePick(String ticket) {
+        if (ticket == null || ticket.isBlank()) {
+            return null;
+        }
+        String json = stringRedisTemplate.opsForValue().get(RedisKeyConstants.sharePickKey(ticket));
+        if (json == null) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, TicketPayload.class);
+        } catch (Exception e) {
+            log.warn("取件票载荷解析失败，按无效票据处理：ticketHash={}", Integer.toHexString(ticket.hashCode()), e);
             return null;
         }
     }

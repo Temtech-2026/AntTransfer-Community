@@ -64,6 +64,10 @@ import java.util.Objects;
  * <p><b>审计</b>：取件成功写 {@code SHARE_DOWNLOAD / SHARE_PREVIEW}（含 IP / UA / 时间，UA 落 detail）；
  * 提取码达阈值锁定写 {@code SHARE_CODE_LOCKED}。审计失败不阻断业务（见 {@link ShareAuditLogger}）。</p>
  *
+ * <p><b>核销与字节下发分成两步</b>：核销（{@link #redeem}）一次性票据并返回元信息 + 取件票；
+ * 字节由 {@link #resolveContent} 复核取件票后交给 {@code FileDownloadService} 流式下发。
+ * 拆开的原因见 {@code ShareTicketService} 类注释——一次性票撑不住 {@code Range} 续传。</p>
+ *
  * @author AntTransfer CE
  */
 @Slf4j
@@ -198,7 +202,45 @@ public class ShareAccessService {
                 .sha256(file.getSha256())
                 .contentType(file.getContentType())
                 .accessType(accessType)
+                // 一次性票此刻已焚毁，换发取件票供前端真正拉字节（可重复读，撑 Range 续传）
+                .contentTicket(shareTicketService.issuePick(payload))
+                .expiresInSeconds(shareProperties.getTicketTtl().toSeconds())
                 .build();
+    }
+
+    /**
+     * 复核取件票并载入待下发文件（字节流的流式下发由 {@code FileDownloadService} 完成）。
+     *
+     * <p>核销时已扣次数、已落审计，本步<b>不再扣减、不再审计</b>——它就是「同一份已付费下载」的
+     * 重复读通道（{@code Range} 分段 / 浏览器重试都会多次进入），审计若在此重复落账，
+     * 「已用次数」与审计条数就会对不上。</p>
+     *
+     * @param token  链接令牌（取自取件地址路径，须与票据绑定的链接一致）
+     * @param ticket 取件票（核销时由 {@link #redeem} 下发）
+     * @return 取件上下文（文件 + 访问类型）
+     */
+    public SharedContent resolveContent(String token, String ticket) {
+        ShareTicketService.TicketPayload payload = shareTicketService.resolvePick(ticket);
+        if (payload == null) {
+            throw new BusinessException(ErrorCode.SHARE_EXPIRED_OR_LIMIT, MSG_TICKET_INVALID);
+        }
+        ShareLink link = resolveForRedeem(payload);
+        // 票据必须用在自己那张链接上：否则记账在 A 链接、字节从 B 链接取走，审计与配额都会错位
+        if (!Objects.equals(link.getToken(), token)) {
+            throw new BusinessException(ErrorCode.SHARE_EXPIRED_OR_LIMIT, MSG_TICKET_INVALID);
+        }
+        FileObject file = requireReadableFile(link, payload.fileId());
+        return new SharedContent(link.getId(), file, normalizeAccessType(payload.accessType()));
+    }
+
+    /**
+     * 取件票复核后的取件上下文。
+     *
+     * @param shareId    链接 ID（日志 / 排障用）
+     * @param file      待下发的物理文件
+     * @param accessType {@link #ACCESS_DOWNLOAD} / {@link #ACCESS_PREVIEW}
+     */
+    public record SharedContent(Long shareId, FileObject file, String accessType) {
     }
 
     // ------------------------------------------------------------------ 内部方法

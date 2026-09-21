@@ -15,6 +15,8 @@
  */
 package com.anttransfer.file.model.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -46,7 +48,8 @@ public class PreviewVO {
     /** 预览策略：不支持预览。 */
     public static final String STRATEGY_NONE = "none";
 
-    /** 文件条目 ID。 */
+    /** 文件条目 ID（19 位雪花 ID，以字符串过线，理由见 {@link FileNodeVO}）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long nodeId;
 
     /** 文件名。 */

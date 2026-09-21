@@ -16,11 +16,16 @@
 package com.anttransfer.file.model.vo;
 
 import com.anttransfer.file.model.entity.Tag;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Getter;
 import lombok.Setter;
 
 /**
  * 标签视图对象。
+ *
+ * <p>标签 ID 为 19 位雪花 ID，须以字符串过线（理由见 {@link FileNodeVO}），
+ * 否则前端按被取整的 ID 打标 / 解绑会静默失效。</p>
  *
  * @author AntTransfer CE
  */
@@ -29,6 +34,7 @@ import lombok.Setter;
 public class TagVO {
 
     /** 标签 ID */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long id;
 
     /** 标签名 */

@@ -15,6 +15,8 @@
  */
 package com.anttransfer.file.model.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Builder;
 import lombok.Data;
 
@@ -26,6 +28,8 @@ import java.time.LocalDateTime;
  * <p><b>刻意不包含 {@code extractCode} 字段</b>：提取码 BCrypt 加盐后入库，
  * 服务端无法也<b>不得</b>回显明文（仅创建者本人知道自己设置的提取码）。</p>
  *
+ * <p>被分享文件 ID 为 19 位雪花 ID，须以字符串过线（理由见 {@link FileNodeVO}）。</p>
+ *
  * @author AntTransfer CE
  */
 @Data
@@ -36,6 +40,7 @@ public class ShareLinkVO {
     private String token;
 
     /** 被分享文件 ID */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long fileId;
 
     /** 被分享文件原始名（便于列表展示，避免前端二次查询） */

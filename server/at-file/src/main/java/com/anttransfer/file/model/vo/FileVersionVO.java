@@ -16,6 +16,8 @@
 package com.anttransfer.file.model.vo;
 
 import com.anttransfer.file.model.entity.FileVersion;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -24,6 +26,8 @@ import java.time.LocalDateTime;
 /**
  * 文件历史版本视图对象。
  *
+ * <p>版本记录 ID / 上传人 ID 为 19 位雪花 ID，须以字符串过线（理由见 {@link FileNodeVO}）。</p>
+ *
  * @author AntTransfer CE
  */
 @Getter
@@ -31,6 +35,7 @@ import java.time.LocalDateTime;
 public class FileVersionVO {
 
     /** 版本记录 ID */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long id;
 
     /** 版本号（同一文件内递增） */
@@ -49,6 +54,7 @@ public class FileVersionVO {
     private String remark;
 
     /** 该版本上传 / 产生人 */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long uploadUserId;
 
     /** 版本产生时间 */

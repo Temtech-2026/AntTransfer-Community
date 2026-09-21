@@ -21,13 +21,19 @@ import com.anttransfer.file.model.dto.RedeemTicketRequest;
 import com.anttransfer.file.model.dto.VerifyShareRequest;
 import com.anttransfer.file.model.vo.SharePayloadVO;
 import com.anttransfer.file.model.vo.ShareTicketVO;
+import com.anttransfer.file.service.FileDownloadService;
 import com.anttransfer.file.service.ShareAccessService;
 import com.anttransfer.file.util.WebRequestInfo;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpHeaders;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -37,8 +43,10 @@ import org.springframework.web.bind.annotation.RestController;
  * 自证身份。因此本类端点必须：① 进白名单；② 加 {@link RateLimit} 抗爆破 / 刷量；
  * ③ 服务层对令牌、有效期、提取码、次数逐项校验（见 {@code ShareAccessService}）。</p>
  *
- * <p><b>两步式取件</b>：先 {@code /{token}/verify} 换一次性票据（GETDEL，TTL 5 min），
- * 再 {@code /redeem} 凭票据核销取件——票据不落库，丢失即失效，重放无效。</p>
+ * <p><b>三步式取件</b>：① {@code /{token}/verify} 换一次性票据（GETDEL，TTL 5 min）；
+ * ② {@code /redeem} 凭票据核销并取回元信息 + 取件票；③ {@code /{token}/content} 凭取件票流式取字节。
+ * 一次性票回答「谁有权取件」（不可重放），取件票回答「把这一次取件读完」（可重复读，撑 Range 续传）——
+ * 两票分工的原因见 {@code ShareTicketService} 类注释。</p>
  *
  * @author AntTransfer CE
  */
@@ -47,9 +55,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class ShareAccessController {
 
     private final ShareAccessService shareAccessService;
+    private final FileDownloadService fileDownloadService;
 
-    public ShareAccessController(ShareAccessService shareAccessService) {
+    public ShareAccessController(ShareAccessService shareAccessService, FileDownloadService fileDownloadService) {
         this.shareAccessService = shareAccessService;
+        this.fileDownloadService = fileDownloadService;
     }
 
     /**
@@ -66,12 +76,36 @@ public class ShareAccessController {
     }
 
     /**
-     * 核销取件：票据取用即焚 → 二次校验链接状态 → 原子扣减次数 → 写审计并返回载荷。
+     * 核销取件：票据取用即焚 → 二次校验链接状态 → 原子扣减次数 → 写审计并返回载荷 + 取件票。
      */
     @PostMapping("/redeem")
     @RateLimit(windowSeconds = 60, max = 30, key = "share-redeem", message = "取件过于频繁，请稍后再试")
     public Result<SharePayloadVO> redeem(@Valid @RequestBody RedeemTicketRequest request) {
         return Result.ok(shareAccessService.redeem(request,
                 WebRequestInfo.clientIp(), WebRequestInfo.userAgent()));
+    }
+
+    /**
+     * 取件：凭核销时换发的取件票流式下发字节，支持 {@code Range} 断点续传。
+     *
+     * <p><b>为什么额度比核销宽</b>：一次取件在传输层会被拆成多次请求（浏览器重试、{@code Range}
+     * 分段、多线程下载器），限流过紧会把正常下载打成 429。此处 120 次 / 分钟是按「单文件
+     * 64 线程 + 重试」估的上界，且取件票本身已绑定链接、下载次数也已在核销时扣减，
+     * 刷本端点只能重复读同一份已付费内容，拿不到新额度。</p>
+     *
+     * <p><b>响应语义</b>：{@code accessType=download} 走 {@code attachment}（回显存储 MIME）；
+     * {@code accessType=preview} 走 {@code inline}，且仅限可安全内联的类型（PDF / 光栅图），
+     * 其余类型显式失败而不会静默降级为下载。</p>
+     */
+    @GetMapping("/{token}/content")
+    @RateLimit(windowSeconds = 60, max = 120, key = "share-content", message = "取件过于频繁，请稍后再试")
+    public void content(@PathVariable String token,
+                        @RequestParam String ticket,
+                        @RequestParam(required = false) Long speedLimit,
+                        @RequestHeader(value = HttpHeaders.RANGE, required = false) String range,
+                        HttpServletResponse response) {
+        ShareAccessService.SharedContent content = shareAccessService.resolveContent(token, ticket);
+        boolean inline = ShareAccessService.ACCESS_PREVIEW.equals(content.accessType());
+        fileDownloadService.streamSharedFile(content.file(), inline, speedLimit, range, response);
     }
 }

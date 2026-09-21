@@ -19,6 +19,7 @@ import com.anttransfer.common.exception.BusinessException;
 import com.anttransfer.common.result.ErrorCode;
 import com.anttransfer.file.config.FileProperties;
 import com.anttransfer.file.model.entity.FileNode;
+import com.anttransfer.file.model.entity.FileObject;
 import com.anttransfer.common.audit.OperationLog;
 import com.anttransfer.file.security.FileOwnershipGuard;
 import com.anttransfer.file.service.FileDownloadTicketService.FileTicketPayload;
@@ -222,6 +223,78 @@ public class FileDownloadService {
         return outcome;
     }
 
+    /**
+     * 下发分享取件内容（免登录，凭核销后取件票）。
+     *
+     * <p><b>为什么不复用 {@link #download}</b>：登录侧取件的权限载体是
+     * {@code userId + nodeId} 票据与条目归属守卫（{@link FileOwnershipGuard}），
+     * 而分享访客没有 userId、也没有条目（{@code FileNode}），只有一张已核销的物理文件
+     * （{@code FileObject}）——权限已在核销时由「令牌 + 提取码 + 次数」判定完毕。
+     * 参数化的只有「取哪份字节、叫什么名、内联还是下载」，Range / 限速 / 响应头等协议细节
+     * 仍走同一套 {@link #writeHeaders} + {@link #pump}，不会产生第二份会漂移的实现。</p>
+     *
+     * <p><b>审计口径</b>：分享取件在核销瞬间已落一条 {@code SHARE_DOWNLOAD / SHARE_PREVIEW}
+     * （见 {@code ShareAccessService#redeem}），本方法<b>不再审计</b>——取件票在 TTL 内可被
+     * 重复读取（{@code Range} 分段、浏览器重试），若在此重复落账，审计条数会与「已用次数」脱钩。
+     * 传输未走完只记日志。</p>
+     *
+     * @param file                待下发的物理文件
+     * @param inline              {@code true} = 在线预览（仅可安全内联的类型），{@code false} = 下载
+     * @param requestedSpeedLimit 任务级速率上限（字节/秒，可空；{@code 0} 表示不限速）
+     * @param rangeHeader         {@code Range} 请求头（可空）
+     * @param response            HTTP 响应
+     */
+    public void streamSharedFile(FileObject file, boolean inline, Long requestedSpeedLimit,
+                                 String rangeHeader, HttpServletResponse response) {
+        String ext = FileTypePolicy.extOfName(file.getOriginalName());
+        if (inline && !typePolicy.inlineRenderable(ext)) {
+            // 预览票承载的是「能看」而不是「能拿走」：不可安全内联的类型没有预览路径，
+            // 也绝不能为它退回 attachment —— 那等于把预览票降级成下载票
+            throw new BusinessException(ErrorCode.FILE_TYPE_NOT_ALLOWED, "该文件类型不支持在线预览，请下载后查看");
+        }
+        long taskLimit = resolveTaskLimit(requestedSpeedLimit);
+
+        String sha256 = file.getSha256();
+        long total = (sha256 == null || sha256.isBlank()) ? -1L : fileStorage.contentSize(sha256);
+        if (total < 0L) {
+            // 元数据在、字节流不在：属存储侧异常，必须显式失败而不是下发空文件
+            log.error("分享取件物理内容缺失：fileId={}, sha256={}", file.getId(), sha256);
+            throw new BusinessException(ErrorCode.FILE_DOWNLOAD_FAIL, "文件内容缺失，请联系管理员");
+        }
+
+        long start = 0L;
+        long end = total - 1;
+        boolean partial = false;
+        if (rangeHeader != null && !rangeHeader.isBlank()) {
+            try {
+                long[] range = parseRange(rangeHeader, total);
+                if (range != null) {
+                    start = range[0];
+                    end = range[1];
+                    partial = true;
+                }
+            } catch (UnsatisfiableRangeException e) {
+                response.setStatus(HttpServletResponse.SC_REQUESTED_RANGE_NOT_SATISFIABLE);
+                response.setHeader(HttpHeaders.CONTENT_RANGE, "bytes */" + total);
+                response.setContentLength(0);
+                return;
+            }
+        }
+
+        long length = end - start + 1;
+        writeHeaders(response, file.getOriginalName(),
+                inline ? inlineContentType(ext) : storedContentType(file.getContentType()),
+                inline, total, start, end, length, partial);
+
+        String bucketKey = TASK_BUCKET_PREFIX + "share:" + file.getId() + ":" + UUID.randomUUID();
+        StreamOutcome outcome = pump(fileStorage.contentResource(sha256), bucketKey, start, length,
+                taskLimit, response, "shareFileId=" + file.getId());
+        if (!outcome.ok()) {
+            log.warn("分享取件下发未完成：fileId={}, sent={}, reason={}",
+                    file.getId(), outcome.sent(), outcome.failureReason());
+        }
+    }
+
     /* ============================== 响应头 ============================== */
 
     private void writeHeaders(HttpServletResponse response, String fileName, String contentType, boolean inline,
@@ -252,19 +325,27 @@ public class FileDownloadService {
      */
     private String contentTypeFor(FileNode node, boolean inline) {
         if (inline) {
-            String ext = typePolicy.extOf(node);
-            if (typePolicy.previewablePdf(ext)) {
-                return MediaType.APPLICATION_PDF_VALUE;
-            }
-            return switch (ext) {
-                case "png" -> MediaType.IMAGE_PNG_VALUE;
-                case "gif" -> "image/gif";
-                case "bmp" -> "image/bmp";
-                case "webp" -> "image/webp";
-                default -> MediaType.IMAGE_JPEG_VALUE;
-            };
+            return inlineContentType(typePolicy.extOf(node));
         }
-        String stored = node.getContentType();
+        return storedContentType(node.getContentType());
+    }
+
+    /** 内联场景的 MIME：只认白名单扩展名（PDF / 光栅图）。 */
+    private String inlineContentType(String ext) {
+        if (typePolicy.previewablePdf(ext)) {
+            return MediaType.APPLICATION_PDF_VALUE;
+        }
+        return switch (ext) {
+            case "png" -> MediaType.IMAGE_PNG_VALUE;
+            case "gif" -> "image/gif";
+            case "bmp" -> "image/bmp";
+            case "webp" -> "image/webp";
+            default -> MediaType.IMAGE_JPEG_VALUE;
+        };
+    }
+
+    /** 下载场景的 MIME：回显存储值（有 attachment 与 nosniff 兜底）。 */
+    private static String storedContentType(String stored) {
         return (stored == null || stored.isBlank()) ? MediaType.APPLICATION_OCTET_STREAM_VALUE : stored;
     }
 

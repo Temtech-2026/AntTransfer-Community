@@ -15,6 +15,8 @@
  */
 package com.anttransfer.file.model.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Builder;
 import lombok.Data;
 
@@ -25,6 +27,8 @@ import lombok.Data;
  * 暴露后端存储位置等于给出绕过票据直连存储的可能。字节流的读取由服务端
  * 凭 fileId 自行解析存储后端（详见 {@code ShareAccessService#redeem}）。</p>
  *
+ * <p>链接 ID / 文件 ID 为 19 位雪花 ID，须以字符串过线（理由见 {@link FileNodeVO}）。</p>
+ *
  * @author AntTransfer CE
  */
 @Data
@@ -32,9 +36,11 @@ import lombok.Data;
 public class SharePayloadVO {
 
     /** 外发链接 ID（审计归属） */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long shareId;
 
     /** 文件 ID */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long fileId;
 
     /** 原始文件名（Content-Disposition 用） */
@@ -51,4 +57,16 @@ public class SharePayloadVO {
 
     /** 本次访问类型：download / preview */
     private String accessType;
+
+    /**
+     * 核销后换发的取件票：前端据此拼 {@code /v1/shares/{token}/content?ticket=...} 取字节。
+     *
+     * <p>与换票阶段的一次性票据是<b>两张不同的票</b>：一次性票已在本方法内 {@code GETDEL} 焚毁
+     * （不可重放，红队 [V-05]），本票只覆盖「把这一次取件读完」，TTL 内可重复使用，
+     * 以支撑 {@code Range} 断点续传与浏览器重试（详见 {@code RedisKeyConstants#SHARE_PICK_PREFIX}）。</p>
+     */
+    private String contentTicket;
+
+    /** 取件票剩余有效期（秒），与 {@code ShareProperties#ticketTtl} 同源 */
+    private Long expiresInSeconds;
 }

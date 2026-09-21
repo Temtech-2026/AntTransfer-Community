@@ -19,6 +19,7 @@ import com.anttransfer.common.permission.RequiresPerm;
 import com.anttransfer.common.result.PageResult;
 import com.anttransfer.common.result.Result;
 import com.anttransfer.file.model.dto.CreateShareRequest;
+import com.anttransfer.file.model.dto.RevokeSharesRequest;
 import com.anttransfer.file.model.vo.ShareLinkVO;
 import com.anttransfer.file.security.CurrentUserContext;
 import com.anttransfer.file.service.ShareLinkService;
@@ -76,6 +77,32 @@ public class ShareController {
         shareLinkService.revoke(CurrentUserContext.currentUserId(), token,
                 WebRequestInfo.clientIp(), WebRequestInfo.userAgent());
         return Result.ok();
+    }
+
+    /**
+     * 批量失效所选链接（分享管理页行复选框 + 「失效所选」，单次上限 200）。
+     *
+     * <p>返回<b>实际失效条数</b>：已终态的条目会被跳过而不再报 4012，
+     * 前端据此区分「撤掉了几条」与「本来就没有可撤的」。</p>
+     */
+    @PostMapping("/batch/revoke")
+    @RequiresPerm("file:share")
+    public Result<Integer> revokeBatch(@Valid @RequestBody RevokeSharesRequest request) {
+        return Result.ok(shareLinkService.revokeBatch(CurrentUserContext.currentUserId(), request.getTokens(),
+                WebRequestInfo.clientIp(), WebRequestInfo.userAgent()));
+    }
+
+    /**
+     * 一键失效「我的全部」生效中链接（分享管理页「失效全部」）。
+     *
+     * <p>没有请求体：作用域就是「当前登录用户的全部生效中链接」，不由客户端参数决定——
+     * 让范围可被请求控制，等于给「以为全撤了、其实只撤了一页」留口子。</p>
+     */
+    @PostMapping("/all/revoke")
+    @RequiresPerm("file:share")
+    public Result<Integer> revokeAll() {
+        return Result.ok(shareLinkService.revokeAll(CurrentUserContext.currentUserId(),
+                WebRequestInfo.clientIp(), WebRequestInfo.userAgent()));
     }
 
     /**

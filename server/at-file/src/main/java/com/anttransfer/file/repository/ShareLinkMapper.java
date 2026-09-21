@@ -19,9 +19,12 @@ import com.anttransfer.file.model.entity.ShareLink;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.List;
 
 /**
  * 外发链接 Mapper。
@@ -92,4 +95,57 @@ public interface ShareLinkMapper extends BaseMapper<ShareLink> {
     @Update("update sys_share_link set status = 1, revoke_at = #{now} "
             + "where id = #{id} and status = 0 and deleted = 0")
     int revoke(@Param("id") Long id, @Param("now") LocalDateTime now);
+
+    /**
+     * 批量撤销：把<b>属于该用户</b>且仍在生效中的链接一次性迁移到「已撤销」终态。
+     *
+     * <p><b>为什么不是「查出来逐条 revoke」</b>：批量 / 一键失效是破坏性操作，逐条 CAS 会在中途
+     * 留下「一部分已撤销、一部分仍生效」的中间态，用户重试时又分不清哪几条还没撤。
+     * 单条语句让整批在一个事务里一次成行，<b>影响行数即本批真正失效的条数</b>。</p>
+     *
+     * <p>{@code owner_user_id} 过滤是<b>越权防线本身</b>而不是优化：令牌来自客户端、不可信，
+     * 即便有人构造他人的令牌也匹配不到任何行。返回 0 且不区分「不存在 / 非本人 / 已终态」，
+     * 避免用批量接口反向枚举他人链接（与 {@code requireOwnedLink} 的不可区分口径一致）。</p>
+     *
+     * @param ownerUserId 链接归属人（当前登录用户）
+     * @param tokens      目标令牌集合（调用方已去重、非空，上界见 {@code RevokeSharesRequest}）
+     * @param now         撤销时间（应用时钟）
+     * @return 影响行数 = 实际失效条数（幂等：重复调用返回 0）
+     */
+    @Update("<script>update sys_share_link set status = 1, revoke_at = #{now} "
+            + "where owner_user_id = #{ownerUserId} and status = 0 and deleted = 0 and token in "
+            + "<foreach collection='tokens' item='token' open='(' separator=',' close=')'>#{token}</foreach>"
+            + "</script>")
+    int revokeBatch(@Param("ownerUserId") Long ownerUserId,
+                    @Param("tokens") Collection<String> tokens,
+                    @Param("now") LocalDateTime now);
+
+    /**
+     * 一键失效：把该用户<b>全部</b>生效中的链接迁移到「已撤销」终态。
+     *
+     * <p>刻意<b>不接</b>「分页 / 条数上限」参数，也不做「查一页撤一页」的补偿式遍历：
+     * 语义就是「全部」，漏掉一部分比整批失败更糟——用户会以为全都失效了，实际还有链接可取件。</p>
+     *
+     * @param ownerUserId 链接归属人（当前登录用户）
+     * @param now         撤销时间（应用时钟）
+     * @return 影响行数 = 实际失效条数（幂等：没有生效中的链接时返回 0）
+     */
+    @Update("update sys_share_link set status = 1, revoke_at = #{now} "
+            + "where owner_user_id = #{ownerUserId} and status = 0 and deleted = 0")
+    int revokeAllActive(@Param("ownerUserId") Long ownerUserId, @Param("now") LocalDateTime now);
+
+    /**
+     * 查询该用户全部「生效中」链接的令牌。
+     *
+     * <p>为什么<b>不</b>用 {@code Wrappers.lambdaQuery().select(...)} 取这一列：本 Mapper 的写路径
+     * 全是手写 SQL（原生语句不经过 {@code @TableLogic} 拦截，所以每处都显式写 {@code deleted = 0}），
+     * 而这一列的用途只有一个——撤销后按 token 清 Redis 配额镜像。手写单列查询既避免把
+     * 提取码哈希等无关列拉回内存，也让这段读路径能脱离 Spring 上下文被单测覆盖。</p>
+     *
+     * @param ownerUserId 链接归属人（当前登录用户）
+     * @return 生效中的令牌列表（无则为空列表）
+     */
+    @Select("select token from sys_share_link "
+            + "where owner_user_id = #{ownerUserId} and status = 0 and deleted = 0")
+    List<String> selectActiveTokens(@Param("ownerUserId") Long ownerUserId);
 }

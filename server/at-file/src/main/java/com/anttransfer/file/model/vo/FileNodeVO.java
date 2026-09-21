@@ -16,6 +16,8 @@
 package com.anttransfer.file.model.vo;
 
 import com.anttransfer.file.model.entity.FileNode;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -26,6 +28,12 @@ import java.util.List;
 /**
  * 文件条目视图对象（列表 / 回收站 / 详情共用）。
  *
+ * <p><b>ID 一律以字符串过线</b>：条目 ID / 物理文件 ID / 目录 ID 均为 19 位雪花 ID，
+ * 超出 JS {@code Number.MAX_SAFE_INTEGER}（2^53-1）。若按 JSON number 下发，浏览器解析时
+ * 末位会被静默取整，前端再拿它拼 {@code /v1/files/{nodeId}/preview}、{@code /ticket}
+ * 等路径就查不到节点（表现为「列表能看到、预览下载却失败」）。
+ * 上传域（{@code PrecheckResultVO} / {@code MergeResultVO}）已按同一口径处理，此处对齐。</p>
+ *
  * @author AntTransfer CE
  */
 @Getter
@@ -33,12 +41,15 @@ import java.util.List;
 public class FileNodeVO {
 
     /** 条目 ID（用户侧「文件 ID」即此值，非物理文件 ID） */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long id;
 
     /** 物理文件 ID（秒传 / 去重排查用，不对外承担业务语义） */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long fileId;
 
     /** 所在目录 ID（0=根） */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long folderId;
 
     /** 文件名 */
@@ -69,6 +80,7 @@ public class FileNodeVO {
     private LocalDateTime recycleTime;
 
     /** 上传人 */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long uploadUserId;
 
     /** 创建时间 */

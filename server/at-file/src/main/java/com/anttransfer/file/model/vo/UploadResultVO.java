@@ -15,11 +15,15 @@
  */
 package com.anttransfer.file.model.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Getter;
 import lombok.Setter;
 
 /**
  * 上传 / 秒传结果视图对象。
+ *
+ * <p>条目 ID / 物理文件 ID 为 19 位雪花 ID，须以字符串过线（理由见 {@link FileNodeVO}）。</p>
  *
  * @author AntTransfer CE
  */
@@ -28,9 +32,11 @@ import lombok.Setter;
 public class UploadResultVO {
 
     /** 文件条目 ID。 */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long nodeId;
 
     /** 物理文件 ID。 */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long fileId;
 
     /** 文件名。 */

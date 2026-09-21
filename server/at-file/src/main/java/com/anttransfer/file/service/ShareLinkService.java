@@ -159,6 +159,79 @@ public class ShareLinkService {
     }
 
     /**
+     * 批量失效所选外发链接（分享管理页「失效所选」，单次上限 200）。
+     *
+     * <p>与 {@link #revoke} 的差别不只是「一次多条」：单条撤销遇到非生效态会抛 4012，
+     * 批量撤销则<b>把已被并发撤销 / 已达上限 / 已过期的条目静默跳过</b>，只回实际失效条数。
+     * 理由是批量场景下「你想撤的其中一条已经不生效了」不该让整批失败——否则用户面对
+     * 一屏链接无从判断该重试哪一条，而重复点击本来就幂等。</p>
+     *
+     * <p>越权由 SQL 的 {@code owner_user_id} 过滤兜底：非本人令牌既不命中也不报错，
+     * 因而无法借批量接口试探他人令牌是否存在。</p>
+     *
+     * @param ownerUserId 创建者
+     * @param tokens      目标令牌（允许重复 / 空白，内部去重规整）
+     * @param clientIp    来源 IP（审计）
+     * @param userAgent   来源 UA（审计）
+     * @return 实际失效条数（幂等）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public int revokeBatch(Long ownerUserId, List<String> tokens, String clientIp, String userAgent) {
+        requireEnabled();
+
+        List<String> distinct = normalizeTokens(tokens);
+        if (distinct.isEmpty()) {
+            return 0;
+        }
+
+        int rows = shareLinkMapper.revokeBatch(ownerUserId, distinct, LocalDateTime.now());
+        if (rows <= 0) {
+            // 全部条目已是终态：没有事实变化，就不写审计、不动 Redis
+            return 0;
+        }
+        clearQuotaMirror(distinct);
+        auditLogger.success(OperationLog.ACTION_SHARE_REVOKE, ownerUserId, null, clientIp, userAgent,
+                revokeAuditExtra("batch", rows, distinct.size()));
+        log.info("批量撤销外发链接：ownerUserId={}, requested={}, revoked={}", ownerUserId, distinct.size(), rows);
+        return rows;
+    }
+
+    /**
+     * 一键失效「我的全部」生效中链接（分享管理页「失效全部」）。
+     *
+     * <p>作用域<b>只由登录主体决定</b>，不接受任何客户端参数：范围一旦可被请求控制，
+     * 一次传参失误就会变成「以为全撤了、其实只撤了一页」的沉默失败。</p>
+     *
+     * <p>实现上先按归属取一次令牌集合（只为拿到 Redis 配额镜像的键），再以单条 UPDATE 收口；
+     * 两者之间若发生并发撤销，UPDATE 的影响行数才是权威事实，多清一个镜像键无害。</p>
+     *
+     * @param ownerUserId 创建者
+     * @param clientIp    来源 IP（审计）
+     * @param userAgent   来源 UA（审计）
+     * @return 实际失效条数（幂等）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public int revokeAll(Long ownerUserId, String clientIp, String userAgent) {
+        requireEnabled();
+
+        List<String> activeTokens = shareLinkMapper.selectActiveTokens(ownerUserId);
+        if (activeTokens.isEmpty()) {
+            return 0;
+        }
+
+        int rows = shareLinkMapper.revokeAllActive(ownerUserId, LocalDateTime.now());
+        if (rows <= 0) {
+            return 0;
+        }
+        clearQuotaMirror(activeTokens);
+        auditLogger.success(OperationLog.ACTION_SHARE_REVOKE, ownerUserId, null, clientIp, userAgent,
+                revokeAuditExtra("all", rows, activeTokens.size()));
+        log.info("一键失效全部分享链接：ownerUserId={}, candidates={}, revoked={}",
+                ownerUserId, activeTokens.size(), rows);
+        return rows;
+    }
+
+    /**
      * 查询单个外发链接详情（仅创建者可见）。
      *
      * @param ownerUserId 创建者
@@ -215,6 +288,49 @@ public class ShareLinkService {
     }
 
     // ------------------------------------------------------------------ 内部方法
+
+    /** 规整批量令牌：去空白 / 去重，避免同一条被重复计数，也避免 {@code IN} 里出现空串。 */
+    private List<String> normalizeTokens(List<String> tokens) {
+        if (tokens == null || tokens.isEmpty()) {
+            return List.of();
+        }
+        return tokens.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(token -> !token.isEmpty())
+                .distinct()
+                .toList();
+    }
+
+    /**
+     * 清理 Redis 配额镜像（批量版）。
+     *
+     * <p>与单条 {@link #revoke} 同口径：推迟到<b>事务提交后</b>执行，避免「缓存已变、事实未变」；
+     * 用一次 {@code DEL} 多键而不是循环删，避免 N 次往返。镜像只是前置闸门，
+     * 多删 / 漏删都不影响正确性（真值以 DB 为准）。</p>
+     */
+    private void clearQuotaMirror(List<String> tokens) {
+        if (tokens.isEmpty()) {
+            return;
+        }
+        List<String> keys = tokens.stream().map(RedisKeyConstants::shareCountKey).toList();
+        AfterCommitUtils.run(() -> stringRedisTemplate.delete(keys));
+    }
+
+    /**
+     * 批量撤销的审计上下文。
+     *
+     * <p>一次「失效全部」可能涉及成百上千条链接，逐条写审计会把审计表刷满、也会淹没其它事件；
+     * 这里与「清空回收站」同口径：<b>一次操作留一条留痕</b>，用 {@code scope} 说明作用域，
+     * 用 {@code revoked} / {@code requested} 说清「实际失效」与「意图失效」的差异。</p>
+     */
+    private Map<String, Object> revokeAuditExtra(String scope, int revoked, int requested) {
+        Map<String, Object> extra = new LinkedHashMap<>();
+        extra.put("scope", scope);
+        extra.put("revoked", revoked);
+        extra.put("requested", requested);
+        return extra;
+    }
 
     private void requireEnabled() {
         if (!shareProperties.isEnabled()) {

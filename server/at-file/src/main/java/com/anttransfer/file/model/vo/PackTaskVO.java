@@ -16,6 +16,8 @@
 package com.anttransfer.file.model.vo;
 
 import com.anttransfer.file.model.entity.PackTask;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -24,6 +26,9 @@ import java.time.LocalDateTime;
 /**
  * 打包任务视图对象。
  *
+ * <p>任务 ID 为 19 位雪花 ID，须以字符串过线（理由见 {@link FileNodeVO}），
+ * 否则前端拿被取整的 ID 轮询任务状态 / 取产物会查不到任务。</p>
+ *
  * @author AntTransfer CE
  */
 @Getter
@@ -31,6 +36,7 @@ import java.time.LocalDateTime;
 public class PackTaskVO {
 
     /** 任务 ID */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long id;
 
     /** 任务编号（对外展示 / 排障用） */
