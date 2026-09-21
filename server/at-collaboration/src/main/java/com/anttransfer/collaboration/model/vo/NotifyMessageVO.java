@@ -16,6 +16,8 @@
 package com.anttransfer.collaboration.model.vo;
 
 import com.anttransfer.collaboration.model.entity.NotifyMessage;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 
 import java.time.LocalDateTime;
 
@@ -45,19 +47,26 @@ import java.time.LocalDateTime;
  * @param readTime        阅读时间
  * @param createTime      创建时间
  * @author AntTransfer CE
+ * @implNote ID 字段以字符串过线，理由见 {@code UserVO}；本 VO 同时供 HTTP 与 WS 帧使用，
+ * 漏标会让实时下发的 {@code chatTargetId} 被前端舍入，回传时即触发「目标用户不存在或不可用」。
  */
 public record NotifyMessageVO(
+        @JsonSerialize(using = ToStringSerializer.class)
         Long id,
+        @JsonSerialize(using = ToStringSerializer.class)
         Long recipientUserId,
+        @JsonSerialize(using = ToStringSerializer.class)
         Long senderUserId,
         Integer notifyType,
         Integer messageType,
         Integer chatScope,
+        @JsonSerialize(using = ToStringSerializer.class)
         Long chatTargetId,
         String clientMsgId,
         String title,
         String content,
         String bizType,
+        @JsonSerialize(using = ToStringSerializer.class)
         Long bizId,
         Integer readStatus,
         LocalDateTime readTime,

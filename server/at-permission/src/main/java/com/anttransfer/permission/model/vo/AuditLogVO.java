@@ -15,6 +15,9 @@
  */
 package com.anttransfer.permission.model.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+
 import java.time.LocalDateTime;
 
 /**
@@ -44,12 +47,15 @@ import java.time.LocalDateTime;
  * @author AntTransfer CE
  */
 public record AuditLogVO(
+        @JsonSerialize(using = ToStringSerializer.class)
         Long id,
+        @JsonSerialize(using = ToStringSerializer.class)
         Long userId,
         String operatorName,
         String action,
         String module,
         String targetType,
+        @JsonSerialize(using = ToStringSerializer.class)
         Long targetId,
         String traceId,
         String ip,

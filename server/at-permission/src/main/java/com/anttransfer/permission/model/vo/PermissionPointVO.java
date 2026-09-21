@@ -16,6 +16,8 @@
 package com.anttransfer.permission.model.vo;
 
 import com.anttransfer.permission.model.entity.SysPermission;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,10 +35,12 @@ import java.util.List;
  * @author AntTransfer CE
  */
 public record PermissionPointVO(
+        @JsonSerialize(using = ToStringSerializer.class)
         Long id,
         String permCode,
         String permName,
         Integer type,
+        @JsonSerialize(using = ToStringSerializer.class)
         Long parentId,
         Integer sortNo,
         List<PermissionPointVO> children) {

@@ -15,6 +15,9 @@
  */
 package com.anttransfer.collaboration.model.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+
 /**
  * {@code CONNECTED} 帧载荷——连接建立时下发的第一帧，客户端据此初始化界面状态。
  *
@@ -27,6 +30,11 @@ package com.anttransfer.collaboration.model.vo;
  * @param userId 已鉴权用户 ID（客户端可据此校验连接归属，防止令牌串用）
  * @param unread 未读三口径快照；查询失败时为 {@code null}，客户端退化为轮询
  * @author AntTransfer CE
+ * @implNote ID 字段以字符串过线，理由见 {@code UserVO}；前端据此校验连接归属，
+ * 舍入后的 userId 会让「我的连接」判定失效。
  */
-public record WsConnectedVO(Long userId, UnreadCountVO unread) {
+public record WsConnectedVO(
+        @JsonSerialize(using = ToStringSerializer.class)
+        Long userId,
+        UnreadCountVO unread) {
 }

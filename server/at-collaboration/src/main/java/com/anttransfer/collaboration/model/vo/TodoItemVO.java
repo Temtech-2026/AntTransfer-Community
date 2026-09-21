@@ -16,6 +16,8 @@
 package com.anttransfer.collaboration.model.vo;
 
 import com.anttransfer.collaboration.model.entity.NotifyMessage;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 
 import java.time.LocalDateTime;
 
@@ -40,13 +42,17 @@ import java.time.LocalDateTime;
  * @param pending    是否未办（未读）
  * @param createTime 产生时间
  * @author AntTransfer CE
+ * @implNote ID 字段以字符串过线，理由见 {@code UserVO}；{@code bizId} 是待办跳转的唯一抓手，
+ * 被前端舍入后跳转会落到不存在的详情页。
  */
 public record TodoItemVO(
+        @JsonSerialize(using = ToStringSerializer.class)
         Long id,
         Integer notifyType,
         String title,
         String content,
         String bizType,
+        @JsonSerialize(using = ToStringSerializer.class)
         Long bizId,
         boolean pending,
         LocalDateTime createTime) {

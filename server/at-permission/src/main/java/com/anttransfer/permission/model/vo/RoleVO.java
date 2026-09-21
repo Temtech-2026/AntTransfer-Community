@@ -16,6 +16,8 @@
 package com.anttransfer.permission.model.vo;
 
 import com.anttransfer.permission.model.entity.SysRole;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 
 import java.time.LocalDateTime;
 
@@ -35,8 +37,10 @@ import java.time.LocalDateTime;
  * @param remark        备注
  * @param createTime    创建时间
  * @author AntTransfer CE
+ * @implNote ID 字段以字符串过线，理由见 {@link UserVO}。
  */
 public record RoleVO(
+        @JsonSerialize(using = ToStringSerializer.class)
         Long id,
         String code,
         String name,

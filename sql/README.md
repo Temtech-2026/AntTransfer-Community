@@ -14,6 +14,9 @@ sql/
 ├── V6__file_management.sql                         # 增量：目录树 + 文件引用层 + 历史版本 + 标签 + 打包任务（+6 表）
 ├── V7__pack_task_node_ids.sql                      # 增量：sys_pack_task 补 node_ids（异步打包任务的输入清单）
 ├── V8__restrict_file_destroy_to_super_admin.sql    # 数据收敛：从 DEPT_ADMIN 回收 file:destroy（仅 SUPER_ADMIN）
+├── V9__system_admin_permission_points.sql          # 增量：系统管理面 system:* 原子权限点 + 菜单树
+├── V10__upload_task_parent_id.sql                  # 增量：sys_upload_task 补 parent_id（预检上报的目标目录）
+├── V11__notify_message_title_nullable.sql          # 增量：sys_notify_message.title 放宽为可空（会话消息无标题）
 └── README.md
 ```
 
@@ -33,7 +36,7 @@ sql/
 | 文件传输族 | `sys_file` / `sys_upload_task` / `sys_share_link` | 元数据（SHA-256 + `ref_count` 物理去重）、分片任务（含 `uploaded_indexes` 已传分片索引持久化）、外发链接（提取码散列/有效期/次数） |
 | 协作审计族 | `sys_notify_message` / `sys_operation_log` / `sys_login_log` | 站内/离线消息、操作审计（append-only，留存 ≥ 6 个月）、登录成功/失败日志 |
 
-> 🧩 **增量迁移（V3 ~ V8）**：上表为 **V1 基线**（16 表）；V3 ~ V7 只做**纯增量**（新增列 / 新增索引 / 新增表），不改写既有列语义、不删除任何对象；V8 为**纯数据收敛**（仅删授权行，不动表结构）。
+> 🧩 **增量迁移（V3 ~ V11）**：上表为 **V1 基线**（16 表）；V3 ~ V7 / V9 / V10 只做**纯增量**（新增列 / 新增索引 / 新增表 / 新增行），不改写既有列语义、不删除任何对象；V8 为**纯数据收敛**（仅删授权行，不动表结构）；V11 为**约束放宽**（仅把 `title` 由 `not null` 改为可空，不改类型 / 长度、不动任何数据）。
 >
 > - **V3**：`sys_user` 补 `token_epoch` —— 会话吊销纪元，配合 `at:token:access:{userId}` 缓存镜像实现全端登出 / 改密即失效（见 `architecture.md` §4 D-8 与红队 [C-08]）。
 > - **V4**：① `sys_permission` 补菜单路由元数据 `route_path` / `component` / `icon` / `visible`（仅 `type=1` 菜单使用，**不参与权限判定**）；② `sys_user` 补 `user_type`（`1`-内部用户 / `2`-外部协作者；**CE 已裁定维持 PRD、恒为 `1` 不启用**，该列仅作 EE / 受限账号预留，口径见 `architecture.md` §4 **D-12**）；③ 新建 `sys_group_member`（项目 / 群组成员关系，唯一键 `uk_group_user`）与 `sys_space`（协作空间，字段对齐 at-collaboration `CollaborationSpace` 骨架实体，见 §4 **D-11**）。
@@ -41,6 +44,9 @@ sql/
 > - **V6**：文件管理主线落地，新增 6 张引用 / 管理表 —— `sys_folder`（物化路径目录树）、`sys_file_node`（**引用层**：一行 = 用户目录里的一个条目，`owner_user_id` 是防水平越权的唯一依据）、`sys_file_version`（历史版本，**不计入 `sys_file.ref_count`**）、`sys_tag` / `sys_file_tag`（标签及其关联）、`sys_pack_task`（异步打包任务与产物生命周期）。引用层与 `sys_file` 物理层的分离理由、`ref_count` 与回收站/销毁的口径见脚本文件头（PRD US-09/US-10/US-12/US-13）。
 > - **V7**：`sys_pack_task` 补 `node_ids` —— 异步打包必须把「要打哪些条目」落库，否则进程重启 / 线程池拒绝后任务清单丢失，只剩永远停在 `status=0` 的僵尸行并持续占用每用户并发名额。
 > - **V8**：**纯数据收敛（不改结构）** —— 从 DEPT_ADMIN 回收 `file:destroy` 授权行，使 `@RequiresPerm("file:destroy")` 等价于「仅超级管理员」。属**破坏性授权变更**：部门管理员不再能执行彻底销毁；高敏感（`level>=3`）文件的销毁另须经 `SensitiveDestroyApprovalPort` 校验一张「已通过」的审批单（两条为**与**关系）。
+> - **V9**：**纯数据新增（不改结构）** —— 补一组 `system:*` 原子权限点（用户 CRUD / 重置密码 / 启停 / 分配角色 / 调岗离职，角色 CRUD / 分配权限点）及其系统管理面菜单树，承载 at-permission 的系统管理面（不新建 `at-system` 模块）。
+> - **V10**：`sys_upload_task` 补 `parent_id` —— 预检上报的目标目录须随任务落库并在合片时透传给 at-file，否则从子目录发起的分片上传会把文件落到根目录；同时使「同内容传到不同目录」不再复用同一上传票据（票据按「目标目录 + 内容」收敛，物理文件层仍秒传）。
+> - **V11**：**约束放宽（不改类型 / 不动数据）** —— `sys_notify_message.title` 由 `not null` 改为可空。V5 把该表扩成「系统通知 + 会话消息」双语义时补的 5 列全可空，唯独漏掉 V1 遗留的 `title`；而会话消息本就无标题（`ChatSendDTO` 无 `title` 入参，`ChatService` 落行也不写该列），MyBatis-Plus 默认跳过 null 字段使 `INSERT` 里不出现 `title`，MySQL 严格模式随即报 `Field 'title' doesn't have a default value`，发送单聊 / 群聊恒定 HTTP 500。系统通知侧不受影响（`NotificationDispatcher` 一律显式写入标题）。
 > - ✅ 由此 **sys_ 前缀表由 16 表经 V4（+2）后，再经 V6（+6）增至 24 表**；`sys_file.space_id` 自 V4 起为**已落地**的逻辑关联（其原注释「空间表随 at-collaboration 版本落地」所指即 `sys_space`）。
 > - ⚠️ V1 头部「群组成员关系不在 CE 落子表，随 at-collaboration 演进版本（V3+）扩展」的**收敛口径已由 V4 提前落地**；V1 属已发布脚本，按下方「已发布脚本禁止修改」**不回改注释**（Flyway checksum），口径演进说明以 `V4__menu_route_user_type_and_collaboration.sql` 文件头为准。
 

@@ -15,6 +15,9 @@
  */
 package com.anttransfer.permission.model.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -37,6 +40,7 @@ import java.util.List;
  * @author AntTransfer CE
  */
 public record PermissionMapView(
+        @JsonSerialize(using = ToStringSerializer.class)
         Long userId,
         List<String> roleCodes,
         List<String> permCodes,
@@ -54,11 +58,14 @@ public record PermissionMapView(
      * @param applicationId 来源申请单 ID
      */
     public record GrantItem(
+            @JsonSerialize(using = ToStringSerializer.class)
             Long grantId,
             String grantType,
             String resourceType,
+            @JsonSerialize(using = ToStringSerializer.class)
             Long resourceId,
             LocalDateTime expireAt,
+            @JsonSerialize(using = ToStringSerializer.class)
             Long applicationId) {
     }
 }

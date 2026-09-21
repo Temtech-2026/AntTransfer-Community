@@ -16,6 +16,8 @@
 package com.anttransfer.permission.model.vo;
 
 import com.anttransfer.common.security.UserAdminPort.DeptRow;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 
 /**
  * 部门选项视图（调岗目标下拉 / 用户列表过滤）。
@@ -29,7 +31,12 @@ import com.anttransfer.common.security.UserAdminPort.DeptRow;
  * @param name     部门名称
  * @author AntTransfer CE
  */
-public record DeptOptionVO(Long id, Long parentId, String name) {
+public record DeptOptionVO(
+        @JsonSerialize(using = ToStringSerializer.class)
+        Long id,
+        @JsonSerialize(using = ToStringSerializer.class)
+        Long parentId,
+        String name) {
 
     /** 由表主下发的部门行投影。 */
     public static DeptOptionVO of(DeptRow row) {

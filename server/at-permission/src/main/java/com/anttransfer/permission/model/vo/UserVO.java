@@ -15,6 +15,9 @@
  */
 package com.anttransfer.permission.model.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -39,19 +42,25 @@ import java.util.List;
  * @param roleIds       角色 ID 列表
  * @param roleCodes     角色编码列表
  * @author AntTransfer CE
+ * @implNote ID 字段一律以字符串过线：19 位雪花 ID 超出 JS {@code Number.MAX_SAFE_INTEGER}，
+ * 以 JSON number 下发会在前端解析时丢末位，表现为「列表能看到、点操作却报对象不存在」
+ * （如发起会话传回被舍入的 targetId，后端查无此人）。漏标注由 {@code PlatformIdJsonContractTest} 拦截。
  */
 public record UserVO(
+        @JsonSerialize(using = ToStringSerializer.class)
         Long id,
         String username,
         String nickname,
         String email,
         String mobile,
+        @JsonSerialize(using = ToStringSerializer.class)
         Long deptId,
         String deptName,
         Integer status,
         boolean protectedUser,
         LocalDateTime lastLoginTime,
         LocalDateTime createTime,
+        @JsonSerialize(contentUsing = ToStringSerializer.class)
         List<Long> roleIds,
         List<String> roleCodes) {
 }

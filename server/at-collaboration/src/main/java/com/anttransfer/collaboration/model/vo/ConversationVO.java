@@ -15,6 +15,9 @@
  */
 package com.anttransfer.collaboration.model.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+
 import java.time.LocalDateTime;
 
 /**
@@ -46,14 +49,19 @@ import java.time.LocalDateTime;
  * @param lastTime         最后一条消息时间
  * @param unreadCount      该会话未读数（0 表示无未读，前端不渲染角标）
  * @author AntTransfer CE
+ * @implNote ID 字段以字符串过线，理由见 {@code UserVO}；此处漏标即「点已有会话发消息报
+ * 目标用户不存在」的直接根因——targetId 被前端舍入后再回传，后端自然查无此人。
  */
 public record ConversationVO(
         Integer chatScope,
+        @JsonSerialize(using = ToStringSerializer.class)
         Long targetId,
         String targetName,
+        @JsonSerialize(using = ToStringSerializer.class)
         Long lastMessageId,
         String lastContent,
         Integer lastMessageType,
+        @JsonSerialize(using = ToStringSerializer.class)
         Long lastSenderUserId,
         boolean lastMessageMine,
         LocalDateTime lastTime,

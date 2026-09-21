@@ -16,6 +16,8 @@
 package com.anttransfer.permission.model.vo;
 
 import com.anttransfer.permission.model.entity.ApprovalRequest;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 
 import java.time.LocalDateTime;
 
@@ -26,16 +28,20 @@ import java.time.LocalDateTime;
  */
 public record ApprovalRequestVO(
 
+        @JsonSerialize(using = ToStringSerializer.class)
         Long id,
         String applicationNo,
+        @JsonSerialize(using = ToStringSerializer.class)
         Long applicantId,
         String applyType,
         String resourceType,
+        @JsonSerialize(using = ToStringSerializer.class)
         Long resourceId,
         Integer level,
         String purpose,
         LocalDateTime desiredExpireAt,
         Integer status,
+        @JsonSerialize(using = ToStringSerializer.class)
         Long approverId,
         String opinion,
         LocalDateTime decidedAt,

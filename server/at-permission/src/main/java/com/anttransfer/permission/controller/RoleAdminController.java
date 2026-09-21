@@ -107,8 +107,13 @@ public class RoleAdminController {
     /** 角色已生效的权限点 ID 集合（授权弹窗回显）。 */
     @GetMapping("/{id}/permissions")
     @RequiresPerm(SystemAdminConstants.PERM_ROLE_LIST)
-    public Result<List<Long>> permissions(@PathVariable Long id) {
-        return Result.ok(roleAdminService.listPermissionIds(id));
+    public Result<List<String>> permissions(@PathVariable Long id) {
+        // ID 一律以字符串下发：19 位雪花 ID 超出 JS Number.MAX_SAFE_INTEGER；
+        // 本响应是裸 List<Long>、不经 VO，故在控制器边界显式转字符串，
+        // 与 PermissionPointVO.id（字符串）保持同一值空间，否则授权弹窗勾选态会丢。
+        return Result.ok(roleAdminService.listPermissionIds(id).stream()
+                .map(String::valueOf)
+                .toList());
     }
 
     /** 分配角色权限点（整集替换；AUDITOR 锁定只读、防提权、防自锁）。 */
