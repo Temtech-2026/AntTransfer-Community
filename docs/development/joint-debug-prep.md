@@ -32,8 +32,13 @@ make run        # 后端；dev 为默认 profile
 > 1. **dev 才开文档**：`application-dev.yml` 打开 `springdoc.swagger-ui.enabled`，
 >    `application-prod.yml` 关闭 `springdoc.api-docs` 与 `swagger-ui` —— 导 OpenAPI 只能在 dev / staging 做，
 >    联调期间不要为导文档临时打开 prod。
-> 2. **dev 才放行文档路径**：`/v3/api-docs/**`、`/swagger-ui/**` 在 `anttransfer.auth.permit-all` 白名单中；
->    这是**放行访问路径**而非「接口免鉴权」，业务接口一律仍要 `Authorization`。
+> 2. **dev 才放行文档路径**：`/v3/api-docs/**`、`/swagger-ui/**` 由 `application-dev.yml`
+>    的 `anttransfer.auth.permit-all` 追加放行；这是**放行访问路径**而非「接口免鉴权」，
+>    业务接口一律仍要 `Authorization`。
+>    ⚠️ 该配置键**整体替换而非追加**（Spring Boot 的 profile 配置文档优先级更高，且 List 属性不做合并），
+>    所以「产品固有」的匿名入口——登录 / 刷新、外发分享访客侧、文件取件、WebSocket 握手——
+>    一律写死在 `SecurityConfig.BUILT_IN_PERMIT_ALL`，**不要**挪进 `permit-all`：
+>    否则在写了该键的 profile（正是 dev）下会静默丢失，WebSocket 会一直停在「正在建立实时连接」。
 
 ---
 
@@ -121,12 +126,13 @@ make run        # 后端；dev 为默认 profile
 | `nodeId` / `fileId` | （空） | 合并 / 秒传结果写入 |
 | `uploadId` | （空） | precheck 未命中分支写入 |
 | `applicationId` | （空） | 申请单 ID |
-| `shareToken` / `shareTicket` | （空） | 外发链接与访客票据 |
+| `shareToken` / `shareTicket` / `contentTicket` | （空） | 外发链接、访客一次性票据、核销换发的取件票 |
 
 **公共请求头**：根目录级设 `Authorization: Bearer {{accessToken}}`；以下端点需单独覆盖为「无需认证」：
 
 - `POST /v1/auth/token`、`POST /v1/auth/token/refresh`（免登录）
 - `POST /v1/shares/{token}/verify`、`POST /v1/shares/redeem`（访客通道）
+- `GET /v1/shares/{token}/content?ticket=`（访客通道，凭取件票取字节，凭证走查询串）
 - `GET /v1/files/{id}/content`、`GET /v1/files/{id}/thumbnail`（票取，免登录）
 
 **登录接口后置脚本（写入令牌）**：
@@ -522,7 +528,7 @@ pm.environment.set('nodeId', String(hit.id));
 
 **产出**：`shareTicket = data.ticket`
 
-### S15 访客核销取件（票据取用即焚）
+### S15 访客核销取件（一次性票据取用即焚，换发取件票）
 
 `POST {{baseUrl}}/v1/shares/redeem`
 
@@ -539,10 +545,32 @@ pm.environment.set('nodeId', String(hit.id));
 | body | `data.fileName == "smoke-report.bin"`；`data.sizeBytes == 20971520` |
 | body | `data.sha256` 与上传时一致；`data.fileId == {{fileId}}` |
 | body | `data.accessType == "download"` |
+| body | `data.contentTicket` 非空；`data.expiresInSeconds > 0`（核销换发的**取件票**，供 S15d 拉字节） |
 | body | **响应中不含存储路径 / 对象键**（访客免登录，暴露存储位置等于给出绕过票据直连存储的可能） |
+
+**产出**：`contentTicket = data.contentTicket`
 
 **S15b 一次性验证**：**原样重发**同一 `shareTicket` → 断言返回票据失效类错误码（非 0）。
 **S15c 计数验证**：`GET {{baseUrl}}/v1/shares/{{shareToken}}` → `downloadedCount` 由 0 变 1、`remainingCount` 由 3 变 2。
+
+### S15d 访客凭取件票取字节（支持 Range）
+
+`GET {{baseUrl}}/v1/shares/{{shareToken}}/content?ticket={{contentTicket}}`
+
+> 该端点免登录（浏览器原生 `<a href>` 下载**无法携带 Authorization 头**，凭证只能走查询串），
+> 执行前同样清掉 `Authorization` 头。
+
+**断言**
+
+| 层 | 断言 |
+| --- | --- |
+| HTTP | `200` |
+| header | `Accept-Ranges: bytes`；`Content-Length == 20971520` |
+| header | `Content-Disposition` 含 `attachment` 与文件名 |
+
+**S15e Range 续传**：带 `Range: bytes=0-1023` 重发 → 断言 `206`、`Content-Range: bytes 0-1023/20971520`、响应体 1024 字节。
+**S15f 不再重复扣次数**：重发 S15d 后再次 `GET {{baseUrl}}/v1/shares/{{shareToken}}` → `downloadedCount` 仍为 1
+（扣减与审计只发生在 S15 核销那一次；取件票在 TTL 内可重复读，正是它与一次性票的分工）。
 
 ### S16 IM 消息送达
 

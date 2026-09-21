@@ -12,6 +12,7 @@
 | --- | --- |
 | 请求 | 登录成功即调 `GET /api/v1/permission/my`，得到 `{ roles: string[], permCodes: string[], dataScope: 1\|2\|3 }` |
 | 路由守卫 | 路由 meta 声明 `perm: 'file:download'`；无权限跳 403 页（不回登录页，策略 D） |
+| 登录落点 | 登录成功后的 `?redirect=` **只保证「站内」，不保证「当前用户可达」**；须经 `resolveLoginLandingPath`（`services/access/landing.ts`）按 `ROUTE_PERM_RULES` + 本人 `permCodes` 收敛，不可达则回落 `DEFAULT_REDIRECT_PATH`（`/welcome`） |
 | 按钮显隐 | 统一 `usePerm('file:download')` hook；**只藏不决定安全**，后端仍强制校验 |
 | 命名 | 与后端 `perm_code` **逐字符一致**，禁止前端另起一套 |
 | Deny | 后端 `permCodes` 已剔除显式 Deny 项，前端无需感知 Deny 逻辑 |
@@ -31,6 +32,10 @@
 | 文件列表 `/file` | 删除并销毁（回收站之上） | `file:destroy` | **仅 SUPER_ADMIN**（`sql/V8__restrict_file_destroy_to_super_admin.sql` 已从 DEPT_ADMIN 回收该点；高敏感 `level>=3` 文件还须关联一张已通过的高敏感审批单，`level` 由文件详情给出） |
 | 文件列表 `/file` | 标签 CRUD / 打标 | `file:preview`（读）/ `file:edit`（写） | 全部业务角色（不另立 `tag:*` 权限点） |
 | 文件列表 `/file` | 批量打包下载 | `file:download` | 全部业务角色 |
+| 分享管理 `/shares` | 页面可见（菜单 + 路由守卫） | `file:share` | 全部业务角色（`ROUTE_PERM_RULES`，见 `web/src/services/access/route-perm.ts`） |
+| 分享管理 `/shares` | 创建分享 / 复制链接 / 取消分享 | `file:share` | 全部业务角色（后端 `ShareController` 的创建 / 单条撤销 / 详情 / 我的分享统一收口该点） |
+| 分享管理 `/shares` | 行复选框 + 失效所选（带条数；未勾选则禁用） | `file:share` | 全部业务角色（`POST /v1/shares/batch/revoke`，单次上限 200；复选框只对「生效中」的行开放） |
+| 分享管理 `/shares` | 失效全部（**不接受任何范围参数**） | `file:share` | 全部业务角色（`POST /v1/shares/all/revoke`，作用域由服务端按登录主体决定；回**实际失效条数**，`0` 条不等于成功） |
 | 审计日志 `/audit` | 页面可见 + 查询 / 导出 | `audit:log:read` | 仅 SUPER_ADMIN / AUDITOR |
 | 工作台 `/workbench`（web 首页） | 页面可见（待办 / 待审批 / 传输统计） | —（后端按当前登录用户收敛，无原子权限点） | 全部业务角色 |
 | （不存在）日志清除 | 任何入口都**不渲染** | 后端从不签发 `audit:log:clear` | 任何角色（含 SUPER_ADMIN）都无 |
@@ -51,6 +56,7 @@
 | 系统管理 `/system/depts` | 页面可见（菜单，只读部门树） | `system`（type=1 根节点，CE 无部门原子权限点） | 仅 SUPER_ADMIN |
 | 系统管理 `/system/groups` | 页面可见（菜单，只读占位说明） | `system`（同上；CE 无群组接口与权限点） | 仅 SUPER_ADMIN |
 | 系统管理 `/system/menus` | 页面可见（菜单，只读权限点目录） | `system`（同上） | 仅 SUPER_ADMIN |
+| 访客取件 `/share/:token` | 页面可见 + 输入提取码 / 下载 | —（**免登录公开路由**：凭高熵令牌 + 提取码自证身份，无 `perm_code`，不挂 `PermGuard`） | 任何访客（含未登录） |
 
 > 🔐 **系统管理面四条红线的前端职责**：后端已强制（`RoleAdminService` / `UserAdminService`），前端**只需如实呈现**，不要「猜」：
 > ① 内置角色（`SUPER_ADMIN` / `AUDITOR` / `DEPT_ADMIN` / `USER`）禁用删除入口与数据范围选择器（`1020`）；

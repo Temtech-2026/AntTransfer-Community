@@ -64,8 +64,8 @@
   - 断点续传：进度与已收分片落 localStorage（按「名称 + 大小 + 修改时间」匹配），刷新后提示「检测到未完成的上传」，**重新选择同一文件即续传**
     （浏览器不允许持久化 `File` 对象）；若同名同大小但摘要已变，则作废旧票据重传，避免合并出损坏文件；
   - UI（`components/ChunkUpload`）：AntD 拖拽上传 + **整体进度**（字节加权）+ 单文件进度 / 速率 / 重试次数，分片大小与并发数可调；
-  - 单测 24 例（`sha256.test.ts` / `uploadCore.test.ts` / `ChunkUploadController.test.ts`）：标准向量、padding 边界、分片边界、
-    退避曲线、存储与恢复、秒传、并发上限、重试、暂停续传、取消、票据失效等路径全覆盖。
+  - 单测 28 例（`sha256.test.ts` 5 / `uploadCore.test.ts` 8 / `ChunkUploadController.test.ts` 15）：标准向量、padding 边界、分片边界、
+    退避曲线、存储与恢复、秒传、并发上限、重试、暂停续传（含暂停意图上报与续传对账补发）、取消、票据失效等路径全覆盖。
 - 🖥️ 新增分片上传示例页（前端路由 `/upload`）：`web/src/pages/upload/index.tsx` 用步骤条讲清上传链路，
   上传完成后实时列出文件（名称 / 大小 / 是否秒传 / `fileId`），并给出组件与 Hook 的接入示例；
   配套 `_mock.ts` 以**内存**模拟服务端（票据、已收分片、秒传索引均存活于 dev server 进程），
@@ -96,6 +96,20 @@
     **同内容传到不同目录不再互相复用票据**，合片时作为 `folderId` 透传 at-file；
   - 测试：`TransferTaskServiceTest` 18 例（秒传命中 / 复用进行中任务 / 并发上限 / 参数越界 / 续传 / 分片大小与指纹 /
     缺片分支 / 请求过期 / 整件指纹不符 / 归属越权 / 取消）+ `TransferControllerTest` 7 例（HTTP 契约与分支码载荷）。
+- ⏸️ **分片上传「暂停 / 续传」闭环补全（at-transfer + web）**：此前「暂停」只有前端本地态、服务端零落点（`2 暂停` 只能由外部写入），本轮把**意图登记 + 自愈**补齐：
+  - 端点（`/api/v1/transfers`）：新增 `PATCH /{uploadId}`（请求体 `{"action":"pause"|"resume"}`，需 `file:upload`）——
+    暂停 CAS `0 排队 / 1 传输中 → 2 暂停`、续传 CAS `2 暂停 → 0 排队 / 1 传输中`（目标态按已收分片判定）；
+  - **暂停 = 意图登记，不是服务端闸门**：服务端不主动打断在途分片，避免「abort 与落库竞态」制造伪 `4102`；
+    真正止血由前端 `AbortSignal` 完成，服务端只记录「用户想停」并在续传时给出正确目标态；
+  - 幂等与边界：重复动作**幂等成功**；终态（`3 完成 / 4 失败 / 5 取消`）按「不存在」回 `4101`；`6 合并中` 回 `4102`；
+    `action` 非法回 `2003`（`@Pattern` 前置拦截 + 兜底分支防注解被误删）；
+  - 竞态收口（`TransferTaskStateStore.appendPart`）：暂停态写入在途分片时 **保持 `2 暂停`**、不被反推为 `1 传输中`，已收分片不丢、进度不倒退；
+  - 可读性：`GET /{uploadId}/parts` 增回任务 `status`（`ChunkPartsVO` 扩列），前端据此对账；
+  - 前端（`web/src/services/upload`）：`pause()` 先 `AbortSignal.abort()` **即时止血**、再 best-effort 上报（**不 await 往返、失败不阻断本地暂停**）；
+    续传对账发现服务端仍 `2 暂停` 且本地未 abort 时**自动补发 `resume`**，让「上报丢失」自愈；
+  - 测试：后端新增 `TransferTaskStateStoreTest`（锁定暂停不被在途分片撤销）、`TransferTaskServiceTest` 8 例
+    （幂等 / 合并中 `4102` / 终态 `4101` / 续传目标态）、`TransferControllerTest` 新增 pause / resume HTTP 契约；
+    前端 `ChunkUploadController.test.ts` 新增 4 例（上报、无票据不报、对账补发、对账期间再暂停不顶掉），**15 例全通过**；同步补齐 `useChunkUpload.test.tsx` 的 `uploadApi` 替身（缺 `changeTaskState` / `TASK_STATUS_PAUSED` 会让续传对账误判并打死任务），**8 例全通过**。
 - 🔐 **权限申请审批闭环（at-permission）**：打通「无权限 → 申请 → 审批 → 授权 → 到期回收」全链路，
   写侧一律 CAS + 行数校验（红线 P-1），事件与缓存副作用统一在**事务提交后**发布：
   - **申请**（`PermissionApplicationService.create` + `ApplicationCreateDTO`）：按 `applyType` / `resourceType` /
@@ -152,6 +166,26 @@
     恰好 3 成功、9 个 4004**，`downloaded_count` 恒为 3、链接收敛 `status=2`、Redis 镜像归零；提取码连错 5 次锁定 4011）。
     ⚠️ 该集成测试在开发中**真实捕获**「锁定键与错误计数键共用同一 Redis Key → 仅用 `hasKey` 判定导致第 1 次错误即
     被误判锁定」的缺陷，已改为 **比值（`>= maxCodeErrors`）** 判定修复，并保留用例为回归防线。
+  - **分享管理页批量失效（`/shares` 行复选框 + 「失效所选」/「失效全部」）**：新增
+     `POST /api/v1/shares/batch/revoke`（`RevokeSharesRequest`，令牌列表，单次上限 200）与
+     `POST /api/v1/shares/all/revoke`（**无请求体**）两个端点，均 `@RequiresPerm("file:share")`，回**实际失效条数**。
+     - **范围不可由请求决定**：「失效全部」刻意**不接受任何范围参数**——作用域就是「当前登录用户的全部生效中链接」，
+       一旦范围可被请求控制，一次传参失误就会变成「以为全撤了、其实只撤了一页」的沉默失败（不止本页）。
+     - **单条原子 UPDATE，不用逐条 CAS**：`revokeBatch` 为 `WHERE owner_user_id = ? AND share_token IN (...)`、
+       `revokeAll` 为 `WHERE owner_user_id = ? AND status = 0`，影响行数即权威事实，不留中间态；
+       `owner_user_id` 过滤同时兜住越权——非本人令牌既不命中也不报错，无法借批量接口反向试探他人令牌是否存在。
+     - **个别失败不拖垮整批**：已终态 / 非本人 / 并发已被他人撤掉的条目**静默跳过**（不再回 4012），
+       只回实际失效条数；前端据此把「撤掉 N 条」与「本来就没有可撤的」（`0` → `shares.revoke.none`）**分开如实陈述**，0 条绝不谎报成功。
+     - **审计一次操作一条**：`SHARE_REVOKE` 一条留痕，`extra` 带 `scope`（`batch` / `all`）、`revoked`（实际失效）、
+       `requested`（意图失效）——逐条写会把审计表刷满并淹没其它事件，与「清空回收站」同口径；
+       无事实变化（影响行数 `0`）时不写审计。
+     - Redis 配额镜像 `at:share:count:{token}` 在**事务提交后**（`AfterCommitUtils`）一次 `DEL` 多键清理，真值仍以 DB 为准。
+     - **前端**：`ProTable` 行复选框 `getCheckboxProps` 令**仅「生效中」的行可勾选**（勾上撤不掉的行，等于让「失效所选」
+       变成一次静默空操作），工具条「失效所选」带出已选条数且未勾选时禁用；两个入口均走 `DangerConfirm` 二次确认
+     （`level: 'critical'`，撤销是终态）。
+     - 🧪 **回归**：后端 `ShareLinkBulkRevokeTest`（8 例：归属收口 / 幂等计数 / 零副作用 / 审计口径，25 例全绿含
+       `SharePermissionBoundaryTest` 17 例）；前端 `web/src/pages/shares/index.test.tsx`（6 例：复选框只对生效中开放 /
+       失效全部不带范围参数 / 0 条不谎报成功 / 无 `file:share` 整页拒绝）。
 - 💬 **站内通知与 IM 长连接（`at-collaboration`，US-08）**：
   - **通知域统一收敛**：删除 `at-permission` 自带的站内信 / 邮件实现与渠道开关（`notify` 包、`PermissionNotifier`、
     `PermissionNotification`、本地 `NotifyMessage` 实体与 Mapper），统一为 `at-common` 的
@@ -398,8 +432,47 @@
   - ℹ️ 备注：GAP-02 方案 B（`JwtAuthenticationFilter` 逐请求校验 `sys_user.status` + Redis 快照兜底）
     **未实现** —— 按「不做非必需动作」原则不顺手扩面，当前 A 路径已覆盖全部管理面入口，
     重启条件记于 AT-DIFF-todos。
+- 💬 **聊天输入框改为微信式：发送按钮做进输入框，并内置表情面板**（`/chat` 页与即时通讯抽屉共用）。
+  - 🧩 新增共享组件 `web/src/components/ChatComposer/`：输入框整体是一个带边框的盒子，正文占上半部分，
+    下半部分是一行**框内**工具栏（左侧表情入口、右侧发送按钮），发送按钮因此是「在输入框里」而不是并排在外面；
+    表情面板从盒子下方展开，**分类页签放在底部**（对齐微信）。两个聊天入口此前各写一份输入框，
+    行为已经漂移（抽屉「回车发送」、页面「Ctrl + Enter 发送」），合并为同一组件后口径统一。
+  - ⌨️ **发送口径统一为微信：Enter 发送，Shift + Enter 换行**（保留 Ctrl / Cmd + Enter 发送）。
+    按键判定抽成纯函数 `resolveComposerKey`，并**显式让开输入法**——中文拼音选词时的回车不能被当成发送：
+    Chrome 在组合期间 `isComposing === true`，Safari 在 `compositionend` 之后只剩 `keyCode === 229`
+    可判，两个信号都认（否则用户按回车挑词会发出半截拼音）。
+  - 😀 表情为**内置 Unicode 字符**（约 200 个 / 7 组），零第三方依赖、零网络：聊天正文本就是纯文本
+    （`sys_notify_message.content` 是 utf8mb4 的 `varchar(1000)`），表情即字符本身，
+    长度口径与后端 `@Size(max = 1000)`（UTF-16 码元）完全一致，也不会让历史消息在别处渲染成乱码。
+  - 🎯 **表情插在光标处而非追加到末尾**（写到一半挑表情是常态）：光标在点表情按钮失焦前记入 ref，
+    插入后落回片段之后；越界 / 反向框选的选区一律收敛（`insertAtCaret` 已覆盖边界用例）。
+  - 🕘 面板首组为「最近使用」（用过即置顶去重，上限 16，落 localStorage）；存储不可用
+    （隐身模式 / 配额满）时静默退化为无该组，不影响发消息。
+  - ♿ 发送按钮显式给出可访问名（图标自带 `aria-label`，否则读屏会念成「send 发送」）；表情入口带
+    `aria-expanded`，分类页签为 `role="tab"` + `aria-selected`。
+  - 🧪 新增 `composer.test.ts`（按键口径含输入法 3 例 / 光标插入边界 5 例 / 最近使用与坏数据兜底 8 例）
+    与 `index.test.tsx`（发送按钮可点性、Enter 与 Shift + Enter、光标处插入、分类切换、最近使用落盘）；
+    两处输入框的旧样式（`composer` / `composerRow`）随之删除。
+- 📊 **权限地图页补可视化**（`web/src/pages/permission-map/`），全部由已有字段推导，未新增任何后端契约：
+  新增「授权状态分布」卡片——四态占比条 + 图例（条数 / 占比），条宽按**条数**现算而不是拿四舍五入后的
+  百分比拼（否则会出现缝隙或溢出）；权限概览卡里按权限点 `:` 前缀画「权限域分布」条（后端没有「域」字段，
+  文案已写明这是前端分组口径，条长相对条数最多的一组）；审批授权表的有效期列加一条「剩余天数条」。
+  三处刻度都收在纯函数里（`summarizeGrantStates` / `validityBarPercent` / `groupPermCodesByDomain`）并配单测：
+  其中剩余天数条是 **30 天封顶的视觉刻度**、不是「授权已用比例」——后端不下发生效时间，长有效期一律满格，
+  长期有效与已过期不画条；占比条整条 `aria-hidden`，四态信息由图例文字完整给出。
 
 ### 🔄 Changed（变更）
+
+- 🎨 **品牌主色由满饱和青绿 `#00d68f` 调为同色相柔和绿 `#2fb188`**（`web/src/theme/tokens.ts`）：
+  **色相 161° 不变**，只把饱和度 100% → 58%、亮度 50% → 44%——原色在白顶栏与实心按钮上偏刺眼，
+  而刺眼来自饱和度而不是色相，所以不动色相、只压柔，保住品牌识别。hover / active / 浅底 / 绿底文字
+  四个派生色随之在同一色相上重算，并顺手把**四处散写的品牌色**收进权威源：
+  `PublicDarkTheme.ts` 里三次硬编码的 `#00d68f`（登录页与访客取件页——访客唯一见过的界面，
+  原先换色必漏这两页）、`workbench` 成功率进度条的渐变绿、`app.tsx` 与 `defaultSettings.ts` 里
+  两处菜单 hover 浅底 `#f2fdf8`（新收为 `BRAND_PRIMARY_BG_HOVER`）、`public/manifest.json` 的
+  PWA `theme_color`、以及首屏 `public/scripts/loading.js` 里仍是 antd 默认蓝 `#1890ff` 的加载转圈
+  （品牌露出的第一帧，与主色明显不搭）。对比度已核对：墨绿字在实心绿底上 6.1:1、
+  侧栏选中文字在浅绿底上 4.9:1，均达 WCAG AA。
 
 - ⚠️ **授权收敛（破坏性）**：`sql/V8__restrict_file_destroy_to_super_admin.sql` 从 DEPT_ADMIN 回收
   `file:destroy` 授权行。部门管理员不再能执行彻底销毁，须由超管操作；前端须同步隐藏 / 禁用销毁入口
@@ -426,6 +499,27 @@
   （原缺失导致 `tsc --noEmit` 报 TS2339）；同时把仓库地址推导从「写死 github.com」改为**只做规范化**
   （去 `git+` 前缀、`git@host:path` 转 https、去 `.git` 后缀），使 Gitee / GitLab 等非 GitHub 仓库也能正确成链
   —— 否则会静默退回 Ant Design Pro 模板地址，把用户引到别人家的仓库；页脚文案随之改为显示实际托管域名。
+- 🏷️ **页脚去掉脚手架品牌（`web/src/components/Footer`）**：版权行 `Ant Design Pro ©` 改为本项目
+  `AntTransfer Community Edition ©`；仓库兜底地址由 `github.com/ant-design/ant-design-pro` 改指本项目
+  [Gitee 仓库](https://gitee.com/Temtech-close_source/AntTransfer-Community)。原兜底只在 `web/package.json`
+  缺 `repository` 时触发，一旦触发就会把访问者引到模板仓库，且版权行会让用户以为本站由 Ant Design Pro 出品。
+  上游模板的 MIT 授权声明仍完整保留在 `web/LICENSE`，不受文案调整影响。
+- 🏷️ **欢迎页与语言包去掉脚手架品牌字样**（`web/src/pages/Welcome.tsx`、`web/src/locales/*/pages.ts`）：
+  技术栈标签 `Ant Design Pro · React 19` → `Umi Max · React 19`；8 个语言包的
+  `pages.welcome.celebrationTitle`（原「欢迎使用 Ant Design Pro {v6}」）改为本项目名称；
+  `zh-CN` / `en-US` 欢迎页描述句里的「Ant Design Pro 前端」→「Umi Max / React 19 前端」。
+  另同步 `web/config/oneapi.json` 的 `info.title`（影响 `max openapi` 生成代码的头部注释）
+  与 `web/package.json` 的 `description`。`pages.welcome.infoCard.*` / `alertMessage` /
+  `pages.layouts.userLayout.title` 等脚手架遗留键**全仓库零引用**（死键），本次未动。
+- 🌐 **欢迎页文案补齐到 8 种语言 + 新增回归护栏**（`web/src/locales/*/pages.ts`、
+  `web/src/locales/welcome-i18n.test.ts`）：欢迎页的 16 个文案 id（`header.*` / `hero.*` /
+  `feature.*` / `quickStart.*`）此前只存在于 `zh-CN` / `en-US`，`zh-TW` / `ja-JP` / `pt-BR` /
+  `id-ID` / `fa-IR` / `bn-BD` 六份整体缺失——react-intl 找不到 id 时会静默回退成
+  `pages.welcome.hero.title` 这类原始键名直接渲染到页面上。本次按各语言补齐（`/api`、
+  `http://localhost:8080`、`config/proxy.ts` 等代码字面量与 `at-transfer` / `at-file`
+  模块名不翻译；三段式拼接的 `proxyPrefix/Middle/Suffix` 按各自语序重排），并新增
+  `welcome-i18n.test.ts` 护栏：现有 `i18n-parity.test.ts` 只比对 zh-CN ↔ en-US，
+  覆盖不到这 6 种语言，漏翻译将直接导致用例失败。
 - ⚠️ **本地开发默认数据库端口 `3306` → `3307`（杜绝误连本机 MySQL）**：原 `DB_URL` 默认
   `localhost:3306`，容器没起来时会静默连上开发者本机自装 MySQL 并把 Flyway 跑完，形成
   「迁移成功、数据却进了本机库」的假象。现确立口径：**宿主机 `3307` = 本项目容器 MySQL，
@@ -632,6 +726,100 @@
 
 ### 🐛 Fixed（修复）
 
+- 💬 **会话「发送消息」恒定报「目标用户不存在或不可用」**：两层缺陷叠加，且**下层一直被上层挡住**。
+  上层是 **19 位雪花 ID 当 JSON number 过线**——`at-collaboration` 的 `ConversationVO` 与
+  `NotifyMessageVO`（WS 实时帧）里的会话定位 ID 未标 `@JsonSerialize(using = ToStringSerializer.class)`，
+  超出 JS `Number.MAX_SAFE_INTEGER`（2^53-1）后浏览器 `JSON.parse` 把末位**静默取整**，
+  前端再回传时该值已与库里主键不是一个数 → `ChatService` 的 `existsActiveUser` 查不到人，
+  直接抛 `CHAT_TARGET_INVALID`(1013)。同域其余对外 VO（用户 / 部门 / 角色 / 菜单 / 权限点 / 审批单）
+  一并字符串化，新增 `PlatformIdJsonContractTest`（反射扫描认证域 / 权限域 / 协作域全部对外 VO，
+  漏标即失败）钉住口径，前端 ID 契约统一按 `string` 承接。
+  下层是 **`sys_notify_message.title` 的 `not null` 约束**：V5 把该表扩成「系统通知 + 会话消息」
+  双语义时补的 5 列全可空，唯独漏掉 V1 遗留的 `title`；而会话消息本就无标题
+  （`ChatSendDTO` 无 `title` 入参，`ChatService` 落行也不写该列），MyBatis-Plus 默认跳过 null 字段
+  使 `INSERT` 里根本不出现 `title`，MySQL 严格模式随即报
+  `Field 'title' doesn't have a default value` → 发送命中 HTTP 500。
+  该缺陷此前被上层完全掩盖（ID 一律先被判 1013，请求根本走不到落库这一步）。
+  修复：新增 [`sql/V11__notify_message_title_nullable.sql`](sql/V11__notify_message_title_nullable.sql)
+  把 `title` 放宽为可空（不改类型 / 长度、不动存量数据；系统通知侧 `NotificationDispatcher`
+  一律显式写入标题，行为不变）。
+  实机回归（dev：`admin` → `test1`）：用字符串 ID 发送返回 `code=0` 且 `chatTargetId` 为 19 位原值；
+  改用舍入后的数字 ID 发送则精确复现 1013 —— 两者对照即锁死根因。
+- 🦊 **文件下载「点了没反应、不落盘」（只在火狐暴露）**：根因不在取件链路的正确性，而在**取件被当成了「顶层导航」发出**。
+  `startNativeDownload` 原先只靠服务端 `Content-Disposition: attachment` 把这次导航「改判」成下载，而浏览器在响应头
+  回来之前只能按「即将换文档」处理：当前文档开始卸载 → 页面里的 WebSocket 被断开 → 开发服务器的 HMR 客户端
+  （控制台实测 `[utoopack] Dev server disconnected. Polling for restart...`）据此误判「服务重启」并触发整页
+  `location.reload()` → 这次 reload 把尚在飞行中的取件导航取消掉，浏览器报 `NS_BINDING_ABORTED`，下载管理器
+  从未接手（`download` 事件不触发、桌面无文件、Firefox 下载列表 `places.sqlite` 里也没有记录，与「点了没反应」吻合）。
+  1.9 KB 的小文件纯属竞速，Chrome 恰好抢先到达下载管理器，所以**同一个 bug 只在火狐上稳定复现**。
+  修复：`startNativeDownload(url, fileName?)` 给隐藏 `<a>` 显式加 `download` 属性——同源下浏览器在**点击那一刻**就
+  按下载处理，不再拆除当前文档；该属性不要求用户激活态，而本函数总是在 `await` 换票之后才被调用、激活态可能已过期，
+  故与 `target="_blank"` 一类写法不同。分享页访客侧的下载入口（`<a href={contentUrl}>`，同一问题）一并补上。
+  文件名仍以服务端 RFC 5987 的 `filename*` 为准（实测落盘 `测试.txt` 而非 `download`），`fileName` 仅作响应头缺失时的兜底。
+  代价：取件端点若返回 JSON 错误体（只可能来自「票据刚签发就失效」，TTL 5 分钟当次即刻取件）会被落成文件而非渲染成页面。
+  回归：`request.test.ts` 钉住「`download` 属性必须存在」（含不给兜底文件名时留空值——属性在不在才是下载 / 导航的分界），
+  `api.test.ts` 同步兜底文件名入参；另在真实 Firefox(Gecko 155) 内核上按用户真实路径（登录 → 文件列表 → 点下载）
+  端到端复现并验证：修复前 `FAIL NS_BINDING_ABORTED` + 无落盘，修复后 `RESP 200 attachment` → `DOWNLOAD 测试.txt`
+  → 落盘 1982 B，且不再发生整页 reload。
+- 🔌 **聊天界面实时连接一直卡在「正在建立实时连接」**：根因与 WebSocket 代码无关，是 **dev profile 静默清空了免登录白名单**。
+  `application.yml` 的 `anttransfer.auth.permit-all` 原本放行了 5 条「产品固有」的匿名入口
+  （`/ws/notify`、`/v1/files/*/content`、`/v1/files/*/thumbnail`、`/v1/shares/*/verify`、`/v1/shares/redeem`），
+  但 `application-dev.yml` 为放行 Swagger 又定义了**同一个键** —— Spring Boot 的 profile 配置文档优先级高于
+  主文档，且 **List 属性整体替换而非逐项合并**，于是那 5 条在 dev 下被整份丢弃；而 `application-prod.yml`
+  没写这个键，所以表现为**只在 dev 坏**。
+  后果：`/ws/notify` 落回 `anyRequest().authenticated()`，浏览器 WebSocket 构造器又无法设置
+  `Authorization` 头（令牌只能走查询串），在 Security 眼里永远是匿名请求 → 握手被
+  `RestAuthenticationEntryPoint` 拒成 `401 {"code":1001}`（实测可据响应体区分：安全链拒绝返回统一 Result JSON，
+  握手拦截器拒绝返回空响应体）→ 前端在 `connecting`/`reconnecting` 之间循环，故一直显示「正在建立实时连接」。
+  同样被波及的还有文件取件与分享核销：原生下载、缩略图、访客取件页在 dev 下都会 401。
+  修复：把这 5 条**与运行环境无关**的固有匿名入口从 YAML 上移到 `SecurityConfig.BUILT_IN_PERMIT_ALL`，
+  profile 从此无法覆盖它们；`application.yml` 的 `permit-all` 改为默认留空并加警示注释，
+  profile 只保留真正的环境差异（dev 的 Swagger 路径）。安全口径不变：**放行访问路径 ≠ 免鉴权**，
+  WebSocket 仍由 `WsHandshakeInterceptor` 在 Upgrade 阶段校验 JWT，未通过不升级为长连接。
+  回归：新增 `SecurityConfigTest`（4 例，守住「配置只能追加、删不掉内置项」，覆盖空 / 仅 Swagger / null 三种配置形态）；
+  `docs/development/joint-debug-prep.md` 补白名单陷阱说明。
+- 🔗 **外发分享「生成链接」报 `4005` 文件不存在或已被删除**：根因是**前端把「条目 ID」当「物理文件 ID」提交**。
+  数据模型分两层——`sys_file`（物理层：真实字节与归属）与 `sys_file_node`（引用层：用户在列表 / 目录里看到的条目），
+  而外发分享是**物理文件**维度：后端 `ShareLinkService#requireOwnedFile` 拿 `fileId` 查 `sys_file`，
+  `sys_share_link.file_id` 关联的也是 `sys_file.id`（`sql/V1__schema.sql` 的列注释已写明），
+  即列表项里的 `FileNode.fileId`。但两个入口都传了 `FileNode.id`：文件页 `ShareModal` 提交 `fileId: node.id`，
+  分享页 `CreateShareModal` 的文件下拉 `value: node.id`。两张表的 ID 都由雪花生成、分属不同值空间，
+  查库必然落空，于是被服务端判成 `4005`「文件不存在或已被删除」（该码与「无权访问」刻意不可区分，
+  因此从报错上完全看不出是用错了 ID）。
+  现两处统一改取 `node.fileId`；分享页的选项映射抽成 `toFileSelectOptions`，顺带过滤 `fileId` 缺失的残缺行，
+  不让用户选中一个注定失败的文件；文件页在提交前就地拦截并提示（新增中英双语
+  `file.share.missingFileId`），不再发出必然 400 的请求。
+  回归：`ShareModal.test.tsx` 新增「提交的是 `node.fileId` 而非 `node.id`」「缺 `fileId` 时不发请求」两例，
+  `CreateShareModal.test.ts` 新增 2 例（钉住选项 `value` 与残缺行过滤）；`docs/api/README.md` §4 补「两个文件 ID 别混用」。
+- 🧾 **外发分享「生成链接」报 `2004` 请求体格式错误、且同一句提示弹两遍**：两个独立缺陷叠加，前者是触发条件，后者放大体感。
+  - **时间入参不是 ISO-8601**：`ShareModal` 原先用 `dayjs().add(N, 'day').format('YYYY-MM-DD HH:mm:ss')` 直接当请求体，
+    而**空格分隔不是 ISO-8601**；后端 `CreateShareRequest.expireAt` 是 `LocalDateTime` 且未配 `@JsonFormat`，
+    反序列化阶段即抛 `HttpMessageNotReadableException`，被 `GlobalExceptionHandler` 统一回成 `2004`
+    「请求体格式错误，请检查 JSON 与字段类型」。现改走 `web/src/utils/datetime.ts` 的 `formatLocalDateTime`
+    交出 `T` 分隔的 ISO，成功态再转回本地可读格式展示（服务端回显的 ISO 不再把 `T` 直接摆给用户）。
+    同一根因还命中 `PermissionApplyModal` 的 `desiredExpireAt`，一并修正。
+  - **同一错误弹两遍**：两个弹窗的 `catch` 都无条件 `message.error` 兜底，但全局错误链路
+    （`requestErrorConfig` 的 `errorHandler`）对业务错误 / 带响应体的 HTTP 错误 / 网络异常**已各提示过一次**，
+    且 `errorHandler` 执行完 Umi 仍会 reject、`catch` 照样会跑到——于是同一句话弹两遍，用户误以为提交了两次。
+    现抽出 `web/src/utils/result.ts` 的 `isErrorHandledByRequestLayer(error)`，页面只对**不经 request 通道**
+    的同步异常兜底；同类反模式一并修掉 `ApprovalDecisionModal`。
+  - 回归：`ShareModal.test.tsx` ×2（时间入参必须 `T` 分隔、成功态展示不得带 `T`）+ `utils/result.test.ts` ×5
+    （四类错误形态的提示归属）；`docs/api/README.md` §4 补「空格分隔不是 ISO-8601」的排障提示。
+- 🖼️ **文件工作台「上传成功后无法预览 / 下载」**：根因是**文件域 VO 把 19 位雪花 ID 当 JSON number 下发**。
+  上传域（`PrecheckResultVO` / `MergeResultVO`）早已按「ID 以字符串过线」处理，文件域漏了同一口径：`id` 超出
+  JS `Number.MAX_SAFE_INTEGER`（2^53-1），浏览器 `JSON.parse` 时末位被静默取整，于是列表接口返回的
+  `id` 与库里的真实主键**已经不是一个值**；前端再拿它去请求 `/v1/files/{nodeId}/preview`、
+  `/v1/files/{nodeId}/ticket` 自然查不到节点——**列表能看到文件，预览 / 下载必然失败**（下载路径还会
+  被归属校验先拦一道）。同一根因还会连带打歪：`folderId` 被 `toOptionalNumber` 归一后「进入目录列表为空」、
+  勾选行 `keys.map(Number)` 后批量操作静默失效、分享 / 打包 / 版本回滚拿错 ID。
+  修复分两端：服务端在 `at-file` 全部对外 VO 的 ID 字段上标
+  `@JsonSerialize(using = ToStringSerializer.class)`（含计数字段不动，`sizeBytes` / `total` 仍是数字）；
+  前端把文件域 ID 的 TS 契约改为 `string` 并新增 `SnowflakeId` 别名与 `toOptionalId`，
+  同步清理 `toOptionalNumber` / `Number(keys)` 两处归一，目录树补 `isRootFolderId` 判定
+  （`'0'` 是真值，否则根目录语义会反转）。
+  回归防线：新增 `FileDomainIdJsonContractTest`（反射扫描 11 个对外 VO + 断言序列化后 ID 是 19 位原值），
+  前端补 `folder-tree` / `buildFileQuery` 的雪花 ID 精度用例。
+  对外契约已回写 [api/README.md §4](docs/api/README.md)（「ID 一律以字符串下发」）。
 - 🌐 **侧栏菜单切换语言后「只有个别项翻译生效、其余菜单名不变」**：Ant Design Pro 脚手架自带的 8 个语言包
   只翻译了示例页菜单，项目自建菜单键（`menu.workbench` / `menu.upload` / `menu.file` / `menu.shares` /
   `menu.message` / `menu.chat` / `menu.approval` / `menu.permissionMap` / `menu.audit` / `menu.system*`）
@@ -640,6 +828,47 @@
   原样显示**，表现为「只有 `menu.welcome`（脚手架共有键）会变，其余都不变」。现按路由口径补齐 15 个键 × 6 语言，
   并新增回归用例 [`web/src/locales/menu-i18n.test.ts`](web/src/locales/menu-i18n.test.ts)——
   必需键直接由 `config/routes.ts` 派生，**新增菜单若漏翻译任一语言会立即失败**。
+- 🚪 **普通用户一登录进入系统，首先看到的是 403 页面**：根因是**登录落点只校验「站内」不校验「当前用户可达」**。
+  会话失效（或用户主动退出）时 `PermGuard` 会带着原目标跳登录页（`?redirect=/system%2Fusers`），
+  而登录成功后的整页跳转直接交给 `safeRedirectPath`——它只挡 open redirect（外链 / `//` / `/\`），
+  对「站内但越权」的路径一律放行。于是只要上一位用户停在 `/system/users`、`/audit` 这类
+  SUPER_ADMIN 专属页，**普通用户登录成功后第一屏就撞进 `PermGuard` 的 403**，
+  看起来像「一登录就没权限」，实际只是被上一段会话的残留 redirect 带偏。
+  修复：新增 `web/src/services/access/landing.ts`，把落点从「站内」再收敛为「可达」——
+  `pathnameOf` 先剥 query/hash（否则 `/system/users?page=2` 会绕过映射判定），
+  `canReachPath` 复用 PermGuard 同口径（数组用 `hasAnyPerm`「满足其一」、`Set` 用 `hasPerm`，
+  以 `perm_code` 逐字符一致为准）；`resolveLoginLandingPath` 采取**懒加载**——
+  落点不受守卫保护时（如默认 `/welcome`）短路返回、不发起权限请求，
+  只有目标确实登记在 `ROUTE_PERM_RULES` 上才去拉 `GET /api/v1/permission/my`；
+  拉取失败沿用「全拒绝」降级，回落 `DEFAULT_REDIRECT_PATH`。登录页接入该收敛函数替换裸 `safeRedirectPath`。
+  回归：新增 [`web/src/services/access/landing.test.ts`](web/src/services/access/landing.test.ts) ×11
+  （query/hash 剥离、越权回落、有权限保留目标含子路径、懒加载短路不触发权限请求、open redirect 拦截、
+  权限快照失败 / 空权限回落、数组型「满足其一」）。
+- 🔗 **复制分享链接后，在浏览器打开却看不到对应画面**：根因是**前端没有兜住访客取件路由，且后端缺少凭票据取字节的端点**。
+  创建者复制的链接是 `{origin}/share/{token}`，但 `config/routes.ts` 里**没有任何 `/share/**` 路由**，
+  于是 `{token}` 被路径段吞掉、整条链接掉进兜底的 `/*` → 404 页——表现就是「链接复制出来了，浏览器打开却没有画面」；
+  即便路由存在，访客页也会被登录守卫（`app.tsx` 的公开路径判定 + 路由切换守卫）重定向到登录页拦住。
+  后端此前访客通道只有 `verify`（换一次性票）与 `redeem`（核销回元信息）两步，**没有靠票据拉字节的端点**，
+  前端拿到元信息也无处取内容。修复分三层：
+  - **① 取票模型从「一次性票一步到位」改为「双票三步式」**：`verify` 换**一次性票**
+    （`at:share:ticket:{ticket}`，`GETDEL` 取用即焚）只回答「谁有权取件」；`redeem` 校验通过后在其上换发
+    **取件票**（`at:share:pick:{ticket}`，TTL 同票据口径）回答「把这一次取件读完」；新增
+    `GET /v1/shares/{token}/content?ticket=`（`@RateLimit` 120 次/分钟）凭取件票流式下发，支持 `Range` 断点续传。
+    之所以不能用一次性票读字节：一次取件在传输层必然被拆成多次请求（`Range` 分段 / 浏览器重试 / 多线程下载），
+    第二次就会撞上「票已焚毁」；次数扣减与审计仍只发生在 `redeem` 那一次，取件票重复读**不再扣减、不再审计**。
+  - **② 白名单**：后端把 `/v1/shares/*/content` 加入 `anttransfer.auth.permit-all`（浏览器原生 `<a href>` 下载
+    **无法携带 `Authorization` 头**，凭证只能走查询串），并同步 `PRODUCT_ANONYMOUS_ENTRIES` 回归用例。
+  - **③ 前端补齐公开画面与放行**：新增免登录访客取件页 [`web/src/pages/share/index.tsx`](web/src/pages/share/index.tsx)
+    （`layout:false`、共享暗色主题、**手动点击才提交**）——输入提取码 → 换票 → 核销（核销即扣次数）→
+    用 `<a href={contentUrl}>` 下载；新增 `web/src/services/access/public-paths.ts` 统一 `isPublicPath` 判定并接进
+    `app.tsx` 的登录守卫与路由切换守卫；`config/routes.ts` 注册 `/share/:token`（`layout:false`，`/share/*` → 404）。
+  - 🧪 **回归**：新增 [`web/src/services/access/public-paths.test.ts`](web/src/services/access/public-paths.test.ts) ×6
+    （正例 / 尾斜杠 / 无前导斜杠 / 拒裸前缀与深层 / 拒前缀相近 / 登录路径）与
+    [`web/src/services/file/endpoints.test.ts`](web/src/services/file/endpoints.test.ts) ×5
+    （token 与票据在路径 / 查询串中的转义，含 `+ / =` 保留字符）；前端全量 **35 文件 / 353 例**通过。
+  - 📖 对外契约已回写 [api/README.md §1](docs/api/README.md) 与
+    [system-design.md §5](docs/architecture/system-design.md)，前端路由映射登记
+    [frontend-permission-map.md](docs/development/frontend-permission-map.md)。
 
 ### 🔒 Security（安全）
 
