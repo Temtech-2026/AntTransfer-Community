@@ -15,6 +15,9 @@
  */
 package com.anttransfer.auth.model.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+
 import java.util.List;
 
 /**
@@ -27,9 +30,21 @@ public final class AuthVos {
     private AuthVos() {
     }
 
-    /** 登录用户摘要（不含敏感字段） */
-    public record UserSummary(Long id, String username, String nickname, String avatarUrl,
-                              List<String> roles) {
+    /**
+     * 登录用户摘要（不含敏感字段）。
+     *
+     * <p><b>ID 以字符串过线：</b>19 位雪花 ID 超出 JS {@code Number.MAX_SAFE_INTEGER}，
+     * 以 JSON number 下发会被 {@code JSON.parse} 静默取整。{@code currentUser.id} 在前端参与
+     * 「是否本人发送」「消息归属」等判断，也可能被回传后端做已读 / 资料操作，丢精度即表现为
+     * 「操作对不上人」。漏标注由 {@code PlatformIdJsonContractTest} 拦截。</p>
+     */
+    public record UserSummary(
+            @JsonSerialize(using = ToStringSerializer.class)
+            Long id,
+            String username,
+            String nickname,
+            String avatarUrl,
+            List<String> roles) {
     }
 
     /** 令牌对响应（access + refresh） */

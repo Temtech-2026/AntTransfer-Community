@@ -12,7 +12,14 @@ springdoc:
     enabled: true
 
 anttransfer:
-  # 免登录白名单（dev）：放行 Swagger / OpenAPI，便于自测（prod 走 application-prod.yml 关闭文档）
+  # 免登录白名单（dev 追加项）：只放行 Swagger / OpenAPI，便于自测
+  # （prod 由 application-prod.yml 关闭文档端点，故不追加）。
+  #
+  # ⚠️ 本键会「整体替换」application.yml 里的同名配置，而非逐项追加——Spring Boot 的
+  # profile 配置文档优先级更高，List 属性不做合并。因此这里只能写「环境相关」的路径。
+  # 产品固有的匿名入口（登录 / 刷新、分享访客侧、文件取件、WebSocket 握手）已写死在
+  # SecurityConfig.BUILT_IN_PERMIT_ALL，不受本键影响。
+  # 历史事故：本键曾让那 5 个入口在 dev 下全部失效，表现为 WebSocket 一直连不上。
   auth:
     permit-all:
       - /v3/api-docs/**

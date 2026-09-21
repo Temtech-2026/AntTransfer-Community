@@ -126,23 +126,22 @@ anttransfer:
     # 登录失败锁定：阈值 5 次 / 窗口 15 分钟（红队 [D-03]，Redis 计数）
     login-fail-threshold: 5
     login-lock-duration: 15m
-    # 追加免登录白名单（PathPattern，不含 /api 前缀；内置已含登录/刷新端点）
-    # 外发分享访客侧两个端点必须在此放行：访客无登录态，凭「高熵令牌 + 提取码」自证身份；
-    # 服务层逐项校验令牌/有效期/提取码/次数，接口层另有 @RateLimit 抗爆破（见 ShareAccessController）。
-    # WebSocket 握手同理必须放行：浏览器 WebSocket 构造器无法设置 Authorization 头，
-    # 令牌只能走查询串，在 Security 眼里是「匿名」请求；放行后由 WsHandshakeInterceptor
-    # 在 Upgrade 阶段完成 JWT 校验，未通过不升级为长连接——安全性不降级（见 WebSocketConfig）。
-    # 文件取件两个端点同理必须放行：<a href> 原生下载、<img src> 缩略图、播放器与下载工具
-    # 都无法携带 Authorization 头，凭证只能走查询串里的短时票据。权限判定被前移到换票阶段
-    # （/v1/files/*/ticket 校验 file:download），票据绑定 userId + nodeId + 取件范围，
-    # 服务层核销时逐项复核；无票 / 票不匹配一律 4018，故匿名可达不等于权限可绕
-    # （见 FileDownloadTicketService、FileDownloadService）。
-    permit-all:
-      - /v1/shares/*/verify
-      - /v1/shares/redeem
-      - /v1/files/*/content
-      - /v1/files/*/thumbnail
-      - /ws/notify
+    # 追加免登录白名单（PathPattern，不含 /api 前缀）。默认留空是刻意的。
+    #
+    # ⚠️ 本键只能放「环境相关」的路径（例如某个 profile 才存在的调试端点）。
+    # 「产品固有」的匿名入口——登录 / 刷新、外发分享访客侧、文件取件、WebSocket 握手——
+    # 一律写死在 SecurityConfig.BUILT_IN_PERMIT_ALL，不要挪到这里来：
+    #   · profile 配置文档（application-dev.yml 等）优先级高于本文件；
+    #   · 且 List 属性是「整体替换」而非逐项合并——任一 profile 写了一次本键，
+    #     本文件里配置的内容就被整份丢弃。
+    # 曾经 dev profile 为放行 Swagger 写了本键，导致 5 个产品固有匿名入口在 dev 下全部
+    # 失效：WebSocket 握手 401(1001)，前端永远停在「正在建立实时连接」，文件取件与分享
+    # 核销同样 401（而 prod 未写本键，反而正常）。
+    #
+    # 如需临时放行，取消下面注释即可——但请记住它同样会「替换」本文件已有配置，
+    # 且永远删不掉代码里的内置项。
+    # permit-all:
+    #   - /v1/debug/**
 
   # ---------------- RBAC 权限（at-permission） ----------------
   permission:

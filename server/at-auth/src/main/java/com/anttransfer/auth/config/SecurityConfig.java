@@ -45,8 +45,9 @@ import java.util.List;
  * <p>要点：</p>
  * <ul>
  *     <li>无状态会话（STATELESS），CSRF 关闭；</li>
- *     <li>内置免登录白名单：登录 / 刷新 / 错误页（追加项经
- *         {@code anttransfer.auth.permit-all} 配置）；</li>
+ *     <li>内置免登录白名单：认证入口 + <b>产品固有的匿名入口</b>（见
+ *         {@link #BUILT_IN_PERMIT_ALL}），追加项经 {@code anttransfer.auth.permit-all}
+ *         配置——<b>配置只有追加能力，删不掉内置项</b>；</li>
  *     <li>其余请求一律 {@code authenticated()}——默认拒绝（红队 V-06）；
  *         未认证经 {@link RestAuthenticationEntryPoint} 输出统一 Result
  *         （1001/1002/1006 由 {@link JwtAuthenticationFilter} 标记），
@@ -69,11 +70,43 @@ public class SecurityConfig {
     @Value("${anttransfer.cors.allowed-origin-patterns:*}")
     private List<String> allowedOriginPatterns;
 
-    /** 内置免登录白名单（PathPattern 语法，不含 context-path） */
+    /**
+     * 内置免登录白名单（PathPattern 语法，不含 context-path）。
+     *
+     * <p><b>为什么这些写死在代码里，而不放 {@code anttransfer.auth.permit-all}？</b>
+     * 下列路径分两类，共同点是<b>与运行环境无关</b>——任何 profile 下都必须放行。
+     * 而 Spring Boot 的 profile 配置文档（{@code application-dev.yml} 等）优先级高于主文档，
+     * 且 <b>List 属性是整体替换而非逐项合并</b>：只要任一 profile 写了一次
+     * {@code permit-all}，主配置里的整份清单就被静默丢弃。曾经 dev profile 为放行 Swagger
+     * 写了 4 条，本清单里的 5 条便随之在 dev 下全部失效——表现为 WebSocket 握手直接
+     * 401(1001) 使前端永远停在「正在建立实时连接」、文件取件与分享核销一律 401，
+     * 而 prod 却正常（prod 未写该键）。放进代码即从结构上消除「加配置反而删白名单」。</p>
+     *
+     * <p><b>⚠️ 放行访问路径 ≠ 免鉴权</b>：WebSocket 由 {@code WsHandshakeInterceptor}
+     * 在 Upgrade 阶段校验 JWT，分享 / 取件由「令牌 + 短期票据」在服务层逐项复核。</p>
+     */
     private static final List<String> BUILT_IN_PERMIT_ALL = List.of(
+            // —— 认证入口：没有它们就没人能登录 ——
             "/v1/auth/token",         // 登录
             "/v1/auth/token/refresh", // 刷新令牌
-            "/error");
+            "/error",                 // 容器错误转发（否则错误页本身也要登录）
+
+            // —— 产品固有的匿名入口：三处「浏览器无法携带 Authorization 头」的场景 ——
+            // 外发分享访客侧：访客无登录态，凭「高熵令牌 + 提取码」自证身份；
+            // 服务层逐项校验令牌 / 有效期 / 提取码 / 次数，另有 @RateLimit 抗爆破。
+            "/v1/shares/*/verify",
+            "/v1/shares/redeem",
+            // 分享取件字节下发：与 /v1/files/*/content 同理——访客页的下载是浏览器原生 <a href>，
+            // 「核销 + 换票」已在 /v1/shares/redeem 完成，此处凭短时取件票读字节（无 Authorization 头可带）。
+            "/v1/shares/*/content",
+            // 文件取件：<a href> 原生下载、<img src> 缩略图、播放器与下载工具都带不了头，
+            // 凭证只能走查询串里的短时票据；权限判定前移到换票阶段（/v1/files/*/ticket）。
+            "/v1/files/*/content",
+            "/v1/files/*/thumbnail",
+            // WebSocket 握手：浏览器 WebSocket 构造器不允许自定义请求头，令牌只能走查询串，
+            // 在 Security 眼里是匿名请求；放行后由握手拦截器在 Upgrade 阶段完成 JWT 校验，
+            // 未通过不升级为长连接——安全性不降级。
+            "/ws/notify");
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -124,8 +157,7 @@ public class SecurityConfig {
             JwtAuthenticationFilter jwtFilter,
             RestAuthenticationEntryPoint entryPoint,
             RestAccessDeniedHandler accessDeniedHandler) throws Exception {
-        List<String> whitelist = new ArrayList<>(BUILT_IN_PERMIT_ALL);
-        whitelist.addAll(properties.getPermitAll());
+        List<String> whitelist = resolvePermitAll(properties);
 
         http.csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -143,5 +175,22 @@ public class SecurityConfig {
                         .accessDeniedHandler(accessDeniedHandler))
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
+    }
+
+    /**
+     * 合并免登录白名单：内置项在前，配置追加项在后。
+     *
+     * <p>抽成静态方法是为了让单测能直接守住「配置只有追加能力、永远删不掉内置项」——
+     * 这正是 dev profile 曾经踩中的坑（详见 {@link #BUILT_IN_PERMIT_ALL}）。</p>
+     *
+     * @param properties 配置项；{@code permit-all} 未配置时为 {@code null}，此处按空处理
+     */
+    static List<String> resolvePermitAll(AuthProperties properties) {
+        List<String> whitelist = new ArrayList<>(BUILT_IN_PERMIT_ALL);
+        List<String> configured = properties == null ? null : properties.getPermitAll();
+        if (configured != null) {
+            whitelist.addAll(configured);
+        }
+        return whitelist;
     }
 }
