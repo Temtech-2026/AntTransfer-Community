@@ -48,10 +48,27 @@ export default {
   'permissionMap.timeline.fromApplication': 'Source application #{id}',
   'permissionMap.timeline.empty': 'No grants with a validity period',
 
+  /* ============================ 授权状态分布（可视化） ============================ */
+  'permissionMap.distribution.title': 'Grant status distribution',
+  'permissionMap.distribution.subTitle':
+    '{count} approved grants, grouped by validity status',
+  'permissionMap.distribution.empty':
+    'No approved grants yet, so there is no distribution to draw',
+  'permissionMap.distribution.percent': '{percent}%',
+  'permissionMap.validity.barTip':
+    '{days} days left; the bar is a visual scale capped at {horizon} days (the backend does not send the start time, so an "elapsed share" cannot be drawn)',
+
   /* ============================ 授权状态与剩余天数 ============================ */
   'permissionMap.grantState.active': 'Active',
   'permissionMap.grantState.expiring': 'Expiring soon',
   'permissionMap.grantState.expired': 'Expired',
   'permissionMap.grantState.permanent': 'Permanent',
   'permissionMap.remainDays': '{days} days left',
+
+  /* ============================ 权限域分布（前端按前缀分组） ============================ */
+  'permissionMap.permCodes.domainTitle': 'Permission domains',
+  'permissionMap.permCodes.domainDesc':
+    'A front-end grouping by the `:` prefix of each permission point (the backend has no "domain" field); bar length is relative to the largest group.',
+  'permissionMap.permCodes.domainOther': 'Other',
+  'permissionMap.permCodes.domainCount': '{count}',
 } as const;

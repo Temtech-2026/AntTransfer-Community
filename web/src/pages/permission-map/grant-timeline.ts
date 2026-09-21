@@ -7,6 +7,7 @@
  */
 
 import type { ApprovalGrant } from '@/services/access';
+import { compareSnowflakeId } from '@/utils/id';
 
 /** 即将到期阈值（天）。 */
 export const EXPIRING_SOON_DAYS = 7;
@@ -123,7 +124,7 @@ export function buildGrantTimeline(
       const leftMs = expireMsOf(left.grant.expireAt);
       const rightMs = expireMsOf(right.grant.expireAt);
       if (leftMs === null && rightMs === null) {
-        return left.grant.grantId - right.grant.grantId;
+        return compareSnowflakeId(left.grant.grantId, right.grant.grantId);
       }
       if (leftMs === null) {
         return 1;
@@ -131,7 +132,7 @@ export function buildGrantTimeline(
       if (rightMs === null) {
         return -1;
       }
-      return leftMs - rightMs || left.grant.grantId - right.grant.grantId;
+      return leftMs - rightMs || compareSnowflakeId(left.grant.grantId, right.grant.grantId);
     });
 }
 
@@ -153,5 +154,71 @@ export function summarizeGrants(entries: GrantTimelineEntry[]): {
       return acc;
     },
     { total: 0, expired: 0, expiring: 0 },
+  );
+}
+
+/** 四态展示顺序：固定不随条数重排——同一份数据两次渲染的顺序必须一模一样。 */
+export const GRANT_STATE_ORDER: readonly GrantState[] = [
+  'active',
+  'expiring',
+  'expired',
+  'permanent',
+];
+
+/** 状态分布切片（可视化用）。 */
+export interface GrantStateSlice {
+  state: GrantState;
+  count: number;
+  /** 占比百分比（0–100，保留 1 位小数）；总数为 0 时为 0 */
+  percent: number;
+}
+
+/**
+ * 按状态汇总为分布切片（四态齐全、顺序固定）。
+ *
+ * <p><b>条的宽度请用 `count / 总数` 现算，别拿 `percent` 当宽度</b>：四段各自四舍五入后
+ * 加起来未必是 100，拼起来会出现缝隙或溢出。`percent` 只用于图例上的读数。</p>
+ */
+export function summarizeGrantStates(
+  entries: GrantTimelineEntry[],
+): GrantStateSlice[] {
+  const counts = new Map<GrantState, number>();
+  for (const entry of entries) {
+    counts.set(entry.state, (counts.get(entry.state) ?? 0) + 1);
+  }
+  return GRANT_STATE_ORDER.map((state) => {
+    const count = counts.get(state) ?? 0;
+    return {
+      state,
+      count,
+      percent: entries.length
+        ? Math.round((count / entries.length) * 1000) / 10
+        : 0,
+    };
+  });
+}
+
+/**
+ * 剩余天数条的刻度上限（天）。
+ *
+ * <p>这是一个**纯视觉口径**：后端不下发生效时间，「已经用掉多少」算不出来，所以条长只能
+ * 表达「还剩多少」——剩余天数按 30 天封顶映射到 0–100，30 天以上一律满格。
+ * 它**不是**「授权有效期进度」。</p>
+ */
+export const VALIDITY_BAR_HORIZON_DAYS = 30;
+
+/**
+ * 剩余天数 → 条百分比。
+ *
+ * <p>返回 null 表示**不该画条**：长期有效（没有到期时间，条长无意义）与已过期
+ * （剩余为 0，画出来只剩一条灰底，信息量为零——红色 Tag 已经把话说完了）。</p>
+ */
+export function validityBarPercent(remainDays: number | null): number | null {
+  if (remainDays === null || remainDays <= 0) {
+    return null;
+  }
+  return Math.min(
+    100,
+    Math.round((remainDays / VALIDITY_BAR_HORIZON_DAYS) * 100),
   );
 }

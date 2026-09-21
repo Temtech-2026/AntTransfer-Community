@@ -25,8 +25,31 @@ export default {
   'pages.login.loginWith': '其他登錄方式 :',
   'pages.login.registerAccount': '註冊賬戶',
   'pages.welcome.link': '歡迎使用',
-  'pages.welcome.celebrationTitle': '歡迎使用 Ant Design Pro {v6}',
+  'pages.welcome.celebrationTitle': '歡迎使用 AntTransfer Community Edition',
   'pages.welcome.alertMessage': '更快更強的重型組件，已經發布。',
+  /* ===== 歡迎頁（pages/Welcome.tsx） ===== */
+  'pages.welcome.header.title': 'AntTransfer CE',
+  'pages.welcome.header.subTitle': '開源檔案安全傳輸與協作共享',
+  'pages.welcome.hero.title': 'AntTransfer Community Edition',
+  'pages.welcome.hero.desc':
+    '開源的內容 / 檔案安全傳輸與協作共享解決方案：Spring Boot 3 模組化單體後端 + Umi Max / React 19 前端，開箱即用、易於二次開發。',
+  'pages.welcome.feature.transfer.title': '安全檔案傳輸',
+  'pages.welcome.feature.transfer.desc':
+    '斷點續傳、進度可視、秒傳校驗，適配大檔案傳輸場景（at-transfer / at-file）。',
+  'pages.welcome.feature.collaboration.title': '協作共享',
+  'pages.welcome.feature.collaboration.desc':
+    '協作空間與分享連結，多人安全存取同一批檔案（at-collaboration）。',
+  'pages.welcome.feature.permission.title': '權限與稽核',
+  'pages.welcome.feature.permission.desc':
+    'RBAC 權限點與全鏈路 TraceId，可稽核可追溯（at-permission / at-gateway）。',
+  'pages.welcome.quickStart.title': '快速開始',
+  'pages.welcome.quickStart.subTitle': '本機聯調與後續接入',
+  /* 首段含行內程式碼（/api、http://localhost:8080），拆成三段拼接；程式碼不翻譯 */
+  'pages.welcome.quickStart.proxyPrefix': '前後端聯調：本專案已把',
+  'pages.welcome.quickStart.proxyMiddle': '代理到後端',
+  'pages.welcome.quickStart.proxySuffix': '（見 config/proxy.ts）。',
+  'pages.welcome.quickStart.domainHint':
+    '領域頁面（傳輸 / 檔案 / 協作 / 權限）將隨後端介面落地逐步接入。',
   'pages.404.subTitle': '抱歉，您訪問的頁面不存在。',
   'pages.404.buttonText': '返回首頁',
   'pages.admin.subPage.title': '這個頁面只有 admin 權限才能查看',

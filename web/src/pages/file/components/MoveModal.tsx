@@ -23,8 +23,14 @@ import { folderPathText } from '../folder-tree';
 
 const { Text } = Typography;
 
-/** 根目录在服务端用 0 表示（`MoveRequest#targetFolderId`）。 */
-const ROOT_FOLDER_ID = 0;
+/**
+ * 根目录在服务端用 0 表示（`MoveRequest#targetFolderId`）。
+ *
+ * <p>这里刻意写成**字符串** `'0'`：目录 ID 是 19 位雪花 ID，前端一律以字符串承载与下发
+ * （见 `services/file/types` 的 ID 语境说明），根目录哨兵值也用同一形态，
+ * 免得混着写时又有人顺手 `Number()` 一下。</p>
+ */
+const ROOT_FOLDER_ID = '0';
 
 /** 目录树转换的防御性深度上限：脏数据成环时不能把选择器递归挂死。 */
 const MAX_TREE_DEPTH = 16;
@@ -34,7 +40,7 @@ const FAILED_NAME_LIMIT = 3;
 
 interface TreeOption {
   title: string;
-  value: number;
+  value: string;
   children?: TreeOption[];
 }
 
@@ -70,7 +76,7 @@ export default function MoveModal({
   onMoved,
 }: MoveModalProps) {
   const intl = useIntl();
-  const [targetFolderId, setTargetFolderId] = useState<number>(ROOT_FOLDER_ID);
+  const [targetFolderId, setTargetFolderId] = useState<string>(ROOT_FOLDER_ID);
   const [submitting, setSubmitting] = useState(false);
 
   // 每次都从根目录开始选：保留上次选择会让「移动」这种破坏性动作更容易误操作
@@ -183,7 +189,8 @@ export default function MoveModal({
         treeDefaultExpandAll
         treeLine
         placeholder={intl.formatMessage({ id: 'file.move.placeholder' })}
-        onChange={(value) => setTargetFolderId(Number(value ?? ROOT_FOLDER_ID))}
+        // 不做 Number() 归一：目录 ID 是雪花 ID，转 number 会丢末位（见 `services/file/types`）
+        onChange={(value) => setTargetFolderId(String(value ?? ROOT_FOLDER_ID))}
       />
 
       <div style={{ marginTop: 12 }}>

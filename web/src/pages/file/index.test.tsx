@@ -131,7 +131,7 @@ beforeEach(() => {
   mockedFolderTree.mockResolvedValue([]);
   mockedPageFiles.mockResolvedValue({ records: [node()], total: 1 } as never);
   mockedPageRecycle.mockResolvedValue({
-    records: [node({ id: 202 })],
+    records: [node({ id: '202' })],
     total: 1,
   } as never);
 });

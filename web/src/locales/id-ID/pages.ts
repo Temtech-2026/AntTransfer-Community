@@ -25,9 +25,34 @@ export default {
   'pages.login.loginWith': 'Masuk dengan :',
   'pages.login.registerAccount': 'Daftar Akun',
   'pages.welcome.link': 'Selamat datang',
-  'pages.welcome.celebrationTitle': 'Selamat datang di Ant Design Pro {v6}',
+  'pages.welcome.celebrationTitle': 'Selamat datang di AntTransfer Community Edition',
   'pages.welcome.alertMessage':
     'Komponen heavy-duty yang lebih cepat dan lebih kuat telah dirilis.',
+  /* ===== Halaman selamat datang (pages/Welcome.tsx) ===== */
+  'pages.welcome.header.title': 'AntTransfer CE',
+  'pages.welcome.header.subTitle':
+    'Transfer file aman dan kolaborasi berbagi sumber terbuka',
+  'pages.welcome.hero.title': 'AntTransfer Community Edition',
+  'pages.welcome.hero.desc':
+    'Solusi sumber terbuka untuk transfer konten / file yang aman dan kolaborasi berbagi: backend monolit modular Spring Boot 3 + frontend Umi Max / React 19, siap pakai dan mudah dikembangkan.',
+  'pages.welcome.feature.transfer.title': 'Transfer file aman',
+  'pages.welcome.feature.transfer.desc':
+    'Unggahan yang dapat dilanjutkan, progres yang terlihat, dan verifikasi checksum unggahan instan untuk skenario file besar (at-transfer / at-file).',
+  'pages.welcome.feature.collaboration.title': 'Kolaborasi dan berbagi',
+  'pages.welcome.feature.collaboration.desc':
+    'Ruang kolaborasi dan tautan berbagi memungkinkan banyak orang mengakses kumpulan file yang sama dengan aman (at-collaboration).',
+  'pages.welcome.feature.permission.title': 'Izin dan audit',
+  'pages.welcome.feature.permission.desc':
+    'Poin izin RBAC dan TraceId menyeluruh membuat semuanya dapat diaudit dan dilacak (at-permission / at-gateway).',
+  'pages.welcome.quickStart.title': 'Mulai cepat',
+  'pages.welcome.quickStart.subTitle': 'Integrasi lokal dan langkah berikutnya',
+  /* Paragraf pertama memuat kode inline (/api, http://localhost:8080) sehingga dipecah menjadi tiga bagian; kode tidak diterjemahkan */
+  'pages.welcome.quickStart.proxyPrefix':
+    'Integrasi lokal: proyek ini mem-proxy',
+  'pages.welcome.quickStart.proxyMiddle': 'ke backend',
+  'pages.welcome.quickStart.proxySuffix': ' (lihat config/proxy.ts).',
+  'pages.welcome.quickStart.domainHint':
+    'Halaman domain (transfer / file / kolaborasi / izin) akan ditambahkan bertahap seiring API backend tersedia.',
   'pages.404.subTitle': 'Maaf, halaman yang Anda kunjungi tidak ada. ',
   'pages.404.buttonText': 'Kembali ke halaman utama',
   'pages.admin.subPage.title': 'Halaman ini hanya dapat dilihat oleh admin',

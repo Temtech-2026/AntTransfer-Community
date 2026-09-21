@@ -74,8 +74,9 @@ const RolePermissionDrawer = ({
   const intl = useIntl();
   const { message } = App.useApp();
   const [tree, setTree] = useState<PermissionPointVO[]>([]);
-  const [checkedKeys, setCheckedKeys] = useState<number[]>([]);
-  const [halfCheckedKeys, setHalfCheckedKeys] = useState<number[]>([]);
+  // 权限点 ID 是字符串（19 位雪花 ID）；与树节点 key 必须同类型，否则勾选态回显不上
+  const [checkedKeys, setCheckedKeys] = useState<string[]>([]);
+  const [halfCheckedKeys, setHalfCheckedKeys] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -115,7 +116,7 @@ const RolePermissionDrawer = ({
   const allPoints = useMemo(() => flattenPoints(tree), [tree]);
 
   const pointById = useMemo(() => {
-    const map = new Map<number, PermissionPointVO>();
+    const map = new Map<string, PermissionPointVO>();
     for (const point of allPoints) {
       map.set(point.id, point);
     }
@@ -124,7 +125,7 @@ const RolePermissionDrawer = ({
 
   /** SUPER_ADMIN 防自锁：必须保留的权限点 ID。 */
   const requiredIds = useMemo(() => {
-    const ids = new Set<number>();
+    const ids = new Set<string>();
     if (record?.code !== 'SUPER_ADMIN') {
       return ids;
     }
@@ -188,8 +189,9 @@ const RolePermissionDrawer = ({
   ) => {
     const nextChecked = Array.isArray(checked) ? checked : checked.checked;
     const nextHalf = Array.isArray(checked) ? (info.halfCheckedKeys ?? []) : checked.halfChecked;
-    setCheckedKeys(nextChecked.map(Number));
-    setHalfCheckedKeys(nextHalf.map(Number));
+    // 树节点 key 就是字符串 ID，原样保留（禁止 Number()：会丢末位精度）
+    setCheckedKeys(nextChecked.map(String));
+    setHalfCheckedKeys(nextHalf.map(String));
   };
 
   const handleSubmit = async () => {

@@ -420,7 +420,7 @@ const UsersPage = () => {
             const page = await pageUsers({
               keyword: asStringParam(params.keyword),
               status: asNumberParam(params.status),
-              deptId: asNumberParam(params.deptId),
+              deptId: asStringParam(params.deptId),
               current: params.current,
               pageSize: params.pageSize,
             });

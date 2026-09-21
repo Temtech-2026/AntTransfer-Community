@@ -36,14 +36,11 @@ export default {
   'file.extGroup.audio': '音频',
   'file.extGroup.archive': '压缩包',
 
-  /* ============================ 分享状态 / 复制文案 ============================ */
+  /* ============================ 分享状态 ============================ */
   'file.shareStatus.active': '生效中',
   'file.shareStatus.revoked': '已撤销',
   'file.shareStatus.expired': '已失效',
   'file.shareStatus.unknown': '未知',
-  'file.shareCopy.url': '链接：{url}',
-  'file.shareCopy.code': '提取码：{code}',
-  'file.shareCopy.expireAt': '有效期至：{time}',
 
   /* ============================ 权限申请类型 ============================ */
   'file.applyType.access.label': '访问（预览）',
@@ -115,8 +112,7 @@ export default {
 
   /* ============================ 下载 ============================ */
   'file.download.preparing': '正在准备下载 {name}',
-  'file.download.progress': '下载中 {percent}%',
-  'file.download.done': '{name} 下载完成',
+  'file.download.done': '{name} 已开始下载，可在浏览器下载列表中查看',
   'file.download.failed': '下载失败',
 
   /* ============================ 回收站与销毁 ============================ */
@@ -208,6 +204,7 @@ export default {
   'file.share.title': '外发分享',
   'file.share.titleWithName': '外发分享：{name}',
   'file.share.createFailed': '创建外发分享失败',
+  'file.share.missingFileId': '该文件缺少物理文件 ID，无法创建外发链接，请刷新后重试',
   'file.share.copied': '链接与提取码已复制',
   'file.share.copyDenied': '浏览器拒绝访问剪贴板，请手动选中复制',
   'file.share.again': '再创建一个',

@@ -38,14 +38,11 @@ export default {
   'file.extGroup.audio': 'Audio',
   'file.extGroup.archive': 'Archives',
 
-  /* ============================ Share status / copy text ============================ */
+  /* ============================ Share status ============================ */
   'file.shareStatus.active': 'Active',
   'file.shareStatus.revoked': 'Revoked',
   'file.shareStatus.expired': 'Expired',
   'file.shareStatus.unknown': 'Unknown',
-  'file.shareCopy.url': 'Link: {url}',
-  'file.shareCopy.code': 'Access code: {code}',
-  'file.shareCopy.expireAt': 'Valid until: {time}',
 
   /* ============================ Access request types ============================ */
   'file.applyType.access.label': 'View (preview)',
@@ -118,8 +115,7 @@ export default {
 
   /* ============================ Download ============================ */
   'file.download.preparing': 'Preparing to download {name}',
-  'file.download.progress': 'Downloading {percent}%',
-  'file.download.done': '{name} downloaded',
+  'file.download.done': '{name} download started — check your browser downloads',
   'file.download.failed': 'Download failed',
 
   /* ============================ Recycle bin and destroy ============================ */
@@ -219,6 +215,8 @@ export default {
   'file.share.title': 'Share externally',
   'file.share.titleWithName': 'Share externally: {name}',
   'file.share.createFailed': 'Failed to create the external share',
+  'file.share.missingFileId':
+    'This file has no physical file ID, so an external share cannot be created. Please refresh and try again.',
   'file.share.copied': 'Link and access code copied',
   'file.share.copyDenied':
     'The browser denied clipboard access; please select and copy manually',

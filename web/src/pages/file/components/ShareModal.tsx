@@ -5,6 +5,12 @@
  * 任何接口都不会回显，因此「复制链接和提取码」只能由前端用表单里的明文拼装，
  * 一旦弹窗关闭就无法再取回——所以成功态必须把提取码留在页面上（而不是提示后清空）。</p>
  *
+ * <p>**复制出去的必须是一条单行链接。** 「复制链接和提取码」把提取码拼进链接的 fragment
+ * （`#code=xxx`），而不是另起一行写「提取码：xxx」：多行文本粘进浏览器地址栏会被当成
+ * 搜索词送去默认搜索引擎（跳到百度，而不是取件页）。提取码放 fragment 而非 query，
+ * 又规避了「提取码随请求行进服务端访问日志」的问题。
+ * 拼装规则见 `services/file/types.ts` 的 `buildShareLinkWithCode`。</p>
+ *
  * <p>**为什么是「积木」而不是一条长表单：** 外发分享的风险来自三个正交维度
  * （对谁开放 / 拿到之后能做什么 / 开放多久），每个维度的失效后果不同，
  * 混在一列控件里用户会只盯着「有效期」而忽略「对谁开放」。分块后每块自带一句
@@ -44,17 +50,18 @@ import dayjs from 'dayjs';
 import { type ReactNode, useState } from 'react';
 
 import {
-  buildShareCopyText,
+  buildShareLinkWithCode,
   buildShareUrl,
   createShare,
   type FileNode,
   isValidExtractCode,
   randomExtractCode,
-  type MessageTranslator,
   SHARE_EXPIRE_PRESETS,
   SHARE_LIMITS,
   type ShareLink,
 } from '@/services/file';
+import { formatLocalDateTime } from '@/utils/datetime';
+import { isErrorHandledByRequestLayer } from '@/utils/result';
 
 const { Text, Paragraph } = Typography;
 
@@ -189,17 +196,8 @@ function LockedSwitch({
   );
 }
 
-/** 服务层要求「id → 文案」的翻译器，这里把 `intl.formatMessage` 适配上去。 */
-function useTranslator(): MessageTranslator {
-  const intl = useIntl();
-  // react-intl 的值类型比 `unknown` 窄，这里的收窄只影响类型，运行期行为不变
-  return (id, values) =>
-    intl.formatMessage({ id }, values as Record<string, string | number>);
-}
-
 export default function ShareModal({ open, node, onClose }: ShareModalProps) {
   const intl = useIntl();
-  const t = useTranslator();
   const [form] = Form.useForm<ShareFormValues>();
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<ShareResult | null>(null);
@@ -220,15 +218,29 @@ export default function ShareModal({ open, node, onClose }: ShareModalProps) {
     if (!node) {
       return;
     }
+    // 外发分享是**物理文件**维度：后端 `ShareLinkService#requireOwnedFile` 拿 `fileId` 查
+    // `sys_file`（物理层），`sys_share_link.file_id` 关联的也是 `sys_file.id`。
+    // 所以这里必须是 `node.fileId`，**不是** `node.id`——后者是 `sys_file_node` 的条目 ID，
+    // 两张表的 ID 都由雪花生成、分属不同值空间；拿条目 ID 去查物理表必然落空，
+    // 服务端只会回 4005「文件不存在或已被删除」（与「无权」刻意不可区分）。
+    const fileId = node.fileId;
+    if (!fileId) {
+      // `sys_file_node.file_id` 是 NOT NULL：走到这里说明拿到的是残缺 / 过期的行数据。
+      // 与其发一个注定失败的请求，不如就地止损。
+      message.error(intl.formatMessage({ id: 'file.share.missingFileId' }));
+      return;
+    }
     const values = await form.validateFields();
     // 到期时间用「当前时刻 + N 天」而非当天 23:59:59：避免用户 23:58 选 1 天却只剩 1 分钟
-    const expireAt = dayjs()
-      .add(values.expireDays, 'day')
-      .format('YYYY-MM-DD HH:mm:ss');
+    const expireMoment = dayjs().add(values.expireDays, 'day');
+    // 后端 `CreateShareRequest.expireAt` 是 `LocalDateTime` 且未配 `@JsonFormat`，只认 ISO-8601
+    // （`T` 分隔）。原先直接 `format('YYYY-MM-DD HH:mm:ss')` 交出的是空格分隔，会被
+    // GlobalExceptionHandler 判成 2004「请求体格式错误，请检查 JSON 与字段类型」。
+    const expireAt = formatLocalDateTime(expireMoment.toDate());
     setSubmitting(true);
     try {
       const link = await createShare({
-        fileId: node.id,
+        fileId,
         extractCode: values.extractCode,
         downloadLimit: values.downloadLimit,
         expireAt,
@@ -237,14 +249,21 @@ export default function ShareModal({ open, node, onClose }: ShareModalProps) {
         link,
         url: buildShareUrl(link.token),
         extractCode: values.extractCode,
-        expireAt: link.expireAt ?? expireAt,
+        // 服务端回显优先（有效期可能被服务端按配置夹紧）；展示统一用本地可读格式，
+        // 免得把 ISO 的 `T` 直接摆到用户面前
+        expireAt: (link.expireAt ? dayjs(link.expireAt) : expireMoment).format(
+          'YYYY-MM-DD HH:mm:ss',
+        ),
       });
     } catch (error) {
-      // 超限（2005）等业务错误由全局拦截器提示；这里兜底非 Result 形态的异常
-      message.error(
-        (error as Error)?.message ||
-          intl.formatMessage({ id: 'file.share.createFailed' }),
-      );
+      // 超限（2005）等业务错误已由全局错误链路提示一次（见 requestErrorConfig 的 errorHandler），
+      // 这里只兜底不经 request 通道的同步异常——否则同一句话会弹两遍，用户会误以为提交了两次
+      if (!isErrorHandledByRequestLayer(error)) {
+        message.error(
+          (error as Error)?.message ||
+            intl.formatMessage({ id: 'file.share.createFailed' }),
+        );
+      }
     } finally {
       setSubmitting(false);
     }
@@ -254,7 +273,8 @@ export default function ShareModal({ open, node, onClose }: ShareModalProps) {
     if (!result) {
       return;
     }
-    const text = buildShareCopyText(t, result.url, result.extractCode, result.expireAt);
+    // 复制出去的是一条单行链接（提取码在 fragment 上）：多行文本粘进地址栏会被当成搜索词
+    const text = buildShareLinkWithCode(result.url, result.extractCode);
     const ok = await copyText(text);
     if (ok) {
       message.success(intl.formatMessage({ id: 'file.share.copied' }));

@@ -33,6 +33,8 @@ import {
   fetchMyPermission,
   filterMenuByPerm,
   filterProMenuByPerm,
+  isPublicPath,
+  LOGIN_PATH,
   type MenuNode,
   type MyPermission,
   toMenuData,
@@ -43,6 +45,7 @@ import {
   BRAND_ON_PRIMARY,
   BRAND_PRIMARY_ACTIVE,
   BRAND_PRIMARY_BG,
+  BRAND_PRIMARY_BG_HOVER,
   DARK_LAYOUT_COLORS,
   DARK_TOKENS,
   persistThemePreference,
@@ -54,7 +57,6 @@ import defaultSettings from '../config/defaultSettings';
 import { errorConfig } from './requestErrorConfig';
 
 const isDev = process.env.NODE_ENV === 'development';
-const loginPath = '/user/login';
 
 /**
  * @see https://umijs.org/docs/api/runtime-config#getinitialstate
@@ -78,7 +80,7 @@ export async function getInitialState(): Promise<{
     } catch (_error) {
       const { pathname, search, hash } = history.location;
       history.replace(
-        `${loginPath}?redirect=${encodeURIComponent(pathname + search + hash)}`,
+        `${LOGIN_PATH}?redirect=${encodeURIComponent(pathname + search + hash)}`,
       );
     }
     return undefined;
@@ -130,9 +132,10 @@ export async function getInitialState(): Promise<{
     setLocale(uiLocale, false);
   }
 
-  // 如果不是登录页面，执行
+  // 免登录公开页（登录页、外发分享访客取件页）不拉登录态与权限：
+  // 访客没有账号，硬拉只会把 /share/{token} 整页重定向到登录页——即「分享链接打不开对应画面」。
   const { location } = history;
-  if (location.pathname !== loginPath) {
+  if (!isPublicPath(location.pathname)) {
     const currentUser = await fetchUserInfo();
     const { permissions, menus } = await fetchPermission();
     return {
@@ -267,10 +270,11 @@ export const layout: RunTimeLayoutConfig = ({
     ),
     onPageChange: () => {
       const { location } = history;
-      // 如果没有登录，重定向到 login
-      if (!initialState?.currentUser && location.pathname !== loginPath) {
+      // 未登录才重定向到 login；公开路径（登录页 / 分享取件页）必须放行，
+      // 否则访客一进 /share/{token} 就被弹去登录页，永远看不到取件画面
+      if (!initialState?.currentUser && !isPublicPath(location.pathname)) {
         history.replace(
-          `${loginPath}?redirect=${encodeURIComponent(location.pathname + location.search + location.hash)}`,
+          `${LOGIN_PATH}?redirect=${encodeURIComponent(location.pathname + location.search + location.hash)}`,
         );
       }
     },
@@ -335,7 +339,7 @@ export const layout: RunTimeLayoutConfig = ({
         colorBgMenuItemSelected: isDark
           ? DARK_LAYOUT_COLORS.siderSelectedBg
           : BRAND_PRIMARY_BG,
-        colorBgMenuItemHover: isDark ? undefined : '#f2fdf8',
+        colorBgMenuItemHover: isDark ? undefined : BRAND_PRIMARY_BG_HOVER,
         colorTextMenuSelected: isDark ? BRAND_ON_PRIMARY : BRAND_PRIMARY_ACTIVE,
         colorTextMenuItemHover: isDark ? undefined : BRAND_PRIMARY_ACTIVE,
         colorMenuBackground: isDark

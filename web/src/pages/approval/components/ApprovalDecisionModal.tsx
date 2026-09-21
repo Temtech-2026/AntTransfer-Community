@@ -27,6 +27,7 @@ import {
 } from '@/services/approval';
 import type { ApprovalApplication, ApplyAction } from '@/services/approval';
 import { levelColor, levelTextId } from '@/services/file';
+import { isErrorHandledByRequestLayer } from '@/utils/result';
 
 const { Text } = Typography;
 
@@ -119,13 +120,17 @@ export const ApprovalDecisionModal = ({
       }
       onSuccess();
     } catch (error) {
-      // 业务错误（如 2001 参数越界、状态已变更）由全局拦截器提示，这里兜底非 Result 形态异常
-      message.error(
-        (error as Error)?.message ||
-          intl.formatMessage({
-            id: isApprove ? 'approval.modal.approveFailed' : 'approval.modal.rejectFailed',
-          }),
-      );
+      // 业务错误（如 2001 参数越界、状态已变更）已由全局错误链路提示一次
+      // （见 requestErrorConfig 的 errorHandler），这里只兜底不经 request 通道的同步异常——
+      // 否则同一句话会弹两遍，用户会误以为决策已提交
+      if (!isErrorHandledByRequestLayer(error)) {
+        message.error(
+          (error as Error)?.message ||
+            intl.formatMessage({
+              id: isApprove ? 'approval.modal.approveFailed' : 'approval.modal.rejectFailed',
+            }),
+        );
+      }
     } finally {
       setSubmitting(false);
     }

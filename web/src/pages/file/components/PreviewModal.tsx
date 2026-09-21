@@ -63,7 +63,9 @@ export default function PreviewModal({
   const requestSeq = useRef(0);
 
   const load = useCallback(
-    async (nodeId: number) => {
+    // nodeId 是 19 位雪花 ID，必须原样透传：转 number 会丢末位，
+    // 服务端按 nodeId 取预览元信息时就查不到节点（详见 `services/file/types` 的 ID 语境说明）。
+    async (nodeId: string) => {
       const seq = requestSeq.current + 1;
       requestSeq.current = seq;
       setLoading(true);

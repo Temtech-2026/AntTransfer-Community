@@ -5,6 +5,8 @@
  * 说明：已清理 Ant Design Pro 模板示例页，保留布局骨架与必要运行时页面：
  *  - /user/login：登录页（layout:false）；CE 版账号由管理员分配，**不提供注册入口**，
  *    因此不再保留 /user/register、/user/register-result 路由
+ *  - /share/:token：外发分享访客取件页（layout:false，免登录）；分享链接 `{origin}/share/{token}`
+ *    的落点，访客凭提取码取件，不参与权限判定
  *  - /workbench：工作台（web 首页，PRD US-11）
  *  - /file：文件工作台（列表 / 目录 / 上传 / 预览 / 分享 / 权限申请）
  *  - /shares：分享管理（我的外发链接，需 file:share）
@@ -46,6 +48,31 @@ export default [
         name: '404',
         component: './exception/404',
         path: '/user/*',
+      },
+    ],
+  },
+  {
+    /**
+     * 外发分享访客取件页（PRD US-03 的「复制链接 → 浏览器打开」落点）。
+     *
+     * <p>创建者复制的链接是 `{origin}/share/{token}`，必须在这里被接住——否则它会掉进
+     * 兜底的 `/*` → 404，表现就是「链接复制出来了，浏览器打开却没有对应画面」。</p>
+     *
+     * <p>访客没有账号、没有菜单、也不参与权限判定，故：`layout: false`（不渲染侧边栏 / 顶栏）、
+     * 不挂 `PermGuard`、不给 `name`（不进侧栏）。免登录放行口径集中在
+     * `services/access/public-paths.ts`，与 `app.tsx` 的登录守卫同源。</p>
+     */
+    path: '/share',
+    layout: false,
+    routes: [
+      {
+        path: '/share/:token',
+        component: './share',
+      },
+      {
+        name: '404',
+        component: './exception/404',
+        path: '/share/*',
       },
     ],
   },

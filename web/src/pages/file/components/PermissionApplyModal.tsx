@@ -36,6 +36,8 @@ import {
   levelTextId,
   submitPermissionApplication,
 } from '@/services/file';
+import { formatLocalDateTime } from '@/utils/datetime';
+import { isErrorHandledByRequestLayer } from '@/utils/result';
 
 const { Text } = Typography;
 
@@ -80,16 +82,23 @@ export default function PermissionApplyModal({
         resourceId: node.id,
         level: node.level ?? undefined,
         purpose: values.purpose.trim(),
+        // 后端 `ApplicationCreateDTO.desiredExpireAt` 是 `LocalDateTime` 且未配 `@JsonFormat`，
+        // 只认 ISO-8601（`T` 分隔）；`YYYY-MM-DD HH:mm:ss` 是空格分隔，会被
+        // GlobalExceptionHandler 判成 2004「请求体格式错误，请检查 JSON 与字段类型」。
         desiredExpireAt: values.desiredExpireAt
-          ? values.desiredExpireAt.format('YYYY-MM-DD HH:mm:ss')
+          ? formatLocalDateTime(values.desiredExpireAt.toDate())
           : undefined,
       });
       setSubmitted(result);
     } catch (error) {
-      message.error(
-        (error as Error)?.message ||
-          intl.formatMessage({ id: 'file.apply.submitFailed' }),
-      );
+      // 失败提示已由全局错误链路给出一次（见 requestErrorConfig 的 errorHandler），
+      // 这里只兜底不经 request 通道的同步异常——否则同一句话会弹两遍
+      if (!isErrorHandledByRequestLayer(error)) {
+        message.error(
+          (error as Error)?.message ||
+            intl.formatMessage({ id: 'file.apply.submitFailed' }),
+        );
+      }
     } finally {
       setSubmitting(false);
     }

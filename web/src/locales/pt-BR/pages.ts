@@ -26,9 +26,35 @@ export default {
   'pages.login.loginWith': 'Login com :',
   'pages.login.registerAccount': 'Registra Conta',
   'pages.welcome.link': 'Bem-vindo',
-  'pages.welcome.celebrationTitle': 'Bem-vindo ao Ant Design Pro {v6}',
+  'pages.welcome.celebrationTitle': 'Bem-vindo ao AntTransfer Community Edition',
   'pages.welcome.alertMessage':
     'Componentes pesados mais rápidos e mais fortes foram lançados.',
+  /* ===== Página de boas-vindas (pages/Welcome.tsx) ===== */
+  'pages.welcome.header.title': 'AntTransfer CE',
+  'pages.welcome.header.subTitle':
+    'Transferência segura de arquivos e colaboração open source',
+  'pages.welcome.hero.title': 'AntTransfer Community Edition',
+  'pages.welcome.hero.desc':
+    'Solução open source de transferência segura de conteúdo / arquivos e colaboração: backend monólito modular Spring Boot 3 + frontend Umi Max / React 19, pronto para uso e fácil de estender.',
+  'pages.welcome.feature.transfer.title': 'Transferência segura de arquivos',
+  'pages.welcome.feature.transfer.desc':
+    'Upload retomável, progresso visível e verificação de checksum de upload instantâneo para cenários de arquivos grandes (at-transfer / at-file).',
+  'pages.welcome.feature.collaboration.title':
+    'Colaboração e compartilhamento',
+  'pages.welcome.feature.collaboration.desc':
+    'Espaços de colaboração e links de compartilhamento permitem que várias pessoas acessem com segurança o mesmo conjunto de arquivos (at-collaboration).',
+  'pages.welcome.feature.permission.title': 'Permissões e auditoria',
+  'pages.welcome.feature.permission.desc':
+    'Pontos de permissão RBAC e TraceId de ponta a ponta tornam tudo auditável e rastreável (at-permission / at-gateway).',
+  'pages.welcome.quickStart.title': 'Início rápido',
+  'pages.welcome.quickStart.subTitle': 'Integração local e próximos passos',
+  /* O primeiro parágrafo contém código inline (/api, http://localhost:8080) e é dividido em três partes; o código não é traduzido */
+  'pages.welcome.quickStart.proxyPrefix':
+    'Integração local: este projeto faz proxy de',
+  'pages.welcome.quickStart.proxyMiddle': 'para o backend',
+  'pages.welcome.quickStart.proxySuffix': ' (veja config/proxy.ts).',
+  'pages.welcome.quickStart.domainHint':
+    'As páginas de domínio (transferência / arquivo / colaboração / permissão) serão adicionadas gradualmente conforme as APIs de backend ficarem prontas.',
   'pages.404.subTitle': 'Desculpe, a página que você visitou não existe. ',
   'pages.404.buttonText': 'Voltar à página inicial',
   'pages.admin.subPage.title': 'Esta página só pode ser vista pelo Admin',

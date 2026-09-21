@@ -7,7 +7,10 @@
  *       服务端没有筛选参数，因此整表 <b>关闭搜索表单</b>——摆一个点了没反应的筛选框等于假功能；</li>
  *   <li>页面与创建按钮都要求 {@code file:share}（后端 ShareController 的创建 / 撤销 / 查询统一收口在该权限点）；</li>
  *   <li>提取码不回显：列表只展示「是否开启」，明文只在创建成功的那一刻展示一次；</li>
- *   <li>取消分享二次确认，且只在「生效中」时可用。</li>
+ *   <li>取消分享二次确认，且只在「生效中」时可用；</li>
+ *   <li>批量失效：行复选框 + 「失效所选」，外加不接受任何范围参数的「失效全部」。
+ *       单条 / 所选 / 全部三条路径都只作用于「生效中」的行，且都要二次确认——
+ *       撤销是终态，误触的代价是对方手上的链接直接作废。</li>
  * </ul>
  */
 
@@ -27,7 +30,9 @@ import EmptyState from '@/components/EmptyState';
 import {
   buildShareUrl,
   pageMyShares,
+  revokeAllShares,
   revokeShare,
+  revokeShareBatch,
   type ShareLink,
   shareStatusId,
 } from '@/services/file';
@@ -65,6 +70,8 @@ const SharesPage: React.FC = () => {
   const { confirm } = useDangerConfirm();
   const actionRef = useRef<ActionType | undefined>(undefined);
   const [createOpen, setCreateOpen] = useState(false);
+  /** 行复选框选中的链接令牌：服务端以「令牌 + 归属人」收口，前端不持有主键 */
+  const [selectedTokens, setSelectedTokens] = useState<React.Key[]>([]);
 
   const canShare = access.can('file:share');
 
@@ -90,6 +97,48 @@ const SharesPage: React.FC = () => {
     await revokeShare(record.token);
     message.success(intl.formatMessage({ id: 'shares.revoke.success' }));
     actionRef.current?.reload();
+  };
+
+  /**
+   * 批量撤销的统一反馈。
+   *
+   * <p>接口回的是<b>实际失效条数</b>，所以 0 条必须显式说清是「本来就没有生效中的链接」，
+   * 不能静默成功——否则用户会把「点了没反应」理解成功能坏了。</p>
+   */
+  const showBulkRevokeResult = (revoked: number) => {
+    if (revoked > 0) {
+      message.success(
+        intl.formatMessage(
+          { id: 'shares.revokeBatch.success' },
+          { count: revoked },
+        ),
+      );
+      return;
+    }
+    message.info(intl.formatMessage({ id: 'shares.revoke.none' }));
+  };
+
+  /**
+   * 失效所选（复选框批量）。
+   *
+   * <p>与单条撤销同口径不 try/catch，异常抛回确认弹窗使其保持打开；
+   * 但**个别条目失败不会拖垮整批**：服务端对已终态 / 非本人的令牌静默跳过，
+   * 只回实际失效条数——别人抢先撤掉的那几条不该让这一批整体失败。</p>
+   */
+  const handleRevokeSelected = async () => {
+    const revoked = await revokeShareBatch(selectedTokens.map(String));
+    // 先清空勾选再刷新：刷新后这些行已不是「生效中」，留着勾选会指向一批撤不掉的行
+    setSelectedTokens([]);
+    actionRef.current?.reload();
+    showBulkRevokeResult(revoked);
+  };
+
+  /** 失效全部：范围由服务端按登录主体决定，前端不传任何范围参数。 */
+  const handleRevokeAll = async () => {
+    const revoked = await revokeAllShares();
+    setSelectedTokens([]);
+    actionRef.current?.reload();
+    showBulkRevokeResult(revoked);
   };
 
   /** 创建成功：立刻展示链接 + 明文提取码（唯一一次可见的窗口）。 */
@@ -253,6 +302,13 @@ const SharesPage: React.FC = () => {
         // 后端 mine 接口只有 page/size，没有筛选参数：整表关闭搜索表单
         search={false}
         options={false}
+        tableAlertRender={false}
+        rowSelection={{
+          selectedRowKeys: selectedTokens,
+          onChange: (keys) => setSelectedTokens(keys),
+          // 只有「生效中」的行可勾选：勾上撤不掉的行，等于让「失效所选」变成一次静默空操作
+          getCheckboxProps: (record) => ({ disabled: record.status !== 0 }),
+        }}
         scroll={{ x: 1160 }}
         pagination={{
           defaultPageSize: 20,
@@ -272,6 +328,52 @@ const SharesPage: React.FC = () => {
             onClick={() => setCreateOpen(true)}
           >
             {intl.formatMessage({ id: 'shares.action.create' })}
+          </Button>,
+          <Button
+            key="revokeSelected"
+            danger
+            disabled={selectedTokens.length === 0}
+            onClick={() =>
+              confirm({
+                title: intl.formatMessage(
+                  { id: 'shares.revokeSelected.confirmTitle' },
+                  { count: selectedTokens.length },
+                ),
+                content: intl.formatMessage(
+                  { id: 'shares.revokeSelected.confirmContent' },
+                  { count: selectedTokens.length },
+                ),
+                level: 'critical',
+                okText: intl.formatMessage({
+                  id: 'shares.revokeSelected.confirmOk',
+                }),
+                onOk: handleRevokeSelected,
+              })
+            }
+          >
+            {selectedTokens.length > 0
+              ? intl.formatMessage(
+                  { id: 'shares.action.revokeSelectedCount' },
+                  { count: selectedTokens.length },
+                )
+              : intl.formatMessage({ id: 'shares.action.revokeSelected' })}
+          </Button>,
+          <Button
+            key="revokeAll"
+            danger
+            onClick={() =>
+              confirm({
+                title: intl.formatMessage({ id: 'shares.revokeAll.confirmTitle' }),
+                content: intl.formatMessage({
+                  id: 'shares.revokeAll.confirmContent',
+                }),
+                level: 'critical',
+                okText: intl.formatMessage({ id: 'shares.revokeAll.confirmOk' }),
+                onOk: handleRevokeAll,
+              })
+            }
+          >
+            {intl.formatMessage({ id: 'shares.action.revokeAll' })}
           </Button>,
         ]}
       />

@@ -25,9 +25,34 @@ export default {
   'pages.login.loginWith': 'その他のログイン方法：',
   'pages.login.registerAccount': 'アカウント登録',
   'pages.welcome.link': 'ようこそ',
-  'pages.welcome.celebrationTitle': 'Ant Design Pro {v6} へようこそ',
+  'pages.welcome.celebrationTitle': 'AntTransfer Community Edition へようこそ',
   'pages.welcome.alertMessage':
     'より高速で強力な頑丈なコンポーネントがリリースされました。',
+  /* ===== ウェルカムページ（pages/Welcome.tsx） ===== */
+  'pages.welcome.header.title': 'AntTransfer CE',
+  'pages.welcome.header.subTitle': 'オープンソースの安全なファイル転送と共同作業',
+  'pages.welcome.hero.title': 'AntTransfer Community Edition',
+  'pages.welcome.hero.desc':
+    'オープンソースのコンテンツ / ファイルの安全な転送・共同作業ソリューション：Spring Boot 3 モジュラーモノリスバックエンド + Umi Max / React 19 フロントエンド。すぐに使えて二次開発も容易です。',
+  'pages.welcome.feature.transfer.title': '安全なファイル転送',
+  'pages.welcome.feature.transfer.desc':
+    'レジューム転送、進捗の可視化、瞬間転送のチェックサム検証に対応し、大容量ファイルの転送に適しています（at-transfer / at-file）。',
+  'pages.welcome.feature.collaboration.title': '共同作業と共有',
+  'pages.welcome.feature.collaboration.desc':
+    'コラボレーションスペースと共有リンクで、複数人が同じファイル群に安全にアクセスできます（at-collaboration）。',
+  'pages.welcome.feature.permission.title': '権限と監査',
+  'pages.welcome.feature.permission.desc':
+    'RBAC 権限ポイントと全経路の TraceId により、監査と追跡が可能です（at-permission / at-gateway）。',
+  'pages.welcome.quickStart.title': 'クイックスタート',
+  'pages.welcome.quickStart.subTitle': 'ローカル連携と今後の接続',
+  /* 最初の段落にはインラインコード（/api、http://localhost:8080）を含むため3分割して結合。コードは翻訳しない */
+  'pages.welcome.quickStart.proxyPrefix':
+    'フロントエンドとバックエンドの連携：本プロジェクトは',
+  'pages.welcome.quickStart.proxyMiddle': 'をバックエンド',
+  'pages.welcome.quickStart.proxySuffix':
+    'にプロキシします（config/proxy.ts を参照）。',
+  'pages.welcome.quickStart.domainHint':
+    'ドメインページ（転送 / ファイル / 共同作業 / 権限）は、バックエンド API の実装に合わせて順次追加されます。',
   'pages.404.subTitle':
     '申し訳ありませんが、アクセスしたページは存在しません。',
   'pages.404.buttonText': 'ホームに戻る',

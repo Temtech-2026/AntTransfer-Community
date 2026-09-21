@@ -13,12 +13,31 @@ import type { FolderNode } from '@/services/file';
 /** 防御性深度上限（正常目录层级远小于此值）。 */
 const MAX_DEPTH = 32;
 
-/** 按 id 查找目录。 */
+/**
+ * 根目录判定的唯一口径。
+ *
+ * <p>根目录在服务端用 `0` 表示；ID 改成「以字符串过线」之后，它会以 `'0'` 的形态
+ * 出现在前端（见 `services/file/types` 的 ID 语境说明）。而 `'0'` 是**真值**——
+ * 若继续写 `if (!folderId)`，根目录就会被当成普通目录去查，语义悄然反转。
+ * 因此把判定集中在这里：`undefined` / `null` / 空串 / `'0'` 都算根目录。</p>
+ */
+function isRootFolderId(
+  folderId?: string | null,
+): folderId is undefined | null | '' | '0' {
+  return (
+    folderId === undefined ||
+    folderId === null ||
+    folderId === '' ||
+    folderId === '0'
+  );
+}
+
+/** 按 id 查找目录（id 为雪花 ID，用字符串比较，见 `services/file/types` 的 ID 语境说明）。 */
 export function findFolder(
   tree: FolderNode[] | null | undefined,
-  folderId?: number | null,
+  folderId?: string | null,
 ): FolderNode | undefined {
-  if (!folderId) {
+  if (isRootFolderId(folderId)) {
     return undefined;
   }
   return search(tree ?? [], folderId, 0);
@@ -26,7 +45,7 @@ export function findFolder(
 
 function search(
   nodes: FolderNode[],
-  folderId: number,
+  folderId: string,
   depth: number,
 ): FolderNode | undefined {
   if (depth >= MAX_DEPTH) {
@@ -47,13 +66,13 @@ function search(
 /**
  * 当前目录的直接子目录。
  *
- * <p>`parentId` 为空表示根目录，此时返回树的顶层节点。</p>
+ * <p>`parentId` 为空 / `'0'` 表示根目录，此时返回树的顶层节点。</p>
  */
 export function folderChildren(
   tree: FolderNode[] | null | undefined,
-  parentId?: number | null,
+  parentId?: string | null,
 ): FolderNode[] {
-  if (!parentId) {
+  if (isRootFolderId(parentId)) {
     return tree ?? [];
   }
   return findFolder(tree, parentId)?.children ?? [];
@@ -66,9 +85,9 @@ export function folderChildren(
  */
 export function folderPath(
   tree: FolderNode[] | null | undefined,
-  folderId?: number | null,
+  folderId?: string | null,
 ): FolderNode[] {
-  if (!folderId) {
+  if (isRootFolderId(folderId)) {
     return [];
   }
   return walk(tree ?? [], folderId, [], 0);
@@ -76,7 +95,7 @@ export function folderPath(
 
 function walk(
   nodes: FolderNode[],
-  folderId: number,
+  folderId: string,
   trail: FolderNode[],
   depth: number,
 ): FolderNode[] {
@@ -104,7 +123,7 @@ function walk(
  */
 export function folderPathText(
   tree: FolderNode[] | null | undefined,
-  folderId?: number | null,
+  folderId?: string | null,
   rootLabel?: string,
 ): string {
   const names = folderPath(tree, folderId).map((node) => node.name);

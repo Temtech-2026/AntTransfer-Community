@@ -37,6 +37,7 @@ import {
 } from '@/services/dashboard';
 import type { UnreadCount } from '@/services/notify';
 import { EMPTY_UNREAD, fetchUnreadCount } from '@/services/notify';
+import { BRAND_PRIMARY, BRAND_PRIMARY_HOVER } from '@/theme/tokens';
 import useStyles from './index.style';
 
 const { Text } = Typography;
@@ -193,7 +194,7 @@ const WorkbenchPage = () => {
                   status={rate === null ? 'normal' : undefined}
                   showInfo={false}
                   size="small"
-                  strokeColor={{ from: '#00d68f', to: '#00c16a' }}
+                  strokeColor={{ from: BRAND_PRIMARY, to: BRAND_PRIMARY_HOVER }}
                   style={{ margin: 0 }}
                 />
               </Tooltip>

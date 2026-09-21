@@ -8,7 +8,8 @@
  *
  * <p><b>检索维度</b>：操作类型（{@code action}）/ 操作人（{@code userId}）/ 时间区间
  * （{@code startTime}~{@code endTime}），另附带域 / 对象类型 / 结果。
- * 注意后端<b>只支持按用户 ID 精确过滤</b>，没有「按展示名模糊」的入参，故检索列用数字输入。</p>
+ * 注意后端<b>只支持按用户 ID 精确过滤</b>，没有「按展示名模糊」的入参；输入框用文本而非数字
+ * （19 位雪花 ID 超出 JS 安全整数范围，数字控件会悄悄吃掉末位）。</p>
  *
  * <p><b>时间入参</b>：后端 {@code AuditLogQueryDTO} 用 {@code LocalDateTime} + ISO，
  * 必须发 {@code yyyy-MM-ddTHH:mm:ss}（不带时区），由 {@link toBackendDateTime} 统一收敛。</p>
@@ -113,10 +114,9 @@ const AuditPage = () => {
       title: intl.formatMessage({ id: 'audit.column.operator' }),
       dataIndex: 'userId',
       hideInTable: true,
-      valueType: 'digit',
+      valueType: 'text',
       fieldProps: {
         placeholder: intl.formatMessage({ id: 'audit.column.operatorIdPlaceholder' }),
-        precision: 0,
       },
     },
     {
@@ -278,7 +278,7 @@ const AuditPage = () => {
         dateFormatter="string"
         request={async (params) => {
           const query: AuditLogQuery = {
-            userId: asNumberParam(params.userId),
+            userId: asStringParam(params.userId),
             action: asStringParam(params.action),
             module: asStringParam(params.module),
             targetType: asStringParam(params.targetType),

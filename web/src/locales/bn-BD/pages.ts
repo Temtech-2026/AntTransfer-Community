@@ -25,8 +25,33 @@ export default {
   'pages.login.loginWith': 'লগইন করতে পারেন:',
   'pages.login.registerAccount': 'অ্যাকাউন্ট নিবন্ধন করুন',
   'pages.welcome.link': 'স্বাগতম',
-  'pages.welcome.celebrationTitle': 'Ant Design Pro {v6} এ স্বাগতম',
+  'pages.welcome.celebrationTitle': 'AntTransfer Community Edition এ স্বাগতম',
   'pages.welcome.alertMessage': 'দ্রুত এবং শক্তিশালী ভারী শুল্ক উপাদান প্রকাশ করা হয়েছে।',
+  /* ===== স্বাগত পৃষ্ঠা (pages/Welcome.tsx) ===== */
+  'pages.welcome.header.title': 'AntTransfer CE',
+  'pages.welcome.header.subTitle':
+    'ওপেন সোর্স নিরাপদ ফাইল স্থানান্তর ও সহযোগিতামূলক শেয়ারিং',
+  'pages.welcome.hero.title': 'AntTransfer Community Edition',
+  'pages.welcome.hero.desc':
+    'ওপেন সোর্স নিরাপদ কনটেন্ট / ফাইল স্থানান্তর ও সহযোগিতার সমাধান: Spring Boot 3 মডুলার মনোলিথ ব্যাকএন্ড + Umi Max / React 19 ফ্রন্টএন্ড, রেডিমেড এবং সহজে সম্প্রসারণযোগ্য।',
+  'pages.welcome.feature.transfer.title': 'নিরাপদ ফাইল স্থানান্তর',
+  'pages.welcome.feature.transfer.desc':
+    'রিজিউমেবল আপলোড, দৃশ্যমান অগ্রগতি এবং তাৎক্ষণিক আপলোড চেকসাম যাচাই, বড় ফাইলের ক্ষেত্রে উপযোগী (at-transfer / at-file)।',
+  'pages.welcome.feature.collaboration.title': 'সহযোগিতা ও শেয়ারিং',
+  'pages.welcome.feature.collaboration.desc':
+    'সহযোগিতা স্পেস ও শেয়ার লিংক একই ফাইল সেটে একাধিক ব্যক্তির নিরাপদ প্রবেশ নিশ্চিত করে (at-collaboration)।',
+  'pages.welcome.feature.permission.title': 'অনুমতি ও অডিট',
+  'pages.welcome.feature.permission.desc':
+    'RBAC অনুমতি পয়েন্ট ও সম্পূর্ণ পথের TraceId, সবকিছু অডিট ও ট্রেসযোগ্য করে (at-permission / at-gateway)।',
+  'pages.welcome.quickStart.title': 'দ্রুত শুরু',
+  'pages.welcome.quickStart.subTitle': 'স্থানীয় ইন্টিগ্রেশন ও পরবর্তী ধাপ',
+  /* প্রথম অনুচ্ছেদে ইনলাইন কোড (/api, http://localhost:8080) থাকায় তিন ভাগে বিভক্ত; কোড অনূদিত নয় */
+  'pages.welcome.quickStart.proxyPrefix': 'স্থানীয় ইন্টিগ্রেশন: এই প্রকল্প',
+  'pages.welcome.quickStart.proxyMiddle': 'কে',
+  'pages.welcome.quickStart.proxySuffix':
+    'ব্যাকএন্ডে প্রক্সি করে (config/proxy.ts দেখুন)।',
+  'pages.welcome.quickStart.domainHint':
+    'ডোমেইন পৃষ্ঠাগুলো (স্থানান্তর / ফাইল / সহযোগিতা / অনুমতি) ব্যাকএন্ড API চালু হওয়ার সাথে সাথে ধাপে ধাপে যুক্ত হবে।',
   'pages.404.subTitle': 'দুঃখিত, আপনি যে পৃষ্ঠাটি দেখতে চান তা বিদ্যমান নেই।',
   'pages.404.buttonText': 'প্রধান পাতায় ফিরে যান',
   'pages.admin.subPage.title': 'এই পৃষ্ঠাটি কেবল অ্যাডমিন দ্বারা দেখা যাবে',

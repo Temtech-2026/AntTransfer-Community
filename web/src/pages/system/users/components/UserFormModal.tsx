@@ -43,10 +43,10 @@ interface UserFormValues {
   username: string;
   password?: string;
   nickname: string;
-  deptId?: number;
+  deptId?: string;
   email?: string;
   mobile?: string;
-  roleIds?: number[];
+  roleIds?: string[];
   remark?: string;
 }
 

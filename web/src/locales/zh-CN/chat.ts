@@ -30,8 +30,20 @@ export default {
   'chat.stream.noMore': '没有更早的消息了',
   'chat.stream.loadMoreFailed': '加载更早消息失败，请重试',
 
-  'chat.composer.placeholder': '输入消息，Ctrl + Enter 发送',
+  // 输入框口径对齐微信：Enter 发送、Shift + Enter 换行
+  'chat.composer.placeholder': '输入消息，Enter 发送，Shift + Enter 换行',
   'chat.composer.empty': '消息内容不能为空',
+  'chat.composer.sendHint': 'Enter 发送，Shift + Enter 换行',
+  'chat.composer.emoji': '表情',
+  'chat.composer.emojiPanel': '表情分类',
+  'chat.composer.group.recent': '最近使用',
+  'chat.composer.group.smileys': '表情',
+  'chat.composer.group.gestures': '手势',
+  'chat.composer.group.people': '人物与心情',
+  'chat.composer.group.animals': '动物与自然',
+  'chat.composer.group.food': '食物',
+  'chat.composer.group.objects': '物品与活动',
+  'chat.composer.group.symbols': '符号',
 
   'chat.new.title': '发起会话',
   'chat.new.scope.label': '会话类型',
@@ -63,6 +75,6 @@ export default {
   'chat.drawer.removeAttachment': '移除待发送文件',
   'chat.drawer.dropHint': '从文件区拖一个文件进来，即可作为文件消息发送',
   'chat.drawer.placeholderWithAttachment': '可附加一句说明（可留空）',
-  'chat.drawer.placeholder': '输入消息，回车发送',
+  'chat.drawer.placeholder': '输入消息，Enter 发送，Shift + Enter 换行',
   'chat.drawer.send': '发送',
 } as const;

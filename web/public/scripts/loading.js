@@ -43,7 +43,8 @@
           margin: 0;
           padding: 0;
           color: rgba(0, 0, 0, 0.65);
-          color: #1890ff;
+          /* 品牌绿：静态脚本无法 import，需与 src/theme/tokens.ts 的 BRAND_PRIMARY 手动同步 */
+          color: #2fb188;
           font-size: 14px;
           font-variant: tabular-nums;
           line-height: 1.5;
@@ -80,7 +81,7 @@
           display: block;
           width: 9px;
           height: 9px;
-          background-color: #1890ff;
+          background-color: #2fb188;
           border-radius: 100%;
           -webkit-transform: scale(0.75);
           -ms-transform: scale(0.75);

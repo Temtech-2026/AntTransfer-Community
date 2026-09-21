@@ -25,7 +25,7 @@ export default {
   'pages.login.loginWith': '其他登录方式 :',
   'pages.login.registerAccount': '注册账户',
   'pages.welcome.link': '欢迎使用',
-  'pages.welcome.celebrationTitle': '欢迎使用 Ant Design Pro {v6}',
+  'pages.welcome.celebrationTitle': '欢迎使用 AntTransfer Community Edition',
   'pages.welcome.alertMessage': '更快更强的重型组件，已经发布。',
   'pages.welcome.infoCard.umi.title': '了解 umi',
   'pages.welcome.infoCard.umi.desc':
@@ -41,7 +41,7 @@ export default {
   'pages.welcome.header.subTitle': '开源文件安全传输与协作共享',
   'pages.welcome.hero.title': 'AntTransfer Community Edition',
   'pages.welcome.hero.desc':
-    '开源的内容 / 文件安全传输与协作共享解决方案：Spring Boot 3 模块化单体后端 + Ant Design Pro 前端，开箱即用、易于二次开发。',
+    '开源的内容 / 文件安全传输与协作共享解决方案：Spring Boot 3 模块化单体后端 + Umi Max / React 19 前端，开箱即用、易于二次开发。',
   'pages.welcome.feature.transfer.title': '安全文件传输',
   'pages.welcome.feature.transfer.desc':
     '断点续传、进度可视、秒传校验，适配大文件传输场景（at-transfer / at-file）。',

@@ -25,7 +25,7 @@ export default {
   'pages.login.loginWith': 'Login with :',
   'pages.login.registerAccount': 'Register Account',
   'pages.welcome.link': 'Welcome',
-  'pages.welcome.celebrationTitle': 'Welcome to Ant Design Pro {v6}',
+  'pages.welcome.celebrationTitle': 'Welcome to AntTransfer Community Edition',
   'pages.welcome.alertMessage':
     'Faster and stronger heavy-duty components have been released.',
   'pages.welcome.infoCard.umi.title': 'Learn umi',
@@ -43,7 +43,7 @@ export default {
     'Open-source secure file transfer and collaboration',
   'pages.welcome.hero.title': 'AntTransfer Community Edition',
   'pages.welcome.hero.desc':
-    'An open-source secure content / file transfer and collaboration solution: a Spring Boot 3 modular monolith backend plus an Ant Design Pro frontend, ready to use and easy to extend.',
+    'An open-source secure content / file transfer and collaboration solution: a Spring Boot 3 modular monolith backend plus a Umi Max / React 19 frontend, ready to use and easy to extend.',
   'pages.welcome.feature.transfer.title': 'Secure file transfer',
   'pages.welcome.feature.transfer.desc':
     'Resumable upload, visible progress and instant-upload checksum verification for large-file scenarios (at-transfer / at-file).',

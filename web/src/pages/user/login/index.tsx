@@ -10,7 +10,8 @@
  *   <li>记住我：只记账号（localStorage），<b>绝不记密码 / 令牌</b>；</li>
  *   <li>登录失败 5 次触发后端锁定（1004）：展示后端原文案，并按文案里的分钟数挂倒计时，
  *       倒计时期间禁止再次提交；</li>
- *   <li>成功后双令牌已在 services/auth 落盘，这里按 `redirect` 回跳。</li>
+ *   <li>成功后双令牌已在 services/auth 落盘，这里按 `redirect` 回跳，并按刚登录
+ *       用户的权限收敛落点（见 services/access/landing.ts）。</li>
  * </ul>
  *
  * <p>回跳用整页跳转而不是 `history.push`：`getInitialState` 只在应用启动时执行一次，
@@ -20,7 +21,6 @@
 
 import { LockOutlined, PictureOutlined, UserOutlined } from '@ant-design/icons';
 import { useIntl, useSearchParams } from '@umijs/max';
-import type { ThemeConfig } from 'antd';
 import {
   Alert,
   Button,
@@ -30,12 +30,13 @@ import {
   Input,
   Space,
   Typography,
-  theme,
 } from 'antd';
 import React, { useEffect, useMemo, useState } from 'react';
 
 import FlyingFilesBackground from '@/components/FlyingFilesBackground';
+import { PUBLIC_DARK_THEME } from '@/components/PublicDarkTheme';
 
+import { fetchMyPermission, resolveLoginLandingPath } from '@/services/access';
 import {
   formatCountdown,
   lockDeadline,
@@ -46,7 +47,6 @@ import {
   saveRememberedUsername,
 } from '@/services/auth';
 import { BizError } from '@/services/request';
-import { safeRedirectPath } from '@/utils/redirect';
 import { ACCOUNT_LOCKED_CODE, DEFAULT_ERROR_MESSAGE_ID } from '@/utils/result';
 
 import useStyles from './index.style';
@@ -58,35 +58,6 @@ interface LoginFormValues {
   /** 记住我：只记账号 */
   remember?: boolean;
 }
-
-/**
- * 登录页局部暗色主题。
- *
- * <p>用暗色算法把 antd 组件（输入框、告警、复选框、按钮）整体切到深色，
- * 再补齐品牌色；这里只覆盖 token，组件形状仍由 antd 统一给出，
- * 避免逐条覆盖 `.ant-*` 内部类名——那类写法会随 antd 改版静默失效。</p>
- *
- * <p>仅作用于登录页：登录页是独立入口（路由 `layout: false`），与全站亮色布局不同屏。</p>
- */
-const DARK_THEME: ThemeConfig = {
-  algorithm: theme.darkAlgorithm,
-  token: {
-    // 控件底色比卡片更暗，压出内凹层次，也让磨砂卡片透出背景流光
-    colorBgContainer: 'rgba(0, 0, 0, 0.25)',
-    colorBorder: 'rgba(0, 212, 255, 0.15)',
-    colorPrimary: '#00d68f',
-    colorPrimaryHover: '#00d68f',
-    colorLink: '#00d68f',
-    colorIcon: '#80c8a0',
-    colorText: '#e0e8f5',
-    colorTextHeading: '#ffffff',
-    colorTextSecondary: '#b8c8e0',
-    colorTextPlaceholder: '#8899bb',
-    // 实心主按钮：青绿底(#00d68f)配白字对比度只有约 1.8:1，远低于 WCAG AA 的 4.5:1；
-    // 换成深墨绿字后可达 9:1 以上。若想还原白字，删掉这一行即可。
-    colorTextLightSolid: '#04241a',
-  },
-};
 
 const LoginPage: React.FC = () => {
   const { styles } = useStyles();
@@ -136,7 +107,14 @@ const LoginPage: React.FC = () => {
       await loginByPassword(username, values.password);
       // 勾选才记账号；取消勾选要顺手清掉上一次的记录
       saveRememberedUsername(values.remember ? username : null);
-      window.location.assign(safeRedirectPath(redirect));
+      // redirect 只保证「站内」，不保证「当前用户可达」：上一个会话残留的
+      // ?redirect=/system/users 会让普通用户登录成功即撞进 403，故按其权限收敛落点
+      window.location.assign(
+        await resolveLoginLandingPath(
+          redirect,
+          async () => (await fetchMyPermission()).permCodes,
+        ),
+      );
     } catch (error) {
       const biz = error instanceof BizError ? error : undefined;
       if (biz?.code === ACCOUNT_LOCKED_CODE) {
@@ -160,8 +138,8 @@ const LoginPage: React.FC = () => {
       <FlyingFilesBackground />
 
       <div className={styles.contentWrapper}>
-        {/* 只在登录页内切换暗色，不影响全站亮色布局 */}
-        <ConfigProvider theme={DARK_THEME}>
+        {/* 公开页共用暗色 token，不影响全站亮色布局 */}
+        <ConfigProvider theme={PUBLIC_DARK_THEME}>
           <div className={styles.formCard}>
             <div className={styles.brand}>
               {/* 装饰性图片：品牌名由下方标题承担，alt 留空避免读屏重复播报 */}

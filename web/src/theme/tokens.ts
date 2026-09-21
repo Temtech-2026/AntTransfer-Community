@@ -1,36 +1,55 @@
 /**
- * AntTransfer CE 设计 token —— 对齐 `0719-AntTransfer` 的「Qoder 黑绿」视觉体系。
+ * AntTransfer CE 设计 token —— 品牌色「柔和绿」，色相沿用 `0719-AntTransfer` 的绿色体系。
  *
  * <p>本文件是**唯一的品牌色 / 圆角 / 主题偏好权威源**，页面与组件一律从这里取色，
  * 不要在业务代码里散写十六进制色值，否则暗色模式与后续换肤会漏改。
  *
- * <p>色阶取自源项目 `page_template/page_style_template.html` 的 CSS 变量
+ * <p><b>2026-09-21：主色 `#00d68f` → `#2fb188`（仅降饱和 / 降亮度，色相 161° 不动）。</b>
+ * 原值 `hsl(161, 100%, 50%)` 是**满饱和**的青绿，在白顶栏和实心按钮上偏刺眼；刺眼来自饱和度
+ * 而不是色相，所以色相保持 161°，只把饱和度降到 58%、亮度降到 44%（`hsl(161, 58%, 44%)`），
+ * 观感柔和但不改品牌识别。下面几个色阶（hover / active / 浅底 / 绿底文字）随之在同一色相上重算，
+ * 并把原先散在两处业务代码里的菜单 hover 浅底收成 `BRAND_PRIMARY_BG_HOVER`。
+ *
+ * <p>最初的色阶取自源项目 `page_template/page_style_template.html` 的 CSS 变量
  * （`--primary-green: #00c16a` / `--primary-hover: #00a35a`）与
- * `at-admin/config/defaultSettings.ts` 的 `colorPrimary: #00d68f`：
- * 取 `#00d68f` 作为 antd 主色（交互态由 antd 算法派生），
- * 另两个绿作为 hover / active 与浅底色显式使用，保证与源项目观感一致。
+ * `at-admin/config/defaultSettings.ts` 的 `colorPrimary: #00d68f`；本次调整后与这两处的字面值不再相同，
+ * **以本文件为准**（那份源项目是历史参照，不是运行时依赖）。
  *
  * <p>本文件必须保持**零依赖**：`config/defaultSettings.ts` 会在 Node 侧直接 import 它，
  * 引入 antd / react 等运行时依赖会导致 umi 配置加载失败。
  */
 
-/** 品牌主色：antd `colorPrimary`，也是选中态、进度条、强调文字用色。 */
-export const BRAND_PRIMARY = '#00d68f';
+/**
+ * 品牌主色：antd `colorPrimary`，也是选中态、进度条、强调文字用色。
+ * `hsl(161, 58%, 44%)`。
+ */
+export const BRAND_PRIMARY = '#2fb188';
 
-/** 主色 hover（源模板 `--primary-green`）。 */
-export const BRAND_PRIMARY_HOVER = '#00c16a';
+/** 主色 hover：同色相压暗一档 `hsl(161, 58%, 38%)`。 */
+export const BRAND_PRIMARY_HOVER = '#299976';
 
-/** 主色 active / 深绿（源模板 `--primary-hover`），用于浅底上的**文字**保证对比度。 */
-export const BRAND_PRIMARY_ACTIVE = '#00a35a';
+/**
+ * 主色 active / 深绿 `hsl(161, 58%, 30%)`：用于**浅底之上的文字**（侧栏选中项、强调文字）。
+ * 在 `BRAND_PRIMARY_BG` 上的对比度约 4.9:1，达到 WCAG AA 的 4.5:1。
+ */
+export const BRAND_PRIMARY_ACTIVE = '#20795d';
 
-/** 主色浅底：侧栏选中项背景、Tag 背景、拖拽区高亮。 */
-export const BRAND_PRIMARY_BG = '#e6fcf0';
+/** 主色浅底：侧栏选中项背景、Tag 背景、拖拽区高亮。`hsl(161, 50%, 95%)` */
+export const BRAND_PRIMARY_BG = '#ecf9f5';
+
+/**
+ * 浅底再浅一档：菜单 / 列表项 hover 背景。
+ *
+ * <p>必须比 `BRAND_PRIMARY_BG` 淡，否则 hover 与「已选中」在侧栏里分不出来。
+ */
+export const BRAND_PRIMARY_BG_HOVER = '#f4faf8';
 
 /**
  * 绿底之上的文字色。
  *
- * <p>白字在 `#00d68f` 上对比度约 1.8:1，远低于 WCAG AA 的 4.5:1，
- * 故实心绿按钮统一用墨绿字（对比度约 8.9:1）。
+ * <p>白字在 `#2fb188` 上对比度约 2.7:1，远低于 WCAG AA 的 4.5:1（小字要求），
+ * 故实心绿按钮统一用墨绿字（对比度约 6.1:1）。若哪天主色压到足够深
+ * （白字 ≥ 4.5:1，约 `L ≤ 18%`），才可以把它换成白字。
  */
 export const BRAND_ON_PRIMARY = '#04241a';
 
@@ -53,7 +72,7 @@ export type ThemePreference = 'light' | 'realDark' | 'auto';
  * 暗色模式下的 token 覆盖。
  *
  * <p>与 `theme.darkAlgorithm` 叠加使用：算法负责整体换算，这里只钉死品牌色与
- * 少量对比度敏感项，避免算法把 `#00d68f` 派生得偏灰。
+ * 少量对比度敏感项，避免算法把 `#2fb188` 派生得偏灰。
  */
 export const DARK_TOKENS = {
   colorPrimary: BRAND_PRIMARY,

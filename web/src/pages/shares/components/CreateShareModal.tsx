@@ -20,6 +20,7 @@ import {
   pageFiles,
   SHARE_EXPIRE_PRESETS,
   SHARE_LIMITS,
+  type FileNode,
   type ShareLink,
   isValidExtractCode,
   randomExtractCode,
@@ -35,10 +36,31 @@ interface CreateShareModalProps {
 
 /** 表单字段（与 ProForm 的 name 对齐）。 */
 interface CreateShareFormValues {
-  fileId: number;
+  /** 物理文件 ID（雪花 ID，以字符串提交，见 `services/file/types` 的 ID 语境说明） */
+  fileId: string;
   expireDays: number;
   downloadLimit: number;
   extractCode: string;
+}
+
+/**
+ * 把文件分页记录映射成下拉选项。
+ *
+ * <p><b>选项 `value` 必须是「物理文件 ID」（`sys_file.id`），不是 `FileNode.id`。</b>
+ * 外发分享是物理文件维度：后端 `ShareLinkService#requireOwnedFile` 拿 `fileId` 查 `sys_file`，
+ * `sys_share_link.file_id` 关联的也是 `sys_file.id`。而 `FileNode.id` 是 `sys_file_node`
+ * 的条目 ID——两张表的 ID 都由雪花生成、分属不同值空间，用条目 ID 提交必然查不到物理文件，
+ * 被服务端判成 4005「文件不存在或已被删除」。</p>
+ *
+ * <p>同时过滤掉 `fileId` 缺失的残缺行：与其让用户选中一个注定失败的文件，
+ * 不如让它根本不出现在下拉里（`sys_file_node.file_id` 是 NOT NULL，出现即说明数据异常）。</p>
+ */
+export function toFileSelectOptions(
+  nodes: FileNode[],
+): { label: string; value: string }[] {
+  return nodes.flatMap((node) =>
+    node.fileId ? [{ label: node.name, value: node.fileId }] : [],
+  );
 }
 
 const CreateShareModal: React.FC<CreateShareModalProps> = ({ onClose, onCreated }) => {
@@ -88,7 +110,7 @@ const CreateShareModal: React.FC<CreateShareModalProps> = ({ onClose, onCreated 
         request={async (params) => {
           const keyword = (params as { keyword?: string } | undefined)?.keyword?.trim();
           const page = await pageFiles({ current: 1, pageSize: 20, keyword });
-          return page.records.map((node) => ({ label: node.name, value: node.id }));
+          return toFileSelectOptions(page.records);
         }}
         fieldProps={{
           filterOption: false,

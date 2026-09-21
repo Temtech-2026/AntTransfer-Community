@@ -34,8 +34,13 @@ const { Text } = Typography;
 
 export interface UploadModalProps {
   open: boolean;
-  /** 上传目标目录（透传到预检的 parentId / folderId） */
-  folderId?: number;
+  /**
+   * 上传目标目录（透传到预检的 parentId / folderId）。
+   *
+   * <p>雪花 ID 用字符串承载（见 `services/file/types` 的 ID 语境说明）：
+   * 转 number 会丢末位，预检与落库会指向不存在的目录。</p>
+   */
+  folderId?: string;
   /** 页面持有的上传队列（关闭弹窗后仍继续传输） */
   uploader: UseChunkUploadResult;
   onClose: () => void;

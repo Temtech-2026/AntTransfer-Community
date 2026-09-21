@@ -4,15 +4,16 @@ import { Divider } from 'antd';
 import { createStyles } from 'antd-style';
 import React from 'react';
 
-/** 兜底地址：package.json 未声明 repository 时指向模板仓库 */
-const FALLBACK_REPO_URL = 'https://github.com/ant-design/ant-design-pro';
+/** 兜底地址：package.json 未声明 repository 时指向本项目仓库（不再是 Ant Design Pro 模板仓库） */
+const FALLBACK_REPO_URL =
+  'https://gitee.com/Temtech-close_source/AntTransfer-Community';
 
 /**
  * 从 package.json 的 repository 推导仓库主页。
  *
  * 不写死托管方，只做规范化：去掉 `git+` 前缀、把 `git@host:path` 转成 https、去掉 `.git` 后缀。
- * 这样 GitHub / Gitee / GitLab 都能正确成链——否则仓库不在 github.com 时会静默退回
- * 模板仓库地址，把用户引到别人家的仓库（比不显示链接更糟）。
+ * 这样 GitHub / Gitee / GitLab 都能正确成链——本项目托管在 Gitee，若按 github.com 硬判会静默退回
+ * 兜底地址，把用户引到别人家的仓库（比不显示链接更糟）。
  */
 const getRepoUrl = () => {
   const raw: unknown = packageJson.repository;
@@ -88,7 +89,8 @@ const Footer: React.FC = () => {
 
   return (
     <div className={styles.footer}>
-      <div className={styles.copyright}>Ant Design Pro &copy; {year}</div>
+      {/* 版权主体必须是本项目：沿用脚手架的 `Ant Design Pro ©` 会让访问者以为本站由模板出品 */}
+      <div className={styles.copyright}>AntTransfer Community Edition &copy; {year}</div>
       <div className={styles.meta}>
         <span className={styles.group}>
           <span className={styles.label}>ver</span>

@@ -22,6 +22,7 @@ import {
   sessionOfMessage,
 } from '@/services/chat';
 import type { NotifyMessage } from '@/services/notify';
+import { compareSnowflakeId } from '@/utils/id';
 
 /** 合并一条消息进消息流时，判定「同一条消息」的键。 */
 export function messageKey(message: NotifyMessage): string {
@@ -57,17 +58,13 @@ function isSameMessage(a: NotifyMessage, b: NotifyMessage): boolean {
 /**
  * 消息排序：按 id 升序（id 与插入顺序同序）；还没拿到服务端 id 的（乐观行）排在末尾。
  *
- * <p>乐观行用的是 `id: 0` 而不是缺字段（{@link NotifyMessage.id} 是必填的），
- * 所以这里按 `<= 0` 判定，而不是 `?? `——否则乐观行会排到整个消息流最前面。</p>
+ * <p>乐观行用空串 `id: ''` 而不是缺字段（{@link NotifyMessage.id} 是必填的），
+ * 由 {@link compareSnowflakeId} 统一按「空串最大」处理，否则乐观行会排到整个消息流最前面。</p>
  */
 export function sortMessages(messages: NotifyMessage[]): NotifyMessage[] {
   return [...messages].sort((a, b) => {
-    const left = a.id > 0 ? a.id : Number.MAX_SAFE_INTEGER;
-    const right = b.id > 0 ? b.id : Number.MAX_SAFE_INTEGER;
-    if (left !== right) {
-      return left - right;
-    }
-    return (a.createTime ?? '').localeCompare(b.createTime ?? '');
+    const byId = compareSnowflakeId(a.id, b.id);
+    return byId !== 0 ? byId : (a.createTime ?? '').localeCompare(b.createTime ?? '');
   });
 }
 
@@ -112,10 +109,10 @@ export function prependHistory(
   return sortMessages(merged);
 }
 
-/** 会话列表排序：最后活跃的在前。 */
+/** 会话列表排序：最后活跃的在前（字符串 ID 走数值序比较，禁止 `Number()`）。 */
 export function sortConversations(list: Conversation[]): Conversation[] {
-  return [...list].sort(
-    (a, b) => (b.lastMessageId ?? 0) - (a.lastMessageId ?? 0),
+  return [...list].sort((a, b) =>
+    compareSnowflakeId(b.lastMessageId, a.lastMessageId),
   );
 }
 
@@ -182,14 +179,14 @@ export function applyIncomingToConversations(
    * 「lastMessageId 已是新的、正文却倒退」的不一致展示。未读不受此限——
    * 迟到的消息仍然是未读，照常 +1。
    */
-  // 乐观行没有服务端 id（`0`）：无从比较先后，按「最新」处理
-  const incomingId = message.id > 0 ? message.id : (current.lastMessageId ?? 0);
-  const isLatest = incomingId >= (current.lastMessageId ?? 0);
+  // 乐观行没有服务端 id（空串）：无从比较先后，按「最新」处理
+  const incomingId = message.id || current.lastMessageId;
+  const isLatest = compareSnowflakeId(incomingId, current.lastMessageId) >= 0;
   next[index] = {
     ...current,
     ...(isLatest
       ? {
-          lastMessageId: message.id ?? current.lastMessageId,
+          lastMessageId: message.id || current.lastMessageId,
           lastContent: message.content ?? current.lastContent,
           lastMessageType: message.messageType ?? current.lastMessageType,
           lastSenderUserId: message.senderUserId ?? current.lastSenderUserId,

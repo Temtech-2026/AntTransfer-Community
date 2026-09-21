@@ -222,15 +222,6 @@ const useStyles = createStyles(({ token }) => ({
     fontSize: token.fontSizeSM,
   },
 
-  /** 底部输入区。 */
-  composer: {
-    display: 'flex',
-    alignItems: 'flex-end',
-    gap: 8,
-    padding: '12px 20px',
-    borderTop: `1px solid ${token.colorSplit}`,
-  },
-
   /** 未选中会话时的占位。 */
   placeholder: {
     display: 'flex',

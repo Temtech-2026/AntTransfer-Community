@@ -43,7 +43,7 @@ import {
 
 /** 表格行：tree table 只在 children 非空时渲染展开箭头。 */
 interface PointRow {
-  id: number;
+  id: string;
   permCode: string;
   permName: string;
   type: number;

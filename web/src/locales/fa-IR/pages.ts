@@ -26,8 +26,32 @@ export default {
   'pages.login.loginWith': 'وارد شوید با :',
   'pages.login.registerAccount': 'ثبت نام',
   'pages.welcome.link': 'خوش آمدید',
-  'pages.welcome.celebrationTitle': 'به Ant Design Pro {v6} خوش آمدید',
+  'pages.welcome.celebrationTitle': 'به AntTransfer Community Edition خوش آمدید',
   'pages.welcome.alertMessage': 'اجزای سنگین تر سریعتر و قوی تر آزاد شده اند.',
+  /* ===== صفحه خوش‌آمدگویی (pages/Welcome.tsx) ===== */
+  'pages.welcome.header.title': 'AntTransfer CE',
+  'pages.welcome.header.subTitle': 'انتقال امن فایل و همکاری اشتراکی متن‌باز',
+  'pages.welcome.hero.title': 'AntTransfer Community Edition',
+  'pages.welcome.hero.desc':
+    'راهکار متن‌باز انتقال امن محتوا / فایل و همکاری اشتراکی: بک‌اند مونولیت ماژولار Spring Boot 3 به‌همراه فرانت‌اند Umi Max / React 19، آماده استفاده و آسان برای توسعه مجدد.',
+  'pages.welcome.feature.transfer.title': 'انتقال امن فایل',
+  'pages.welcome.feature.transfer.desc':
+    'آپلود قابل ادامه، نمایش پیشرفت و بررسی چک‌سام آپلود آنی، مناسب برای فایل‌های حجیم (at-transfer / at-file).',
+  'pages.welcome.feature.collaboration.title': 'همکاری و اشتراک‌گذاری',
+  'pages.welcome.feature.collaboration.desc':
+    'فضاهای همکاری و پیوندهای اشتراک‌گذاری به چند نفر امکان دسترسی امن به همان مجموعه فایل را می‌دهد (at-collaboration).',
+  'pages.welcome.feature.permission.title': 'مجوزها و حسابرسی',
+  'pages.welcome.feature.permission.desc':
+    'نقاط مجوز RBAC و TraceId سرتاسری، همه‌چیز را قابل حسابرسی و ردیابی می‌کند (at-permission / at-gateway).',
+  'pages.welcome.quickStart.title': 'شروع سریع',
+  'pages.welcome.quickStart.subTitle': 'یکپارچه‌سازی محلی و گام‌های بعدی',
+  /* پاراگراف اول شامل کد درون‌خطی (/api و http://localhost:8080) است و به سه بخش تقسیم شده؛ کد ترجمه نمی‌شود */
+  'pages.welcome.quickStart.proxyPrefix': 'یکپارچه‌سازی محلی: این پروژه',
+  'pages.welcome.quickStart.proxyMiddle': 'را به بک‌اند',
+  'pages.welcome.quickStart.proxySuffix':
+    ' پروکسی می‌کند (به config/proxy.ts مراجعه کنید).',
+  'pages.welcome.quickStart.domainHint':
+    'صفحات دامنه (انتقال / فایل / همکاری / مجوز) به‌تدریج همراه با آماده شدن APIهای بک‌اند اضافه می‌شوند.',
   'pages.404.subTitle': 'ببخشيد، صفحه اي که ديديد وجود نداره',
   'pages.404.buttonText': 'بازگشت به صفحه اصلی',
   'pages.admin.subPage.title': 'این صفحه فقط توسط مدیر قابل مشاهده است',

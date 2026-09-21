@@ -44,7 +44,7 @@ const TECH_STACK = [
   { label: 'Java 21', color: 'blue' },
   { label: 'Spring Boot 3.5', color: 'green' },
   { label: 'MySQL 8 · Redis 7', color: 'orange' },
-  { label: 'Ant Design Pro · React 19', color: 'geekblue' },
+  { label: 'Umi Max · React 19', color: 'geekblue' },
   { label: 'Apache-2.0', color: 'purple' },
 ];
 

@@ -32,8 +32,9 @@ export interface FileGridProps {
    * 勾上一堆却没有批量动作可用，等于给用户一个死胡同。</p>
    */
   selectable: boolean;
-  selectedIds: number[];
-  onToggleSelect: (id: number) => void;
+  /** 已勾选条目 ID（雪花 ID，字符串，见 `services/file/types` 的 ID 语境说明） */
+  selectedIds: string[];
+  onToggleSelect: (id: string) => void;
   handlers: NodeActionHandlers;
   dangerColor?: string;
 }

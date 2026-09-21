@@ -31,7 +31,7 @@ export interface DeptTreeNode extends DeptOptionVO {
  * 前端再排一次会让两边顺序不一致，反而难以对账。</p>
  */
 export function buildDeptTree(depts: readonly DeptOptionVO[]): DeptTreeNode[] {
-  const nodeById = new Map<number, DeptTreeNode>();
+  const nodeById = new Map<string, DeptTreeNode>();
   for (const dept of depts) {
     nodeById.set(dept.id, { ...dept, depth: 0, children: [] });
   }
@@ -51,7 +51,7 @@ export function buildDeptTree(depts: readonly DeptOptionVO[]): DeptTreeNode[] {
   }
 
   // 自顶向下填深度，同时用 visited 把环里的节点「漏」出来
-  const visited = new Set<number>();
+  const visited = new Set<string>();
   const walk = (nodes: readonly DeptTreeNode[], depth: number) => {
     for (const node of nodes) {
       if (visited.has(node.id)) {

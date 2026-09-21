@@ -31,8 +31,20 @@ export default {
   'chat.stream.noMore': 'No earlier messages',
   'chat.stream.loadMoreFailed': 'Failed to load earlier messages, please retry',
 
-  'chat.composer.placeholder': 'Type a message, Ctrl + Enter to send',
+  // Composer matches WeChat: Enter sends, Shift + Enter adds a line break
+  'chat.composer.placeholder': 'Type a message — Enter to send, Shift + Enter for a new line',
   'chat.composer.empty': 'Message cannot be empty',
+  'chat.composer.sendHint': 'Enter to send, Shift + Enter for a new line',
+  'chat.composer.emoji': 'Emoji',
+  'chat.composer.emojiPanel': 'Emoji categories',
+  'chat.composer.group.recent': 'Recently used',
+  'chat.composer.group.smileys': 'Smileys',
+  'chat.composer.group.gestures': 'Gestures',
+  'chat.composer.group.people': 'People and moods',
+  'chat.composer.group.animals': 'Animals and nature',
+  'chat.composer.group.food': 'Food',
+  'chat.composer.group.objects': 'Objects and activities',
+  'chat.composer.group.symbols': 'Symbols',
 
   'chat.new.title': 'New conversation',
   'chat.new.scope.label': 'Conversation type',
@@ -65,6 +77,6 @@ export default {
   'chat.drawer.removeAttachment': 'Remove pending file',
   'chat.drawer.dropHint': 'Drag a file from the file area to send it as a file message',
   'chat.drawer.placeholderWithAttachment': 'Optionally add a note (can be empty)',
-  'chat.drawer.placeholder': 'Type a message, press Enter to send',
+  'chat.drawer.placeholder': 'Type a message — Enter to send, Shift + Enter for a new line',
   'chat.drawer.send': 'Send',
 } as const;

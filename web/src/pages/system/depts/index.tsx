@@ -33,8 +33,8 @@ import { buildDeptTree, type DeptTreeNode } from './dept-tree';
 
 /** 表格行（tree table 需要 children 存在时才渲染展开箭头，故空数组要剔除）。 */
 interface DeptRow {
-  id: number;
-  parentId: number;
+  id: string;
+  parentId: string;
   name: string;
   depth: number;
   childCount: number;

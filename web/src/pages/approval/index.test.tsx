@@ -79,17 +79,17 @@ const mockedPending = vi.mocked(pagePendingApprovals);
 const mockedMine = vi.mocked(pageMyApprovals);
 
 const application = (overrides: Partial<ApprovalApplication> = {}): ApprovalApplication => ({
-  id: 1,
+  id: '1',
   applicationNo: 'AT-2026-0001',
-  applicantId: 7,
+  applicantId: '7',
   applyType: 'DOWNLOAD',
   resourceType: 'FILE',
-  resourceId: 101,
+  resourceId: '101',
   level: 2,
   purpose: '对外投标材料',
   desiredExpireAt: '2026-10-01 00:00:00',
   status: APPROVAL_STATUS.pending,
-  approverId: 9,
+  approverId: '9',
   createdAt: '2026-09-14 09:00:00',
   ...overrides,
 });
@@ -97,7 +97,7 @@ const application = (overrides: Partial<ApprovalApplication> = {}): ApprovalAppl
 const PENDING_ROW = application();
 /** 终态单：后端不会把它排进「待我审批」，此处用于守住「终态不可再决策」的兜底 */
 const DECIDED_ROW = application({
-  id: 2,
+  id: '2',
   applicationNo: 'AT-2026-0002',
   purpose: '季度审计取数',
   status: APPROVAL_STATUS.approved,

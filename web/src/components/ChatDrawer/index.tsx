@@ -20,12 +20,11 @@ import {
   CloseOutlined,
   FileOutlined,
   ReloadOutlined,
-  SendOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import { useIntl } from '@umijs/max';
 import { createStyles } from 'antd-style';
-import { Alert, Avatar, Badge, Button, Drawer, Empty, Input, Spin } from 'antd';
+import { Alert, Avatar, Badge, Button, Drawer, Empty, Spin } from 'antd';
 import React, {
   useCallback,
   useEffect,
@@ -35,6 +34,7 @@ import React, {
   useSyncExternalStore,
 } from 'react';
 
+import ChatComposer from '@/components/ChatComposer';
 import { formatBytes } from '@/components/ChunkUpload';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import {
@@ -236,10 +236,6 @@ const useStyles = createStyles(({ token, css }) => ({
     color: ${token.colorTextTertiary};
     font-size: ${token.fontSizeSM}px;
   `,
-  composer: css`
-    border-top: 1px solid ${token.colorSplit};
-    padding: 10px 12px;
-  `,
   attach: css`
     display: flex;
     align-items: center;
@@ -257,11 +253,6 @@ const useStyles = createStyles(({ token, css }) => ({
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
-  `,
-  composerRow: css`
-    display: flex;
-    align-items: flex-end;
-    gap: 8px;
   `,
   hint: css`
     margin-bottom: 8px;
@@ -711,58 +702,52 @@ const ChatDrawer: React.FC = () => {
               )}
             </div>
 
-            <div className={styles.composer}>
-              {attachment ? (
-                <div className={styles.attach}>
-                  <FileOutlined />
-                  <span className={styles.attachName} title={attachment.fileName}>
-                    {attachment.fileName}
-                  </span>
-                  <span>{formatBytes(attachment.sizeBytes)}</span>
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<CloseCircleOutlined />}
-                    aria-label={intl.formatMessage({ id: 'chat.drawer.removeAttachment' })}
-                    onClick={() => setAttachment(null)}
+            <ChatComposer
+              compact
+              value={draft}
+              onChange={setDraft}
+              onSend={() => void send()}
+              sending={sending}
+              allowEmpty={Boolean(attachment)}
+              autoSize={{ minRows: 1, maxRows: 4 }}
+              placeholder={intl.formatMessage({
+                id: attachment
+                  ? 'chat.drawer.placeholderWithAttachment'
+                  : 'chat.drawer.placeholder',
+              })}
+              sendLabel={intl.formatMessage({ id: 'chat.drawer.send' })}
+              header={
+                attachment ? (
+                  <div className={styles.attach}>
+                    <FileOutlined />
+                    <span
+                      className={styles.attachName}
+                      title={attachment.fileName}
+                    >
+                      {attachment.fileName}
+                    </span>
+                    <span>{formatBytes(attachment.sizeBytes)}</span>
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<CloseCircleOutlined />}
+                      aria-label={intl.formatMessage({
+                        id: 'chat.drawer.removeAttachment',
+                      })}
+                      onClick={() => setAttachment(null)}
+                    />
+                  </div>
+                ) : (
+                  <Alert
+                    className={styles.hint}
+                    type="info"
+                    showIcon
+                    banner
+                    message={intl.formatMessage({ id: 'chat.drawer.dropHint' })}
                   />
-                </div>
-              ) : (
-                <Alert
-                  className={styles.hint}
-                  type="info"
-                  showIcon
-                  banner
-                  message={intl.formatMessage({ id: 'chat.drawer.dropHint' })}
-                />
-              )}
-              <div className={styles.composerRow}>
-                <Input.TextArea
-                  value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
-                  placeholder={intl.formatMessage({
-                    id: attachment
-                      ? 'chat.drawer.placeholderWithAttachment'
-                      : 'chat.drawer.placeholder',
-                  })}
-                  autoSize={{ minRows: 1, maxRows: 4 }}
-                  onPressEnter={(event) => {
-                    if (!event.shiftKey) {
-                      event.preventDefault();
-                      void send();
-                    }
-                  }}
-                />
-                <Button
-                  type="primary"
-                  icon={<SendOutlined />}
-                  loading={sending}
-                  onClick={() => void send()}
-                >
-                  {intl.formatMessage({ id: 'chat.drawer.send' })}
-                </Button>
-              </div>
-            </div>
+                )
+              }
+            />
           </>
         )}
       </div>

@@ -23,7 +23,6 @@
 import {
   PlusOutlined,
   ReloadOutlined,
-  SendOutlined,
   TeamOutlined,
   UserOutlined,
 } from '@ant-design/icons';
@@ -48,6 +47,7 @@ import {
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import ChatComposer from '@/components/ChatComposer';
 import EmptyState from '@/components/EmptyState';
 import SectionCard from '@/components/SectionCard';
 import useWebSocket from '@/hooks/useWebSocket';
@@ -81,6 +81,7 @@ import {
   type UserVO,
 } from '@/services/system';
 import { wsStore } from '@/services/ws';
+import { isPositiveIdString } from '@/utils/id';
 
 import useStyles from './index.style';
 import {
@@ -153,7 +154,8 @@ const ChatPage = () => {
   // —— 新建会话 ——
   const [newOpen, setNewOpen] = useState(false);
   const [newScope, setNewScope] = useState<number>(ChatScope.PRIVATE);
-  const [newTargetId, setNewTargetId] = useState<number | null>(null);
+  // 会话目标 ID 是 19 位雪花 ID 的字符串形态：全程保持 string，禁止 Number() 归一（会丢末位）
+  const [newTargetId, setNewTargetId] = useState<string | null>(null);
   const [newUsers, setNewUsers] = useState<UserVO[]>([]);
   const [newUsersLoading, setNewUsersLoading] = useState(false);
   const [newContent, setNewContent] = useState('');
@@ -408,12 +410,9 @@ const ChatPage = () => {
       return;
     }
     const scope = Number(rawScope);
-    const targetId = Number(rawTargetId);
-    if (
-      !Number.isInteger(scope) ||
-      !Number.isInteger(targetId) ||
-      targetId <= 0
-    ) {
+    // targetId 保持字符串原样：Number() 会把 19 位雪花 ID 的末位吃掉，导致打开错误的会话
+    const targetId = rawTargetId.trim();
+    if (!Number.isInteger(scope) || !isPositiveIdString(targetId)) {
       return;
     }
     if (scope !== ChatScope.PRIVATE && scope !== ChatScope.GROUP) {
@@ -851,37 +850,19 @@ const ChatPage = () => {
                   >
                     {renderStream()}
                   </div>
-                  <div className={styles.composer}>
-                    <Input.TextArea
-                      rows={3}
-                      value={input}
-                      maxLength={MAX_CONTENT}
-                      showCount
-                      disabled={sending}
-                      placeholder={intl.formatMessage({
-                        id: 'chat.composer.placeholder',
-                      })}
-                      onChange={(event) => setInput(event.target.value)}
-                      onKeyDown={(event) => {
-                        // Ctrl / Cmd + Enter 发送：普通回车用于换行，避免误发
-                        if (
-                          event.key === 'Enter' &&
-                          (event.ctrlKey || event.metaKey)
-                        ) {
-                          event.preventDefault();
-                          void handleSend();
-                        }
-                      }}
-                    />
-                    <Button
-                      type="primary"
-                      icon={<SendOutlined />}
-                      loading={sending}
-                      onClick={() => void handleSend()}
-                    >
-                      {intl.formatMessage({ id: 'chat.action.send' })}
-                    </Button>
-                  </div>
+                  <ChatComposer
+                    value={input}
+                    onChange={setInput}
+                    onSend={() => void handleSend()}
+                    sending={sending}
+                    disabled={sending}
+                    maxLength={MAX_CONTENT}
+                    autoSize={{ minRows: 3, maxRows: 6 }}
+                    placeholder={intl.formatMessage({
+                      id: 'chat.composer.placeholder',
+                    })}
+                    sendLabel={intl.formatMessage({ id: 'chat.action.send' })}
+                  />
                 </>
               ) : (
                 renderStream()
@@ -956,7 +937,7 @@ const ChatPage = () => {
                 })}
                 filterOption={false}
                 onSearch={(value) => void searchUsers(value)}
-                onChange={(value: number | undefined) =>
+                onChange={(value: string | undefined) =>
                   setNewTargetId(value ?? null)
                 }
                 notFoundContent={
@@ -980,8 +961,7 @@ const ChatPage = () => {
             ) : (
               <>
                 <Input
-                  type="number"
-                  min={1}
+                  inputMode="numeric"
                   value={newTargetId ?? ''}
                   placeholder={intl.formatMessage({
                     id:
@@ -990,10 +970,9 @@ const ChatPage = () => {
                         : 'chat.new.target.placeholder',
                   })}
                   onChange={(event) => {
-                    const next = Number(event.target.value);
-                    setNewTargetId(
-                      Number.isInteger(next) && next > 0 ? next : null,
-                    );
+                    // 原样保留字符串：Number() 会把 19 位雪花 ID 的末位吃掉
+                    const next = event.target.value.trim();
+                    setNewTargetId(isPositiveIdString(next) ? next : null);
                   }}
                 />
                 {newScope === ChatScope.PRIVATE && !canPickUser ? (

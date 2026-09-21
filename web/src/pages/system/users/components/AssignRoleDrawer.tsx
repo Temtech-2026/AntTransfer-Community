@@ -35,7 +35,7 @@ export interface AssignRoleDrawerProps {
 const AssignRoleDrawer = ({ open, record, roleOptions, onClose, onSuccess }: AssignRoleDrawerProps) => {
   const intl = useIntl();
   const { message } = App.useApp();
-  const [selected, setSelected] = useState<number[]>([]);
+  const [selected, setSelected] = useState<string[]>([]);
   const [keyword, setKeyword] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -138,7 +138,7 @@ const AssignRoleDrawer = ({ open, record, roleOptions, onClose, onSuccess }: Ass
       ) : (
         <Checkbox.Group
           value={selected}
-          onChange={(values) => setSelected(values as number[])}
+          onChange={(values) => setSelected(values as string[])}
           style={{ width: '100%' }}
         >
           <Space orientation="vertical" style={{ width: '100%' }} size={4}>

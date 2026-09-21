@@ -85,10 +85,10 @@ describe('system 域常量 i18n', () => {
 
   it('操作人兜底各分支：有展示名不给 id，无展示名给可取的 id', () => {
     // 展示名可用时不产生 id，渲染侧直接用展示名
-    expect(operatorTextId({ userId: 7, operatorName: 'alice' })).toBeNull();
+    expect(operatorTextId({ userId: '7', operatorName: 'alice' })).toBeNull();
 
     // 已注销用户：有 userId 但反查不到展示名
-    expect(operatorTextId({ userId: 7, operatorName: null })).toBe('audit.operator.deletedUser');
+    expect(operatorTextId({ userId: '7', operatorName: null })).toBe('audit.operator.deletedUser');
     expectI18nMessage('audit.operator.deletedUser');
 
     // 匿名 / 系统任务：userId 也为空（或 0）

@@ -3,7 +3,7 @@
   "short_name": "AntTransfer CE",
   "display": "standalone",
   "start_url": "./?utm_source=homescreen",
-  "theme_color": "#00d68f",
+  "theme_color": "#2fb188",
   "background_color": "#f5f5f5",
   "icons": [
     {

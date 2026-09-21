@@ -260,8 +260,8 @@ describe('app layout 动态菜单', () => {
       settings: {},
       permissions: { permCodes: ['file'], roles: [], dataScope: 3 },
       menus: [
-        { id: 1, parentId: 0, permCode: 'file', permName: '文件', type: 1, routePath: '/file', icon: 'file' },
-        { id: 2, parentId: 0, permCode: 'audit', permName: '审计', type: 1, routePath: '/audit' },
+        { id: '1', parentId: '0', permCode: 'file', permName: '文件', type: 1, routePath: '/file', icon: 'file' },
+        { id: '2', parentId: '0', permCode: 'audit', permName: '审计', type: 1, routePath: '/audit' },
       ],
     });
 

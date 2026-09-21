@@ -67,10 +67,15 @@ vi.mock('@/services/upload/uploadApi', () => {
   return {
     UploadApiError: MockUploadApiError,
     CODE_UPLOAD_TASK_NOT_FOUND: 4101,
+    // 与 `ChunkUploadController.test.ts` 采用同一套替身：续传对账要用到「服务端已暂停」这一格取值，
+    // 以及 best-effort 的 pause / resume 上报函数。替身漏掉它们会让 `undefined === undefined`
+    // 误判成「服务端停着」而调用不存在的函数，把任务打成 error（与引擎行为无关）。
+    TASK_STATUS_PAUSED: 2,
     precheck: vi.fn(),
     fetchPartStatus: vi.fn(),
     mergeParts: vi.fn(),
     cancelUpload: vi.fn(),
+    changeTaskState: vi.fn(),
     uploadPart: vi.fn(),
   };
 });

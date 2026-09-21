@@ -135,8 +135,8 @@ export default function FileWorkbenchPage() {
   const [queryForm] = Form.useForm<QueryFormValues>();
   const canEdit = usePerm('file:edit');
 
-  /** 当前目录；undefined = 根目录 */
-  const [folderId, setFolderId] = useState<number | undefined>(undefined);
+  /** 当前目录；undefined = 根目录。雪花 ID 用字符串承接（见 `services/file/types` 的 ID 语境说明） */
+  const [folderId, setFolderId] = useState<string | undefined>(undefined);
   const [folderTree, setFolderTree] = useState<FolderNode[]>([]);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [previewNode, setPreviewNode] = useState<FileNode | null>(null);
@@ -157,7 +157,7 @@ export default function FileWorkbenchPage() {
   const [loading, setLoading] = useState(false);
   /** 自增即重取：代替 ProTable 的 actionRef.reload（数据已由页面持有） */
   const [reloadKey, setReloadKey] = useState(0);
-  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   /**
    * 回收站视角开关。
@@ -263,7 +263,13 @@ export default function FileWorkbenchPage() {
     [rows, selectedIds],
   );
 
-  /** 下载：换票 → 取件 → 落盘，全程用一条可更新的 toast 反馈进度 */
+  /**
+   * 下载：换票（XHR，失败按 code 提示）→ 取件交给浏览器原生下载。
+   *
+   * <p>不再有百分比进度：接管的浏览器不会把进度回传给页面，进度改由浏览器的下载面板呈现。
+   * 页面只能标注「准备中」与「已交给浏览器」两个节点，所以成功文案是「已开始下载」而不是
+   * 「下载完成」——前端并没有能力知道它何时真的落盘。</p>
+   */
   const handleDownload = useCallback(async (target: FileNode) => {
     const key = `download-${target.id}`;
     message.open({
@@ -276,21 +282,8 @@ export default function FileWorkbenchPage() {
       duration: 0,
     });
     try {
-      await downloadNode(target, {
-        onProgress: (progress) => {
-          if (progress.percent > 0) {
-            message.open({
-              key,
-              type: 'loading',
-              content: intl.formatMessage(
-                { id: 'file.download.progress' },
-                { percent: progress.percent },
-              ),
-              duration: 0,
-            });
-          }
-        },
-      });
+      // silent：换票失败走下面的 catch 统一提示，避免全局提示与页面提示重复弹两次
+      await downloadNode(target, { silent: true });
       message.open({
         key,
         type: 'success',
@@ -958,7 +951,10 @@ export default function FileWorkbenchPage() {
                   ? undefined
                   : {
                       selectedRowKeys: selectedIds,
-                      onChange: (keys) => setSelectedIds(keys.map(Number)),
+                      // rowKey 取的是条目 ID（19 位雪花 ID），keys 已是字符串：
+                      // 这里**不能再 map(Number)**，转 number 会丢末位，之后
+                      // selectedIds.includes(row.id) 永远不匹配，勾选后批量动作静默失效。
+                      onChange: (keys) => setSelectedIds(keys as string[]),
                     }
               }
               pagination={{
