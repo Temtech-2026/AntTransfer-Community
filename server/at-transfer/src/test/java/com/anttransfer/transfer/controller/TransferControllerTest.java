@@ -19,6 +19,7 @@ import com.anttransfer.common.result.ErrorCode;
 import com.anttransfer.common.security.AuthenticatedUser;
 import com.anttransfer.transfer.model.dto.MergeRequest;
 import com.anttransfer.transfer.model.dto.PrecheckRequest;
+import com.anttransfer.transfer.model.dto.TransferTaskActionRequest;
 import com.anttransfer.transfer.model.vo.ChunkPartsVO;
 import com.anttransfer.transfer.model.vo.MergeResultVO;
 import com.anttransfer.transfer.model.vo.PartUploadedVO;
@@ -48,6 +49,7 @@ import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -64,7 +66,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   <li>分片字节流的表单字段名是 {@code chunk}、指纹字段名是 {@code hash}，
  *       与前端 {@code PART_FILE_FIELD} / {@code PART_HASH_FIELD} 对齐（字段名不一致只会在
  *       真机联调时暴露，且表现为「空文件」这种误导性症状）；</li>
- *   <li>分片索引以 <b>路径</b> 为准（路径即资源定位），表单里的重复字段忽略。</li>
+ *   <li>分片索引以 <b>路径</b> 为准（路径即资源定位），表单里的重复字段忽略；</li>
+ *   <li>暂停 / 恢复是 {@code PATCH /v1/transfers/{uploadId}} 上的 {@code action} 字段
+ *       （与 {@code DELETE} 取消同路径不同方法）——一旦被改成新的动作端点，前端
+ *       {@code changeTaskState} 会静默 404，暂停只在本机生效。</li>
  * </ol>
  *
  * <p>注意 URL 不含 {@code /api} 前缀：该前缀由 {@code server.servlet.context-path} 提供，
@@ -123,10 +128,10 @@ class TransferControllerTest {
     }
 
     @Test
-    @DisplayName("续传查询：回已确认分片索引与任务固化的分片参数")
+    @DisplayName("续传查询：回已确认分片索引、任务固化的分片参数与任务状态")
     void shouldReturnReceivedParts() throws Exception {
         given(transferTaskService.parts(USER_ID, 1007L))
-                .willReturn(new ChunkPartsVO(List.of(0, 2), 8, 3));
+                .willReturn(new ChunkPartsVO(List.of(0, 2), 8, 3, 2));
 
         mockMvc.perform(get("/v1/transfers/1007/parts"))
                 .andExpect(status().isOk())
@@ -134,7 +139,9 @@ class TransferControllerTest {
                 .andExpect(jsonPath("$.data.received[0]").value(0))
                 .andExpect(jsonPath("$.data.received[1]").value(2))
                 .andExpect(jsonPath("$.data.chunkSize").value(8))
-                .andExpect(jsonPath("$.data.chunkCount").value(3));
+                .andExpect(jsonPath("$.data.chunkCount").value(3))
+                // 2=已暂停：暂停态必须可读，否则「用户以为暂停、服务端仍在传」无从观测
+                .andExpect(jsonPath("$.data.status").value(2));
     }
 
     @Test
@@ -193,6 +200,28 @@ class TransferControllerTest {
         verify(transferTaskService).cancel(USER_ID, 1014L);
     }
 
+    @Test
+    @DisplayName("暂停任务：PATCH 同路径以 action=pause 路由到 service.pause，回成功空体")
+    void shouldPauseTask() throws Exception {
+        mockMvc.perform(taskAction(1015L, "pause"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(ErrorCode.SUCCESS.getCode()))
+                .andExpect(jsonPath("$.data").doesNotExist());
+
+        verify(transferTaskService).pause(USER_ID, 1015L);
+    }
+
+    @Test
+    @DisplayName("恢复任务：PATCH 同路径以 action=resume 路由到 service.resume，回成功空体")
+    void shouldResumeTask() throws Exception {
+        mockMvc.perform(taskAction(1015L, "resume"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(ErrorCode.SUCCESS.getCode()))
+                .andExpect(jsonPath("$.data").doesNotExist());
+
+        verify(transferTaskService).resume(USER_ID, 1015L);
+    }
+
     private org.springframework.test.web.servlet.RequestBuilder precheck() throws Exception {
         return post("/v1/transfers/precheck")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -204,6 +233,13 @@ class TransferControllerTest {
         return post("/v1/transfers/" + uploadId + "/merge")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(new MergeRequest(SHA, chunkCount, sizeBytes)));
+    }
+
+    private org.springframework.test.web.servlet.RequestBuilder taskAction(long uploadId, String action)
+            throws Exception {
+        return patch("/v1/transfers/" + uploadId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(new TransferTaskActionRequest(action)));
     }
 
     private static AuthenticatedUser currentUser() {

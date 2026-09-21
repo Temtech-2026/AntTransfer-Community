@@ -79,15 +79,22 @@ public class TransferTaskStateStore {
             transferred += bytes;
         }
         String indexesJson = ChunkIndexes.write(received);
+        // 「已暂停」是用户的显式意图，不能被在途分片改写：暂停与分片写入天然并发
+        // （前端 abort 只停掉本地 XHR，已发到服务端的字节仍会落库），
+        // 若在此无条件写回「传输中」，用户刚点的暂停会被静默撤销，且刷新后任务永远显示进行中。
+        // 因此只在非暂停态下推进到「传输中」，暂停态下仅记账（仍收录分片，恢复后无需重传）。
+        int nextStatus = Objects.equals(task.getStatus(), TransferTask.STATUS_PAUSED)
+                ? TransferTask.STATUS_PAUSED
+                : TransferTask.STATUS_UPLOADING;
         transferTaskMapper.update(null, new LambdaUpdateWrapper<TransferTask>()
                 .eq(TransferTask::getId, uploadId)
                 .set(TransferTask::getUploadedIndexes, indexesJson)
                 .set(TransferTask::getTransferredSize, transferred)
-                .set(TransferTask::getStatus, TransferTask.STATUS_UPLOADING)
+                .set(TransferTask::getStatus, nextStatus)
                 .set(TransferTask::getUpdateBy, userId));
         task.setUploadedIndexes(indexesJson);
         task.setTransferredSize(transferred);
-        task.setStatus(TransferTask.STATUS_UPLOADING);
+        task.setStatus(nextStatus);
         return task;
     }
 

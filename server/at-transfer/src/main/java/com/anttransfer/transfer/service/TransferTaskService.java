@@ -86,6 +86,19 @@ public class TransferTaskService {
     private static final Set<Integer> CANCELABLE_STATUSES =
             Set.of(TransferTask.STATUS_QUEUED, TransferTask.STATUS_UPLOADING,
                     TransferTask.STATUS_PAUSED, TransferTask.STATUS_MERGING);
+    /**
+     * 「进行中且未进合并」的状态，暂停 / 恢复共用同一口径。
+     *
+     * <p>暂停：只允许从这两个状态迁出——合并是不可中断的长过程，放进来会让任务卡在「已暂停」
+     * 而拼件已在读分片。恢复：遇到这两个状态说明暂停上报没落地或已被恢复，按幂等成功处理。</p>
+     *
+     * <p>注意不能复用 {@link #ACTIVE_STATUSES}：它额外包含「合并中」（查分片清单要用），
+     * 而合并中的任务是明确<b>不可</b>暂停/恢复的。</p>
+     */
+    private static final Set<Integer> IN_FLIGHT_STATUSES =
+            Set.of(TransferTask.STATUS_QUEUED, TransferTask.STATUS_UPLOADING);
+    /** 可恢复的状态：只有显式暂停过的任务需要恢复 */
+    private static final Set<Integer> RESUMABLE_STATUSES = Set.of(TransferTask.STATUS_PAUSED);
 
     private final TransferTaskMapper transferTaskMapper;
     private final TransferTaskStateStore stateStore;
@@ -136,11 +149,16 @@ public class TransferTaskService {
 
     /* ============================ 分片续传 ============================ */
 
-    /** 查询服务端已确认收到的分片索引（断点续传判据）。 */
+    /**
+     * 查询服务端已确认收到的分片索引（断点续传判据）。
+     *
+     * <p>同时回任务状态：否则「已暂停」是一个只写不读的状态——换了设备 / 清了本地缓存的客户端
+     * 只能看到「进行中」，无法区分「用户主动暂停」与「客户端异常退出」。</p>
+     */
     public ChunkPartsVO parts(long userId, long uploadId) {
         TransferTask task = requireAlive(userId, uploadId);
         return new ChunkPartsVO(List.copyOf(ChunkIndexes.parse(task.getUploadedIndexes())),
-                task.getChunkSize(), task.getChunkCount());
+                task.getChunkSize(), task.getChunkCount(), task.getStatus());
     }
 
     /**
@@ -265,6 +283,61 @@ public class TransferTaskService {
             throw new BusinessException(ErrorCode.TRANSFER_STATE_ERROR);
         }
         chunkStore.deleteTaskDir(uploadId);
+    }
+
+    /* ============================ 暂停 / 恢复 ============================ */
+
+    /**
+     * 暂停任务：把「进行中」显式落为 {@code 2 已暂停}，暂存分片原样保留以便续传。
+     *
+     * <p><b>为什么不是「服务端闸门」</b>：暂停的即时止血发生在前端（abort 在途请求），
+     * 服务端这一笔是「意图登记」——它让状态可读（换设备/清缓存后仍能看到是用户主动暂停）、
+     * 免于被当作残留任务清理，并且不被在途分片回写成「传输中」
+     * （见 {@code TransferTaskStateStore#appendPart}）。因此暂停不阻断分片写入：
+     * 若服务端把暂停当闸门，abort 与服务端落库的天然竞态会制造一批 4102。</p>
+     *
+     * <p>幂等：已暂停的任务重复上报直接成功（重试、多端同时暂停都不该报错）。
+     * 合并中（{@code 6}）不是「进行中」，以 4102 拒绝；终态任务按「不存在」（4101）处理，
+     * 客户端据此重走预检。</p>
+     */
+    public void pause(long userId, long uploadId) {
+        TransferTask task = requireOwned(userId, uploadId);
+        if (task.isTerminal()) {
+            throw new BusinessException(ErrorCode.TRANSFER_TASK_NOT_FOUND);
+        }
+        if (Objects.equals(task.getStatus(), TransferTask.STATUS_PAUSED)) {
+            return;
+        }
+        if (!stateStore.transition(uploadId, IN_FLIGHT_STATUSES, TransferTask.STATUS_PAUSED, null, null, userId)) {
+            // 竞态兜底：只剩「合并中」会落这里（并发推进到终态已在上面拦掉）
+            throw new BusinessException(ErrorCode.TRANSFER_STATE_ERROR);
+        }
+    }
+
+    /**
+     * 恢复任务：把 {@code 2 已暂停} 放回「排队 / 传输中」。
+     *
+     * <p>回到 {@code 0 排队} 还是 {@code 1 传输中} 由服务端按「是否已收到分片」判定——
+     * 状态机里 {@code 1} 的语义是「已至少收到一个分片」，让客户端各报一份必然与库漂移。</p>
+     *
+     * <p>幂等：任务本就在推进中（{@code 0}/{@code 1}）说明暂停上报没落地或已被恢复，
+     * 直接成功。这一条很关键：前端的恢复上报是尽力而为（best-effort），失败不阻断续传
+     * （暂停态本就允许分片落库），所以恢复上报只负责把状态追平，不承担「放行」职责。</p>
+     */
+    public void resume(long userId, long uploadId) {
+        TransferTask task = requireOwned(userId, uploadId);
+        if (task.isTerminal()) {
+            throw new BusinessException(ErrorCode.TRANSFER_TASK_NOT_FOUND);
+        }
+        if (IN_FLIGHT_STATUSES.contains(task.getStatus())) {
+            return;
+        }
+        int target = ChunkIndexes.parse(task.getUploadedIndexes()).isEmpty()
+                ? TransferTask.STATUS_QUEUED
+                : TransferTask.STATUS_UPLOADING;
+        if (!stateStore.transition(uploadId, RESUMABLE_STATUSES, target, null, null, userId)) {
+            throw new BusinessException(ErrorCode.TRANSFER_STATE_ERROR);
+        }
     }
 
     /* ============================ 内部方法 ============================ */

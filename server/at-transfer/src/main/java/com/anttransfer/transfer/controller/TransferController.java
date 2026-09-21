@@ -21,6 +21,7 @@ import com.anttransfer.common.result.ErrorCode;
 import com.anttransfer.common.result.Result;
 import com.anttransfer.transfer.model.dto.MergeRequest;
 import com.anttransfer.transfer.model.dto.PrecheckRequest;
+import com.anttransfer.transfer.model.dto.TransferTaskActionRequest;
 import com.anttransfer.transfer.model.vo.ChunkPartsVO;
 import com.anttransfer.transfer.model.vo.MergeResultVO;
 import com.anttransfer.transfer.model.vo.PartUploadedVO;
@@ -32,6 +33,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -43,18 +45,19 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Locale;
 
 /**
- * 分片上传主线（PRD §4.1）：预检 → 续传查询 → 分片上传 → 合并落库 → 取消。
+ * 分片上传主线（PRD §4.1）：预检 → 续传查询 → 分片上传 → 合并落库 → 取消 / 暂停恢复。
  *
- * <p><b>为什么整条链统一要 {@code file:upload}</b>：五个端点都只是在「把某个文件写进文件域」
+ * <p><b>为什么整条链统一要 {@code file:upload}</b>：六个端点都只是在「把某个文件写进文件域」
  * 这条路上前进了一步，没有任何一个是可以只读的。若把 {@code GET /parts} 降级为登录即可，
  * 就会出现「无上传权的人也能凭票据号枚举他人任务进度」的越权缝隙
  * （服务层用 {@code userId} 兜底，但接口层不该先放进来）。</p>
  *
- * <p><b>为什么 merge / cancel 不复用「详情查询」控制器</b>：它们共享
+ * <p><b>为什么 merge / cancel / 状态迁移不复用「详情查询」控制器</b>：它们共享
  * {@code /v1/transfers/{uploadId}} 这段路径，拆成两个 {@code @RestController} 会让
- * 「谁的注解管哪个 HTTP 方法」变得难以一眼看全；上传链路的五个动作写在一个类里更好审。</p>
+ * 「谁的注解管哪个 HTTP 方法」变得难以一眼看全；上传链路的六个动作写在一个类里更好审。</p>
  *
  * <p><b>两个 B 类流程分支码在 HTTP 层都是 200</b>（{@code code=4001} 秒传未命中、
  * {@code code=4002} 分片缺失）：它们是「主流程的正常岔路」，不是错误，
@@ -137,6 +140,26 @@ public class TransferController {
     @RequiresPerm("file:upload")
     public Result<Void> cancel(@PathVariable long uploadId) {
         transferTaskService.cancel(CurrentUserContext.currentUserId(), uploadId);
+        return Result.ok();
+    }
+
+    /**
+     * 暂停 / 恢复上传任务（部分更新 {@code status}）。
+     *
+     * <p>暂停只登记意图、不删暂存分片，恢复后按服务端已收清单继续补片；
+     * 两者都幂等，重复上报不报错（见 {@code TransferTaskService#pause/#resume}）。</p>
+     */
+    @PatchMapping("/{uploadId}")
+    @RequiresPerm("file:upload")
+    public Result<Void> changeStatus(@PathVariable long uploadId,
+                                     @Valid @RequestBody TransferTaskActionRequest request) {
+        long userId = CurrentUserContext.currentUserId();
+        switch (request.action().trim().toLowerCase(Locale.ROOT)) {
+            case "pause" -> transferTaskService.pause(userId, uploadId);
+            case "resume" -> transferTaskService.resume(userId, uploadId);
+            // @Pattern 已挡住其余取值；留兜底分支是为了「校验注解被误删」时仍按参数错误返回
+            default -> throw new BusinessException(ErrorCode.PARAM_FORMAT_ERROR);
+        }
         return Result.ok();
     }
 }

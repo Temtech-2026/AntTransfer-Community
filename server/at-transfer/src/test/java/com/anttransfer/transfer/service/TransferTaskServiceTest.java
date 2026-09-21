@@ -43,14 +43,18 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.Mockito.never;
@@ -66,7 +70,10 @@ import static org.mockito.Mockito.verify;
  *   <li>两个 B 类流程分支码（4001 未命中 / 4002 缺片）必须是<b>返回值</b>而非异常，
  *       否则 {@code data} 会在全局异常处理器里丢失；</li>
  *   <li>「同内容复用任务」必须把目标目录计入判定，否则同内容传到两个目录只有一个目录拿到文件；</li>
- *   <li>失败路径的清理范围要区分「可重试的 IO 失败」与「不可挽救的整件指纹不符」。</li>
+ *   <li>失败路径的清理范围要区分「可重试的 IO 失败」与「不可挽救的整件指纹不符」；</li>
+ *   <li>暂停 / 恢复是<b>意图登记</b>而不是服务端闸门：暂停只拒绝「合并中」与终态，
+ *       恢复目标态由服务端按已收分片判定，两者都幂等——前端的 pause/resume 上报是
+ *       尽力而为的，失败也不该阻断续传。</li>
  * </ol>
  *
  * @author AntTransfer CE
@@ -227,6 +234,9 @@ class TransferTaskServiceTest {
         assertThat(vo.received()).containsExactly(0, 2);
         assertThat(vo.chunkSize()).isEqualTo(UNIT);
         assertThat(vo.chunkCount()).isEqualTo(3);
+        // 状态必须一并回：否则「已暂停」只写不读，换设备 / 清缓存的客户端无法区分
+        // 「用户主动暂停」与「客户端异常退出」
+        assertThat(vo.status()).isEqualTo(TransferTask.STATUS_UPLOADING);
     }
 
     // ------------------------------------------------------------ 分片上传
@@ -389,6 +399,116 @@ class TransferTaskServiceTest {
         service.cancel(USER_ID, 1014L);
 
         verify(chunkStore).deleteTaskDir(1014L);
+    }
+
+    // ------------------------------------------------------------ 暂停 / 恢复
+
+    @Test
+    @DisplayName("暂停进行中任务：CAS 只允许从「排队/传输中」迁到「已暂停」，且不动暂存分片")
+    void shouldPauseRunningTask() {
+        given(transferTaskMapper.selectById(1015L))
+                .willReturn(task(1015L, TransferTask.STATUS_UPLOADING, UNIT, 2, 16L, "[0]"));
+        given(stateStore.transition(anyLong(), any(), anyInt(), any(), any(), anyLong())).willReturn(true);
+
+        service.pause(USER_ID, 1015L);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Collection<Integer>> from = ArgumentCaptor.forClass(Collection.class);
+        verify(stateStore).transition(eq(1015L), from.capture(), eq(TransferTask.STATUS_PAUSED),
+                isNull(), isNull(), eq(USER_ID));
+        // 可暂停源态被焊死为「排队 / 传输中」：合并是不可中断的长过程，放进来会让
+        // 任务卡在「已暂停」而分片已开始被拼件读取
+        assertThat(from.getValue()).containsExactlyInAnyOrder(
+                TransferTask.STATUS_QUEUED, TransferTask.STATUS_UPLOADING);
+        // 暂停保留暂存（暂停是为了续传，删分片是取消的语义）
+        verify(chunkStore, never()).deleteTaskDir(anyLong());
+    }
+
+    @Test
+    @DisplayName("暂停已暂停任务：幂等成功，不重复发 CAS（重试 / 多端同时暂停都不该报错）")
+    void shouldPauseIdempotently() {
+        given(transferTaskMapper.selectById(1016L))
+                .willReturn(task(1016L, TransferTask.STATUS_PAUSED, UNIT, 2, 16L, "[0]"));
+
+        service.pause(USER_ID, 1016L);
+
+        verify(stateStore, never()).transition(anyLong(), any(), anyInt(), any(), any(), anyLong());
+    }
+
+    @Test
+    @DisplayName("暂停合并中任务：CAS 抢不到源态，以 4102 拒绝")
+    void shouldRejectPausingMergingTask() {
+        given(transferTaskMapper.selectById(1017L))
+                .willReturn(task(1017L, TransferTask.STATUS_MERGING, UNIT, 2, 16L, "[0,1]"));
+        given(stateStore.transition(anyLong(), any(), anyInt(), any(), any(), anyLong())).willReturn(false);
+
+        assertThatThrownBy(() -> service.pause(USER_ID, 1017L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getCode())
+                        .isEqualTo(ErrorCode.TRANSFER_STATE_ERROR.getCode()));
+    }
+
+    @Test
+    @DisplayName("暂停已终态任务：按「不存在」处理，让客户端凭 4101 重走预检")
+    void shouldHideTerminalTaskFromPause() {
+        given(transferTaskMapper.selectById(1018L))
+                .willReturn(task(1018L, TransferTask.STATUS_COMPLETED, UNIT, 1, (long) UNIT, "[0]"));
+
+        assertThatThrownBy(() -> service.pause(USER_ID, 1018L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getCode())
+                        .isEqualTo(ErrorCode.TRANSFER_TASK_NOT_FOUND.getCode()));
+        verify(stateStore, never()).transition(anyLong(), any(), anyInt(), any(), any(), anyLong());
+    }
+
+    @Test
+    @DisplayName("恢复已传过片的暂停任务：回到「传输中」（状态机 1 的语义就是已收到分片）")
+    void shouldResumePausedTaskWithReceivedParts() {
+        given(transferTaskMapper.selectById(1019L))
+                .willReturn(task(1019L, TransferTask.STATUS_PAUSED, UNIT, 2, 16L, "[0]"));
+        given(stateStore.transition(anyLong(), any(), anyInt(), any(), any(), anyLong())).willReturn(true);
+
+        service.resume(USER_ID, 1019L);
+
+        // 回到 1 还是 0 由服务端按已收分片判定：让客户端各报一份必然与库漂移
+        verify(stateStore).transition(1019L, Set.of(TransferTask.STATUS_PAUSED),
+                TransferTask.STATUS_UPLOADING, null, null, USER_ID);
+    }
+
+    @Test
+    @DisplayName("恢复尚无分片的暂停任务：回到「排队」，不谎报「传输中」")
+    void shouldResumePausedTaskBackToQueued() {
+        given(transferTaskMapper.selectById(1020L))
+                .willReturn(task(1020L, TransferTask.STATUS_PAUSED, UNIT, 2, 16L, "[]"));
+        given(stateStore.transition(anyLong(), any(), anyInt(), any(), any(), anyLong())).willReturn(true);
+
+        service.resume(USER_ID, 1020L);
+
+        verify(stateStore).transition(1020L, Set.of(TransferTask.STATUS_PAUSED),
+                TransferTask.STATUS_QUEUED, null, null, USER_ID);
+    }
+
+    @Test
+    @DisplayName("恢复本就在推进中的任务：幂等成功，不重复发 CAS（暂停上报没落地或已被恢复）")
+    void shouldResumeIdempotently() {
+        given(transferTaskMapper.selectById(1021L))
+                .willReturn(task(1021L, TransferTask.STATUS_UPLOADING, UNIT, 2, 16L, "[0]"));
+
+        service.resume(USER_ID, 1021L);
+
+        verify(stateStore, never()).transition(anyLong(), any(), anyInt(), any(), any(), anyLong());
+    }
+
+    @Test
+    @DisplayName("恢复合并中的任务：暂停源态已不存在，以 4102 拒绝")
+    void shouldRejectResumingMergingTask() {
+        given(transferTaskMapper.selectById(1022L))
+                .willReturn(task(1022L, TransferTask.STATUS_MERGING, UNIT, 2, 16L, "[0,1]"));
+
+        assertThatThrownBy(() -> service.resume(USER_ID, 1022L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getCode())
+                        .isEqualTo(ErrorCode.TRANSFER_STATE_ERROR.getCode()));
     }
 
     private static TransferTask task(long id, int status, int chunkSize, int chunkCount,

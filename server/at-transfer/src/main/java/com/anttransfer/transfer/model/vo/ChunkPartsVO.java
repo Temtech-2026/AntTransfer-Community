@@ -26,7 +26,10 @@ import java.util.List;
  * @param received   服务端已确认收到的分片索引（升序，空表示尚未收到任何分片）
  * @param chunkSize  任务固化的分片大小
  * @param chunkCount 任务固化的分片总数
+ * @param status     任务状态（{@code 0} 排队 / {@code 1} 传输中 / {@code 2} 已暂停）——
+ *                   暂停必须是可读状态，否则「用户以为暂停、服务端其实在传」无从观测；
+ *                   客户端续传时据此把被中断的暂停态追平（见 TransferTaskService#resume）
  * @author AntTransfer CE
  */
-public record ChunkPartsVO(List<Integer> received, Integer chunkSize, Integer chunkCount) {
+public record ChunkPartsVO(List<Integer> received, Integer chunkSize, Integer chunkCount, Integer status) {
 }
