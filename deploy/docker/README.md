@@ -26,6 +26,11 @@ docker run --rm -p 8080:8080 \
   anttransfer/server:latest
 ```
 
+> ⚠️ 上述 `docker run` 为最小验证命令，**缺少持久卷与必填密钥**：正式部署请改用根
+> `docker-compose.yml`（已挂 `files-data` / `staging-data` 并强制校验密钥），
+> 或自行补齐 `-v <卷>:/app/data/files`、`-v <卷>:/app/data/transfer-staging` 与
+> `-e AUTH_ACCESS_TOKEN_SECRET=<≥32 字节强随机串>`，详见 `docs/deployment/README.md`。
+
 ## 🧱 镜像内容（Dockerfile）
 
 - ⚙️ 基础镜像：构建 `maven:3.9.16-eclipse-temurin-21`，运行 `eclipse-temurin:21-jre`

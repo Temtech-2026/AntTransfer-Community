@@ -20,10 +20,18 @@
 | `SPRING_PROFILES_ACTIVE` | 是 | `dev` | 生产置 `prod`（关闭 Swagger、Flyway 默认开启） |
 | `SERVER_PORT` | 否 | `8080` | 服务端口 |
 | `DB_URL` | 是 | `localhost:3307/anttransfer`（dev 容器库端口） | MySQL JDBC URL |
-| `DB_USERNAME` / `DB_PASSWORD` | 是 | `root` / `123456` | 数据库账号密码 |
+| `DB_USERNAME` / `DB_PASSWORD` | 是 | `root` / **无默认** | 数据库账号密码；`docker-compose.yml` 以 `${VAR:?}` 强制校验，不回落弱口令 |
 | `REDIS_HOST` / `REDIS_PORT` | 是 | `localhost:6379` | Redis 地址 |
 | `REDIS_DATABASE` / `REDIS_PASSWORD` | 否 | `0` / 空 | Redis 库号与密码 |
 | `FLYWAY_ENABLED` | 否 | `true` | 是否执行 Flyway 迁移（`prod` 默认开启，置 `false` 可临时关闭） |
+| `AUTH_ACCESS_TOKEN_SECRET` | **是** | 无（`application.yml` 内置值仅供本地 dev） | JWT 签名密钥（HS256，须 ≥ 32 字节）。`docker-compose.yml` 以 `${VAR:?}` 强制校验 |
+| `ANTTRANSFER_CORS_ALLOWED_ORIGINS` | 否 | `*`（compose 中已收敛为 `http://localhost:8000`） | CORS 来源白名单，逗号分隔，支持通配；生产禁用 `*` |
+| `ANTTRANSFER_FILE_STORAGE_ROOT` | 否 | `./data/files` | 文件正文存储根；容器内须指向挂载点 `/app/data/files` |
+| `TRANSFER_STAGING_ROOT` | 否 | `./data/transfer-staging` | 分片暂存根；容器内须指向挂载点 `/app/data/transfer-staging` |
+
+> ⚠️ 后两个存储路径**必须落在持久卷上**：`docker-compose.yml` 已挂载 `files-data` /
+> `staging-data` 两个卷并同步注入上述环境变量，否则每次 `up -d --build` 重建容器都会丢失
+> 已上传文件与进行中的分片。若改用 `docker run` 手工启动，请自行 `-v` 挂卷并传入这两个变量。
 
 ## 🚀 三、部署方式
 
@@ -51,6 +59,20 @@ docker run -d --name at-server -p 8080:8080 \
   anttransfer/server:latest
 ```
 
+> ⚠️ 上面这条 `docker run` 省略了持久卷与必填密钥，仅供快速验证。正式部署请改用根
+> `docker-compose.yml`（已挂好卷并强制校验密钥），或自行补上两个存储挂载点
+> （`<卷>:/app/data/files`、`<卷>:/app/data/transfer-staging`，并配合
+> `ANTTRANSFER_FILE_STORAGE_ROOT` / `TRANSFER_STAGING_ROOT` 两个环境变量）以及
+> `AUTH_ACCESS_TOKEN_SECRET=<至少 32 字节的强随机串>`；否则重建容器即丢文件，
+> 且会以公开已知的开发默认密钥签发 token。
+> 🔒 `docker-compose.yml` 的三点硬化口径（上云前请勿改回）：**① 端口只绑回环**——
+> `mysql:3307`、`redis:6379`、`server:8080` 均只映射到 `127.0.0.1`，公网与内网其它机器
+> 都无法直连，对外流量统一由前置反向代理走 `80/443` 进入（容器之间仍按服务名互访，
+> 不受影响）；**② 密钥强制校验**——`DB_PASSWORD` 与 `AUTH_ACCESS_TOKEN_SECRET` 缺失时
+> `docker compose up` 直接报错退出，不会回落到弱口令或公开已知的 dev 默认密钥；
+> **③ 数据卷**——`mysql-data` / `redis-data` / `files-data` / `staging-data`，
+> 备份范围必须包含后两个，否则用户文件与暂存分片无副本。
+
 ### 方式 C：☸️ Kubernetes / Helm
 
 样例清单与说明见 `deploy/kubernetes/`、`deploy/helm/`（Helm Chart 预留目录，待发布后补充）。
@@ -66,6 +88,11 @@ docker run -d --name at-server -p 8080:8080 \
 ## ✅ 五、上线检查清单
 
 1. 🔒 `SPRING_PROFILES_ACTIVE=prod`，密码均走环境变量，`*.pem/*.key/.env` 不入仓库；
-2. 🗄️ 数据库连接串使用专用低权账号；Redis 建议开启 `requirepass`；
-3. 🚀 首次启动观察 Flyway 迁移是否成功，确认 `server/at-bootstrap/target` 产物为最新提交；
-4. 🌐 反向代理（Nginx/网关）透传 `/api/`，并按需开启 HTTPS 与限流。
+2. 🔑 `AUTH_ACCESS_TOKEN_SECRET` 已注入 ≥ 32 字节强随机串（**不得**沿用 dev 默认值），
+   `ANTTRANSFER_CORS_ALLOWED_ORIGINS` 已收紧为真实前端来源（**不得**为 `*`）；
+3. 🗄️ 数据库连接串使用专用低权账号（不要用 `root`）；Redis 已绑定回环，
+   如需密码再加 `requirepass` 并同步 `REDIS_PASSWORD`；
+4. 💾 `files-data` / `staging-data` 两个卷已挂载且纳入备份，重建容器不丢文件；
+5. 🚀 首次启动观察 Flyway 迁移是否成功，确认 `server/at-bootstrap/target` 产物为最新提交；
+6. 🌐 反向代理（Nginx/网关）透传 `/api/`（含 `/api/ws/notify` 的 WebSocket Upgrade，
+   上传体积上限 ≥ 80MB），并按需开启 HTTPS 与限流。

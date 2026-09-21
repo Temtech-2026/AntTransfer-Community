@@ -6,10 +6,17 @@
 #   docker compose up -d --build       # 后台启动
 #   docker compose down                # 停止（加 -v 会连数据卷一起删除）
 #
-# 变量（可选，均带默认值；可复制 .env.example 为 .env 覆盖）：
-#   DB_USERNAME / DB_PASSWORD / MYSQL_PORT / REDIS_PORT / SERVER_PORT
+# 变量：复制 .env.example 为 .env 后填写。其中两项为「必填」，下方以 ${VAR:?} 强制校验——
+# 未设置或为空时 `docker compose up` 直接报错退出，绝不回落到弱口令或开发默认密钥：
+#   DB_PASSWORD             数据库密码
+#   AUTH_ACCESS_TOKEN_SECRET JWT 签名密钥（≥32 字节）
+# 其余可选：DB_USERNAME / MYSQL_PORT / REDIS_PORT / SERVER_PORT / ANTTRANSFER_CORS_ALLOWED_ORIGINS
 #
 # 后端端口默认 8080；接口全局前缀 /api；Spring profile 自动使用 prod。
+#
+# 数据持久化：mysql-data / redis-data / files-data（文件正文）/ staging-data（分片暂存）。
+# 端口暴露：mysql、redis、server 三者一律只绑定宿主 127.0.0.1，公网与内网其它机器均不可直连，
+#   对外流量统一由前置反向代理走 80/443 进入（容器网络内仍以服务名互访，不受影响）。
 # =====================================================================
 
 services:
@@ -18,7 +25,7 @@ services:
     container_name: at-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-123456}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?必须设置数据库密码 DB_PASSWORD，禁止使用 123456 等弱口令}
       MYSQL_DATABASE: anttransfer
       TZ: Asia/Shanghai
     command:
@@ -26,8 +33,10 @@ services:
       - --collation-server=utf8mb4_unicode_ci
     ports:
       # 宿主机 3307 → 容器 3306：与本机自装 MySQL 的 3306 错开（端口约定见 docker-compose.dev.yml）。
-      # 容器内 server 仍按服务名连 mysql:3306，与此处宿主映射无关
-      - "${MYSQL_PORT:-3307}:3306"
+      # 容器内 server 仍按服务名连 mysql:3306，与此处宿主映射无关。
+      # ⚠️ 刻意绑定 127.0.0.1：本机客户端调试时 127.0.0.1:3307 照常可用，但公网/内网其它机器
+      #    无法直连数据库。云服务器上请勿改回 0.0.0.0（或省略 127.0.0.1 前缀）。
+      - "127.0.0.1:${MYSQL_PORT:-3307}:3306"
     volumes:
       # 数据卷：库文件持久化
       - mysql-data:/var/lib/mysql
@@ -46,7 +55,8 @@ services:
     container_name: at-redis
     restart: unless-stopped
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      # 同样仅绑定宿主回环：Redis 未启用密码，安全边界即为「不对外暴露」。
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -63,18 +73,38 @@ services:
     container_name: at-server
     restart: unless-stopped
     ports:
-      - "${SERVER_PORT:-8080}:8080"
+      # 仅绑定宿主回环：对外流量统一由前置反向代理（Nginx / 网关）走 80/443 进入，
+      # 后端本体不直接暴露公网；容器网络内仍以 server:8080 互访，不受影响。
+      - "127.0.0.1:${SERVER_PORT:-8080}:8080"
+    volumes:
+      # ⚠️ 原先缺失，导致每次 up -d --build 重建容器后已上传文件与进行中的分片全部丢失。
+      #   files-data   → 文件正文（anttransfer.file.storage-root，内容寻址存储）
+      #   staging-data → 分片暂存与合片中间产物（anttransfer.transfer.staging-root）
+      # 两者分开挂卷，便于单独清理暂存区而不动正文。
+      - files-data:/app/data/files
+      - staging-data:/app/data/transfer-staging
     environment:
       SPRING_PROFILES_ACTIVE: prod
       SERVER_PORT: 8080
       DB_URL: jdbc:mysql://mysql:3306/anttransfer?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
       DB_USERNAME: ${DB_USERNAME:-root}
-      DB_PASSWORD: ${DB_PASSWORD:-123456}
+      # 必填：不再回落到 123456 这类弱口令（本地开发请改用 docker-compose.dev.yml）
+      DB_PASSWORD: ${DB_PASSWORD:?必须设置数据库密码 DB_PASSWORD，禁止使用 123456 等弱口令}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_DATABASE: 0
       REDIS_PASSWORD: ""
       FLYWAY_ENABLED: "true"
+      # ① 必填：application.yml 内置的 dev 默认密钥是公开已知的，一旦回落到它，
+      #    任何人都能自行签发合法 token。此处以 ${VAR:?} 强制校验。
+      AUTH_ACCESS_TOKEN_SECRET: ${AUTH_ACCESS_TOKEN_SECRET:?必须注入 JWT 签名密钥 AUTH_ACCESS_TOKEN_SECRET，且长度不少于 32 字节}
+      # ② CORS 白名单（逗号分隔，支持通配如 https://*.your-domain.com）。
+      #    默认只放行本地前端，杜绝通配符 *（携带凭证场景下 * 等于对全网开放）。
+      #    同源部署时用不到；跨域部署须显式改为真实前端来源。
+      ANTTRANSFER_CORS_ALLOWED_ORIGINS: ${ANTTRANSFER_CORS_ALLOWED_ORIGINS:-http://localhost:8000}
+      # ③ 存储路径：与上方挂载点严格一致（显式声明，不再依赖 Dockerfile 的 WORKDIR=/app 隐式默认）
+      ANTTRANSFER_FILE_STORAGE_ROOT: /app/data/files
+      TRANSFER_STAGING_ROOT: /app/data/transfer-staging
     depends_on:
       mysql:
         condition: service_healthy
@@ -84,3 +114,6 @@ services:
 volumes:
   mysql-data:
   redis-data:
+  # 文件正文与分片暂存：down 不带 -v 时保留，务必纳入备份范围（见 docs/deployment/README.md）
+  files-data:
+  staging-data:
