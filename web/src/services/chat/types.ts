@@ -27,18 +27,18 @@ import {
 export interface Conversation {
   /** 会话范围：1-单聊 2-群聊。 */
   chatScope: number;
-  /** 会话目标：单聊=对端用户 ID；群聊=群组 ID。 */
-  targetId: number;
+  /** 会话目标：单聊=对端用户 ID；群聊=群组 ID。19 位雪花 ID，服务端以字符串下发。 */
+  targetId: string;
   /** 会话名：单聊=对端展示名（可能为 null）；群聊后端恒为 null。 */
   targetName?: string | null;
   /** 最后一条消息 ID（去重实时帧 / 作翻页游标）。 */
-  lastMessageId: number;
+  lastMessageId: string;
   /** 最后一条消息正文（列表摘要）。 */
   lastContent?: string | null;
   /** 最后一条消息体类型（见 `MessageType`）。 */
   lastMessageType?: number | null;
   /** 最后一条消息的发送人 ID。 */
-  lastSenderUserId?: number | null;
+  lastSenderUserId?: string | null;
   /**
    * 最后一条消息是否我发的（由服务端判定）。
    *
@@ -55,13 +55,14 @@ export interface Conversation {
 /** 会话定位（唯一标识）。 */
 export interface ChatSession {
   chatScope: number;
-  targetId: number;
+  targetId: string;
 }
 
 /** 发送消息入参（对齐后端 `ChatSendDTO`）。 */
 export interface ChatSendPayload {
   scope: number;
-  targetId: number;
+  /** 会话目标 ID：字符串下发/回传，后端 Jackson 反序列化为 Long，前端不得 `Number()` 归一。 */
+  targetId: string;
   /** 1-文本 2-文件传输 3-审批结果（会话消息禁止传 0）。 */
   messageType: number;
   content: string;
@@ -88,9 +89,9 @@ export function isSameSession(
 /** 会话名回落标签（由页面注入 intl 版本，避免纯函数里硬编码语言）。 */
 export interface ConversationTitleLabels {
   /** 群聊回落名，如「群聊 #3」。 */
-  group: (id: number) => string;
+  group: (id: string) => string;
   /** 单聊回落名，如「用户 #7」。 */
-  user: (id: number) => string;
+  user: (id: string) => string;
 }
 
 /** 默认回落标签（中文；单测 / 非 React 场景用，页面应传 intl 版本）。 */

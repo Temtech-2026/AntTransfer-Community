@@ -81,7 +81,7 @@ export function pageUsers(query: UserPageQuery = {}) {
 }
 
 /** 用户详情（需 {@code system:user:list}）。 */
-export function getUser(id: number) {
+export function getUser(id: string) {
   return get<UserVO>(SYSTEM_ENDPOINTS.userDetail(id));
 }
 
@@ -101,29 +101,29 @@ export function createUser(payload: UserCreatePayload) {
 }
 
 /** 编辑用户资料 / 调岗（需 {@code system:user:update}）。 */
-export function updateUser(id: number, payload: UserUpdatePayload) {
+export function updateUser(id: string, payload: UserUpdatePayload) {
   return put<UserVO>(SYSTEM_ENDPOINTS.userDetail(id), payload);
 }
 
 /** 启用 / 停用（需 {@code system:user:status}；停用会使在途会话立即失效）。 */
-export function changeUserStatus(id: number, status: WritableUserStatus) {
+export function changeUserStatus(id: string, status: WritableUserStatus) {
   return patch<void>(SYSTEM_ENDPOINTS.userStatus(id), { status });
 }
 
 /** 管理员重置口令（需 {@code system:user:reset-password}；禁止对自己调用）。 */
-export function resetUserPassword(id: number, newPassword: string) {
+export function resetUserPassword(id: string, newPassword: string) {
   const payload: UserResetPasswordPayload = { newPassword };
   return post<void>(SYSTEM_ENDPOINTS.userResetPassword(id), payload);
 }
 
 /** 分配角色（需 {@code system:user:assign-role}；整集替换，且禁止对自己调用）。 */
-export function assignUserRoles(id: number, roleIds: number[]) {
+export function assignUserRoles(id: string, roleIds: string[]) {
   const payload: UserRoleAssignPayload = { roleIds };
   return put<void>(SYSTEM_ENDPOINTS.userRoles(id), payload);
 }
 
 /** 删除用户（需 {@code system:user:delete}）。 */
-export function deleteUser(id: number) {
+export function deleteUser(id: string) {
   return del<void>(SYSTEM_ENDPOINTS.userDetail(id));
 }
 
@@ -140,7 +140,7 @@ export function fetchRoleOptions() {
 }
 
 /** 角色详情（需 {@code system:role:list}）。 */
-export function getRole(id: number) {
+export function getRole(id: string) {
   return get<RoleVO>(SYSTEM_ENDPOINTS.roleDetail(id));
 }
 
@@ -150,22 +150,23 @@ export function createRole(payload: RoleCreatePayload) {
 }
 
 /** 编辑角色（需 {@code system:role:update}；不含 code，内置角色改 dataScope 会被拒 1020）。 */
-export function updateRole(id: number, payload: RoleUpdatePayload) {
+export function updateRole(id: string, payload: RoleUpdatePayload) {
   return put<RoleVO>(SYSTEM_ENDPOINTS.roleDetail(id), payload);
 }
 
 /** 删除角色（需 {@code system:role:delete}；内置角色 / 已分配用户会被拒）。 */
-export function deleteRole(id: number) {
+export function deleteRole(id: string) {
   return del<void>(SYSTEM_ENDPOINTS.roleDetail(id));
 }
 
 /** 角色已授权限点 ID 列表（需 {@code system:role:list}）。 */
-export function fetchRolePermissionIds(id: number) {
-  return get<number[]>(SYSTEM_ENDPOINTS.rolePermissions(id));
+export function fetchRolePermissionIds(id: string) {
+  // 后端在该响应里同样把 ID 字符串化（裸 List<Long>，控制器边界转换），与权限点树节点 id 同一值空间。
+  return get<string[]>(SYSTEM_ENDPOINTS.rolePermissions(id));
 }
 
 /** 角色授权（需 {@code system:role:assign-perm}；整集替换，空数组 = 清空）。 */
-export function assignRolePermissions(id: number, permissionIds: number[]) {
+export function assignRolePermissions(id: string, permissionIds: string[]) {
   const payload: RolePermissionAssignPayload = { permissionIds };
   return put<void>(SYSTEM_ENDPOINTS.rolePermissions(id), payload);
 }

@@ -46,6 +46,43 @@ export const SHARE_ENDPOINTS = {
   mine: '/api/v1/shares/mine',
   detail: (token: string) => `/api/v1/shares/${encodeURIComponent(token)}`,
   revoke: (token: string) => `/api/v1/shares/${encodeURIComponent(token)}`,
+  /** 批量失效所选链接（需 file:share，单次上限 200）；响应体为实际失效条数 */
+  batchRevoke: '/api/v1/shares/batch/revoke',
+  /**
+   * 一键失效「我的全部」生效中链接（需 file:share）。
+   *
+   * <p>刻意<b>不</b>做成 {@link revoke} 的「批量重载」：作用域由服务端按登录主体决定，
+   * 请求里既没有 token 也没有范围参数——范围一旦能从请求侧控制，就有
+   * 「以为全撤了、其实只撤了一页」的口子。</p>
+   */
+  revokeAll: '/api/v1/shares/all/revoke',
+} as const;
+
+/**
+ * 外发分享端点（<b>访客侧，免登录</b>）。
+ *
+ * <p>与 {@link SHARE_ENDPOINTS} 的区别不只是路径：创建者侧端点要登录态 + `file:share` 权限，
+ * 访客侧凭「高熵令牌 + 提取码」自证身份，故两端点集合必须分开维护，
+ * 避免哪天有人顺手把访客端点塞进需要权限的那一组（或反之）。</p>
+ *
+ * <p>三步走：`verify` 换一次性票据 → `redeem` 核销换元信息 + 取件票 → `content` 凭取件票取字节。
+ * `content` 返回的地址直接交给浏览器原生 `<a href>`（`Content-Disposition: attachment`），
+ * 因此它必须能带 `ticket` 查询串自行鉴权，不能依赖请求头里的登录态。</p>
+ */
+export const SHARE_VISIT_ENDPOINTS = {
+  /** 校验令牌 / 提取码 / 次数，换取一次性票据（票据 GETDEL 取用即焚） */
+  verify: (token: string) =>
+    `/api/v1/shares/${encodeURIComponent(token)}/verify`,
+  /** 核销一次性票据，返回文件元信息 + 取件票（同时扣减下载次数、写审计） */
+  redeem: '/api/v1/shares/redeem',
+  /**
+   * 取件地址（凭核销后的取件票取字节，支持 `Range` 续传）。
+   *
+   * <p>路径与查询串都做 `encodeURIComponent`：token 与票据都是 base64url 之外的随机串，
+   * 但一旦有人把票据改成含 `+`/`/` 的编码，不转义就会在查询串里被截断成另一个值。</p>
+   */
+  content: (token: string, ticket: string) =>
+    `/api/v1/shares/${encodeURIComponent(token)}/content?ticket=${encodeURIComponent(ticket)}`,
 } as const;
 
 /** 权限申请 / 审批端点。 */

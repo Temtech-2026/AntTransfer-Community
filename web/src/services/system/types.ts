@@ -34,15 +34,16 @@ export type WritableUserStatus = 0 | 1;
 
 /** 用户视图：{@code UserVO}（不含口令 / 盐 / token，管理面列表连散列都不该外泄）。 */
 export interface UserVO {
-  id: number;
+  /** 用户主键：19 位雪花 ID，服务端以字符串下发（禁止 `Number()` 归一）。 */
+  id: string;
   /** 登录账号。 */
   username: string;
   /** 昵称 / 姓名。 */
   nickname: string;
   email?: string | null;
   mobile?: string | null;
-  /** 所属部门 ID（可空 = 未分配）。 */
-  deptId?: number | null;
+  /** 所属部门 ID（可空 = 未分配）；19 位雪花 ID，字符串下发。 */
+  deptId?: string | null;
   /** 部门名称（可空；由部门选项表回填）。 */
   deptName?: string | null;
   /** 0-正常 1-禁用 2-锁定。 */
@@ -51,16 +52,17 @@ export interface UserVO {
   protectedUser: boolean;
   lastLoginTime?: string | null;
   createTime?: string | null;
-  /** 角色 ID 列表。 */
-  roleIds?: number[] | null;
+  /** 角色 ID 列表（字符串，与后端 `contentUsing = ToStringSerializer.class` 对齐）。 */
+  roleIds?: string[] | null;
   /** 角色编码列表（用于 Tag 呈现，不用于权限判定）。 */
   roleCodes?: string[] | null;
 }
 
 /** 部门选项：{@code DeptOptionVO}（打平列表，parentId=0 为根）。 */
 export interface DeptOptionVO {
-  id: number;
-  parentId: number;
+  id: string;
+  /** 父部门 ID，0 表示根（字符串 '0'）。 */
+  parentId: string;
   name: string;
 }
 
@@ -68,7 +70,8 @@ export interface DeptOptionVO {
 
 /** 角色视图：{@code RoleVO}。 */
 export interface RoleVO {
-  id: number;
+  /** 角色主键：19 位雪花 ID，字符串下发。 */
+  id: string;
   code: string;
   name: string;
   /** 数据范围：1-本人 2-本部门及以下 3-全部。 */
@@ -85,12 +88,13 @@ export interface RoleVO {
 
 /** 权限点树节点：{@code PermissionPointVO}。 */
 export interface PermissionPointVO {
-  id: number;
+  id: string;
   permCode: string;
   permName: string;
   /** 维度：1-菜单 2-操作 3-数据范围。 */
   type: number;
-  parentId: number;
+  /** 父权限点 ID，0 表示根（字符串 '0'）。 */
+  parentId: string;
   sortNo: number;
   children: PermissionPointVO[];
 }
@@ -99,9 +103,9 @@ export interface PermissionPointVO {
 
 /** 审计日志视图：{@code AuditLogVO}（跨域投影，只读快照）。 */
 export interface AuditLogVO {
-  id: number;
+  id: string;
   /** 操作人用户 ID（匿名 / 系统任务为 null）。 */
-  userId?: number | null;
+  userId?: string | null;
   /** 操作人展示名（反查不到或系统任务为 null）。 */
   operatorName?: string | null;
   /** 动作编码，如 USER_CREATE / APPROVE / FILE_DOWNLOAD。 */
@@ -110,7 +114,7 @@ export interface AuditLogVO {
   module: string;
   /** 操作对象类型：USER / ROLE / FILE / SHARE / APPLICATION / GRANT / SYSTEM…。 */
   targetType?: string | null;
-  targetId?: number | null;
+  targetId?: string | null;
   /** 链路追踪 ID（排障凭证）。 */
   traceId?: string | null;
   ip?: string | null;
@@ -129,7 +133,7 @@ export interface UserPageQuery {
   /** 账号 / 昵称模糊。 */
   keyword?: string;
   status?: number;
-  deptId?: number;
+  deptId?: string;
   current?: number;
   pageSize?: number;
 }
@@ -149,13 +153,13 @@ export interface RolePageQuery {
  */
 export interface AuditLogQuery {
   /** 操作人用户 ID（后端只提供 ID 精确过滤，不提供按展示名模糊）。 */
-  userId?: number;
+  userId?: string;
   /** 动作编码（精确匹配）。 */
   action?: string;
   /** 所属域（精确匹配）。 */
   module?: string;
   targetType?: string;
-  targetId?: number;
+  targetId?: string;
   /** 结果：0-成功 1-失败。 */
   result?: number;
   /** 事件时间下界（含）。 */
@@ -177,10 +181,11 @@ export interface UserCreatePayload {
   nickname: string;
   email?: string;
   mobile?: string;
-  deptId?: number;
+  /** 所属部门 ID（字符串；后端 Jackson 反序列化为 Long）。 */
+  deptId?: string;
   remark?: string;
   /** 初始角色 ID 集合（可空 = 不分配角色）。 */
-  roleIds?: number[];
+  roleIds?: string[];
 }
 
 /**
@@ -197,7 +202,7 @@ export interface UserUpdatePayload {
   email?: string;
   mobile?: string;
   /** 与原值不同即视为调岗（服务端会挂权限重评估副作用）；{@code null} = 解除部门分配。 */
-  deptId?: number | null;
+  deptId?: string | null;
 }
 
 /** 启停用户（{@code UserStatusDTO}）。 */
@@ -212,7 +217,7 @@ export interface UserResetPasswordPayload {
 
 /** 分配角色（{@code UserRoleAssignDTO}，整集替换；后端 {@code @NotEmpty} 要求至少一个）。 */
 export interface UserRoleAssignPayload {
-  roleIds: number[];
+  roleIds: string[];
 }
 
 /** 创建角色（{@code RoleCreateDTO}）。 */
@@ -233,7 +238,7 @@ export interface RoleUpdatePayload {
 
 /** 角色授权（{@code RolePermissionAssignDTO}，整集替换；空数组 = 清空）。 */
 export interface RolePermissionAssignPayload {
-  permissionIds: number[];
+  permissionIds: string[];
 }
 
 /* ============================ 纯函数 / 展示映射 ============================ */

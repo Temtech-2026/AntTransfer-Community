@@ -62,10 +62,10 @@ export const MenuNodeType = {
  * {@link import('./menu').buildMenuTree} 两种都能吃。
  */
 export interface MenuNode {
-  /** 权限点 ID（sys_permission.id）。 */
-  id: number;
-  /** 父权限点 ID，0 表示根。 */
-  parentId: number;
+  /** 权限点 ID（sys_permission.id）；19 位雪花 ID，服务端以字符串下发。 */
+  id: string;
+  /** 父权限点 ID，0 表示根（字符串 '0'）。 */
+  parentId: string;
   /** 权限点编码，如 file / system:user:list。 */
   permCode: string;
   /** 权限点名称（后端下发，CE 目前直接展示中文名）。 */

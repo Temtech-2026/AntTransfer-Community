@@ -52,6 +52,6 @@ export async function fetchTodoCount(): Promise<number> {
  * <p>复用通知域的 {@code POST /v1/notifications/{id}/read}：待办的「已办」就是那条通知的
  * 「已读」（后端以通知为唯一事实源，见 {@code TodoItemVO} 类注释），没有独立的待办写接口。
  */
-export function markTodoHandled(id: number) {
+export function markTodoHandled(id: string) {
   return markNotificationRead(id);
 }

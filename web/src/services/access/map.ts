@@ -22,20 +22,20 @@ import { ACCESS_ENDPOINTS } from './endpoints';
 
 /** 审批授权条目（后端 `GrantItem`）。 */
 export interface ApprovalGrant {
-  grantId: number;
+  grantId: string;
   /** 授权动作：ACCESS / DOWNLOAD / EDIT / SHARE */
   grantType?: string | null;
   resourceType?: string | null;
-  resourceId?: number | null;
+  resourceId?: string | null;
   /** 到期时刻；为空表示长期有效 */
   expireAt?: string | null;
   /** 来源申请单 id */
-  applicationId?: number | null;
+  applicationId?: string | null;
 }
 
 /** 权限地图视图（后端 `PermissionMapView`）。 */
 export interface PermissionMapView {
-  userId?: number | null;
+  userId?: string | null;
   roleCodes?: string[] | null;
   permCodes?: string[] | null;
   /** 数据范围字符串枚举；前端**原样展示**，不做文案映射（取值以服务端为准） */

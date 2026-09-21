@@ -6,7 +6,8 @@
 
 /** 登录用户摘要（对应 {@code AuthVos.UserSummary}，不含敏感字段）。 */
 export interface AuthUserSummary {
-  id?: number | null;
+  /** 用户主键：19 位雪花 ID，服务端以字符串下发（超出 JS 安全整数范围，禁止 `Number()` 归一）。 */
+  id?: string | null;
   username: string;
   nickname?: string | null;
   avatarUrl?: string | null;

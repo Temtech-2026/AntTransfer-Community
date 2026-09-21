@@ -2,17 +2,21 @@
  * 分片上传引擎的行为测试（网络层与 Worker 均被替换为可控替身）。
  *
  * 覆盖：秒传命中、断点续传只补缺失片、并发上限、指数退避重试、不可重试快速失败、
- * 暂停/继续、取消清理、刷新后复用本地记录（跳过重算摘要与预检）。
+ * 暂停/继续（含暂停意图上报与续传时的状态对账）、取消清理、
+ * 刷新后复用本地记录（跳过重算摘要与预检）。
  */
 
 import { computeFileHashes } from '@/workers/hashWorkerClient';
 import { ChunkUploadController } from './ChunkUploadController';
 import { UploadAbortError } from './errors';
+import type { PartStatus } from './types';
 import {
   cancelUpload,
+  changeTaskState,
   fetchPartStatus,
   mergeParts,
   precheck,
+  TASK_STATUS_PAUSED,
   UploadApiError,
   uploadPart,
 } from './uploadApi';
@@ -44,10 +48,12 @@ vi.mock('./uploadApi', () => {
     UploadApiError: MockUploadApiError,
     UploadAbortError: class extends Error {},
     CODE_UPLOAD_TASK_NOT_FOUND: 4101,
+    TASK_STATUS_PAUSED: 2,
     precheck: vi.fn(),
     fetchPartStatus: vi.fn(),
     mergeParts: vi.fn(),
     cancelUpload: vi.fn(),
+    changeTaskState: vi.fn(),
     uploadPart: vi.fn(),
   };
 });
@@ -58,6 +64,7 @@ const mockedParts = vi.mocked(fetchPartStatus);
 const mockedUploadPart = vi.mocked(uploadPart);
 const mockedMerge = vi.mocked(mergeParts);
 const mockedCancel = vi.mocked(cancelUpload);
+const mockedTaskState = vi.mocked(changeTaskState);
 
 /** 让出到宏任务，确保所有微任务链已跑完 */
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -142,6 +149,7 @@ beforeEach(() => {
   mockedUploadPart.mockResolvedValue(null);
   mockedMerge.mockResolvedValue({ fileId: 'file-1' });
   mockedCancel.mockResolvedValue(undefined);
+  mockedTaskState.mockResolvedValue(undefined);
 });
 
 describe('ChunkUploadController', () => {
@@ -270,6 +278,101 @@ describe('ChunkUploadController', () => {
       .map((call) => call[0].index);
     expect(uploadedIndexes).toEqual([1, 2, 3]);
     expect(task.received).toEqual([0, 1, 2, 3]);
+  });
+
+  it('暂停：上报服务端登记意图，且不等往返就本地生效', async () => {
+    gateUploads();
+    // 上报挂起不 resolve：若 `pause()` 还在等它，本地状态就不会变成 paused
+    let settleReport!: () => void;
+    mockedTaskState.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          settleReport = resolve;
+        }),
+    );
+    const { controller } = makeController();
+
+    controller.addFiles([makeFile(16)]);
+    await flush();
+
+    controller.pause(controller.getSnapshot()[0].id);
+    await flush();
+
+    expect(mockedTaskState).toHaveBeenCalledWith('u-1', 'pause');
+    expect(controller.getSnapshot()[0].status).toBe('paused');
+    settleReport();
+  });
+
+  it('暂停：票据还没生成时不发无意义的上报', async () => {
+    // 卡在摘要计算阶段：此时服务端还没有任何任务，暂停无处可报
+    type HashResult = Awaited<ReturnType<typeof computeFileHashes>>;
+    let releaseHash!: (value: HashResult) => void;
+    mockedHash.mockImplementation(
+      () =>
+        new Promise<HashResult>((resolve) => {
+          releaseHash = resolve;
+        }),
+    );
+    gateUploads();
+    const { controller } = makeController();
+
+    controller.addFiles([makeFile(16)]);
+    await flush();
+
+    const [task] = controller.getSnapshot();
+    expect(task).toBeDefined();
+    controller.pause(task.id);
+    await flush();
+
+    expect(controller.getSnapshot()[0].status).toBe('paused');
+    expect(mockedTaskState).not.toHaveBeenCalled();
+
+    releaseHash({
+      fileHash: 'f'.repeat(64),
+      chunkHashes: Array.from({ length: 64 }, (_, index) =>
+        `${index}`.padStart(64, 'a'),
+      ),
+    });
+    await flush();
+  });
+
+  it('续传对账：服务端仍停在已暂停态时补一次恢复上报', async () => {
+    mockedParts.mockResolvedValue({
+      received: [0],
+      chunkSize: CHUNK,
+      status: TASK_STATUS_PAUSED,
+    });
+    const { controller } = makeController();
+
+    controller.addFiles([makeFile(16)]);
+    await flush();
+
+    // 上一次恢复上报丢了也不会把任务永远留在「已暂停」：对账时自愈
+    expect(mockedTaskState).toHaveBeenCalledTimes(1);
+    expect(mockedTaskState).toHaveBeenCalledWith('u-1', 'resume');
+    expect(controller.getSnapshot()[0].status).toBe('success');
+  });
+
+  it('续传对账：对账期间用户又点了暂停，就不再把任务恢复回来', async () => {
+    let release!: (status: PartStatus) => void;
+    mockedParts.mockImplementation(
+      () =>
+        new Promise<PartStatus>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const { controller } = makeController();
+
+    controller.addFiles([makeFile(16)]);
+    await flush();
+
+    controller.pause(controller.getSnapshot()[0].id);
+    release({ received: [], chunkSize: CHUNK, status: TASK_STATUS_PAUSED });
+    await flush();
+
+    // 只剩 pause 那一次上报，不能再补一次 resume 把用户刚点的暂停顶掉
+    expect(mockedTaskState).toHaveBeenCalledTimes(1);
+    expect(mockedTaskState).toHaveBeenCalledWith('u-1', 'pause');
   });
 
   it('取消：通知服务端清理、清空本地记录并置终态', async () => {

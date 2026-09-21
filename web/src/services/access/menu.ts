@@ -11,6 +11,8 @@
  * 因此实际生效的是第 2 条兜底路径；第 1 条按既定契约实现并单测，后端就绪后无需改前端结构。
  */
 
+import { compareSnowflakeId } from '@/utils/id';
+
 import { hasPerm, type PermSource } from './perm';
 import { MenuNodeType, type MenuDataNode, type MenuNode } from './types';
 
@@ -19,15 +21,15 @@ export function isRenderableMenu(node: MenuNode): boolean {
   return node.type === MenuNodeType.MENU && node.visible !== 0 && Boolean(node.routePath);
 }
 
-/** 排序：sortNo 升序，缺失排后，再按 id 稳定排序。 */
+/** 排序：sortNo 升序，缺失排后，再按 id 稳定排序（字符串 ID 走数值序比较，禁止 `Number()`）。 */
 function bySortNo(a: MenuNode, b: MenuNode): number {
   const left = a.sortNo ?? Number.MAX_SAFE_INTEGER;
   const right = b.sortNo ?? Number.MAX_SAFE_INTEGER;
-  return left === right ? a.id - b.id : left - right;
+  return left === right ? compareSnowflakeId(a.id, b.id) : left - right;
 }
 
 /** 深度收集（扁平列表里可能混有已组装的 children）。 */
-function collect(nodes: readonly MenuNode[], bucket: Map<number, MenuNode>): void {
+function collect(nodes: readonly MenuNode[], bucket: Map<string, MenuNode>): void {
   for (const node of nodes) {
     if (!bucket.has(node.id)) {
       bucket.set(node.id, { ...node, children: undefined });
@@ -52,11 +54,11 @@ export function buildMenuTree(nodes: readonly MenuNode[] | null | undefined): Me
   if (!nodes?.length) {
     return [];
   }
-  const bucket = new Map<number, MenuNode>();
+  const bucket = new Map<string, MenuNode>();
   collect(nodes, bucket);
   const all = [...bucket.values()];
 
-  const childrenOf = (parentId: number): MenuNode[] =>
+  const childrenOf = (parentId: string): MenuNode[] =>
     all.filter((node) => node.parentId === parentId).sort(bySortNo);
 
   const prune = (node: MenuNode): MenuNode | undefined => {
@@ -73,7 +75,8 @@ export function buildMenuTree(nodes: readonly MenuNode[] | null | undefined): Me
     return { ...node, children: children.length ? children : undefined };
   };
 
-  return childrenOf(0)
+  // 根节点的 parentId 契约是字符串 '0'（后端 Long 0 序列化结果）
+  return childrenOf('0')
     .map(prune)
     .filter((node): node is MenuNode => Boolean(node));
 }

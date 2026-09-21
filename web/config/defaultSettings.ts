@@ -4,19 +4,21 @@ import {
   BRAND_PRIMARY,
   BRAND_PRIMARY_ACTIVE,
   BRAND_PRIMARY_BG,
+  BRAND_PRIMARY_BG_HOVER,
   SHELL,
 } from '../src/theme/tokens';
 
 /**
  * @name 布局默认配置
- * @description 视觉体系对齐 `0719-AntTransfer/at-admin` 的「Qoder 黑绿」风格。
+ * @description 品牌绿体系，色阶权威源为 `src/theme/tokens.ts`（历史视觉参照 `0719-AntTransfer/at-admin`）。
  * 品牌色请从 `src/theme/tokens.ts` 取，不要在此处散写十六进制值。
  */
 const Settings: ProLayoutProps & {
   logo?: string;
 } = {
   navTheme: 'light',
-  // 主色：Qoder 黑绿。暗色模式的算法切换见 src/app.tsx 的 rootContainer
+  // 主色：品牌柔和绿（2026-09-21 由满饱和青绿 `#00d68f` 压柔为 `#2fb188`，见 tokens.ts）。
+  // 暗色模式的算法切换见 src/app.tsx 的 rootContainer
   colorPrimary: BRAND_PRIMARY,
   /**
    * 顶栏 + 侧栏：顶栏承载 Logo + 组织切换器 / 全局搜索 / 通知·头像·设置，侧栏承载菜单。
@@ -45,7 +47,7 @@ const Settings: ProLayoutProps & {
     // 侧栏选中态：浅绿底 + 深绿字，对齐源模板 `.nav-item.active`
     sider: {
       colorBgMenuItemSelected: BRAND_PRIMARY_BG,
-      colorBgMenuItemHover: '#f2fdf8',
+      colorBgMenuItemHover: BRAND_PRIMARY_BG_HOVER,
       colorTextMenuSelected: BRAND_PRIMARY_ACTIVE,
       colorTextMenuItemHover: BRAND_PRIMARY_ACTIVE,
     },

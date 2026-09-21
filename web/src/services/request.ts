@@ -481,7 +481,22 @@ export function downloadBinary(
   return binaryRequest<Blob>(url, { ...options, method: 'GET', responseType: 'blob' }, deps);
 }
 
-/** 触发浏览器保存（非浏览器环境返回 false，便于单测）。 */
+/**
+ * objectURL 的释放延迟。
+ *
+ * <p>浏览器不提供「下载管理器已接管这份 blob」的事件，只能按经验延后释放。火狐对 `blob:`
+ * 下载是<b>异步接管</b>的：`click()` 之后同步 `revokeObjectURL` 会让它在读取数据前失效，
+ * 表现为下载中断或文件名丢失——而 Chrome 多数情况下侥幸不出问题（同步释放时它已经把数据
+ * 取走了），所以这类 bug 只在火狐上暴露。</p>
+ */
+export const OBJECT_URL_REVOKE_DELAY_MS = 60_000;
+
+/**
+ * 触发浏览器保存（非浏览器环境返回 false，便于单测）。
+ *
+ * <p>只用于<b>必须在 JS 里拿到内容</b>的场景（导出报表等）。普通文件下载请走
+ * {@link startNativeDownload}：把整份文件读成 Blob 会绕开浏览器的下载管理器。</p>
+ */
 export function saveBlob(blob: Blob, fileName: string): boolean {
   if (typeof document === 'undefined' || typeof URL === 'undefined') {
     return false;
@@ -494,7 +509,67 @@ export function saveBlob(blob: Blob, fileName: string): boolean {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  URL.revokeObjectURL(objectUrl);
+  // 不能紧跟 click 同步撤销，原因见 OBJECT_URL_REVOKE_DELAY_MS
+  setTimeout(() => URL.revokeObjectURL(objectUrl), OBJECT_URL_REVOKE_DELAY_MS);
+  return true;
+}
+
+/**
+ * 把取件地址交给**浏览器原生下载通道**（非浏览器环境返回 false，便于单测）。
+ *
+ * <p><b>为什么必须走原生，而不是「XHR 取整份 → Blob → {@link saveBlob}」：</b></p>
+ * <ul>
+ *   <li><b>下载提示</b>：只有被下载管理器接管的传输才会进入浏览器的下载面板 / 下载列表并给出
+ *       进度。Blob 落盘是「内存 → 磁盘」的拷贝，火狐不会为它显示任何下载提示——这正是
+ *       「文件确实下来了、浏览器却毫无反应」的原因；</li>
+ *   <li><b>Range 续传</b>：服务端对本类端点声明了 `Accept-Ranges: bytes` 并实现了 206/416
+ *       （见 `FileDownloadService`），而「先整份读进 Blob」用不上任何一条——天然无法断点续传；</li>
+ *   <li><b>内存</b>：`responseType: 'blob'` 会让整个文件驻留内存，服务端辛苦做的分块流式限速
+ *       在客户端被一次性重新缓冲；</li>
+ *   <li><b>文件名</b>：服务端已下发 RFC 5987 的 `filename*`（中文名不乱码），原生下载直接沿用；
+ *       Blob 路径只能用前端自己拼的名字。</li>
+ * </ul>
+ *
+ * <p><b>为什么是「隐藏 {@code <a>} 点击」而不是隐藏 iframe：</b>整个应用都挂在 Spring Security
+ * 之下，其默认响应头会给<b>所有</b>响应（含免登录的取件端点）写 {@code X-Frame-Options: DENY}；
+ * 该头<b>只约束框架</b>，iframe 会被直接拒载——表现为「点了下载，但什么都没发生」
+ * （同源的 {@code <img>} 不受该头影响，所以缩略图一直是好的，容易误判成「取件本身有问题」）。
+ * {@code <a>} 不创建框架，不在 X-Frame-Options 的管辖范围内；配合下面的 {@code download} 属性，
+ * 浏览器直接把它交给下载管理器并留在当前页面，与分享页访客侧的下载入口是同一套做法。</p>
+ *
+ * <p><b>必须带 {@code download} 属性，不能只靠服务端的 {@code Content-Disposition}：</b>
+ * 不带时浏览器在点击那一刻只能把它当<b>顶层导航</b>（`attachment` 要等响应头回来才知道），
+ * 于是当前文档开始卸载、页面里的 WebSocket 被断开，开发服务器的 HMR 客户端据此误判
+ * 「服务重启」并触发整页 reload —— 这次 reload 会把尚在飞行中的取件导航取消掉。
+ * 火狐稳定复现（`NS_BINDING_ABORTED`，点完什么都不落盘），Chrome 只是抢先到达下载管理器，
+ * 所以同一个 bug 只在火狐上暴露；分享页访客侧同理。{@code download} 对<b>同源</b>地址一定
+ * 生效（取件地址正是同源），且它<b>不要求用户激活态</b>——本函数总是在 {@code await} 换票之后
+ * 才被调用，激活态可能已经过期，这一点与 {@code target="_blank"} 不同。</p>
+ *
+ * <p>代价：带 {@code download} 后，取件端点返回 JSON 错误体时会被落成一个文件而不是渲染成页面
+ * （错误只可能来自「票据刚签发就失效」，TTL 5 分钟、当次即刻取件，风险可忽略）。</p>
+ *
+ * <p><b>已知取舍：</b>交出去之后前端拿不到回执（浏览器没有「下载已开始」事件），因此调用方
+ * 只能提示「已开始下载」，百分比进度改由浏览器自己呈现。</p>
+ *
+ * @param fileName 兜底文件名。服务端已下发 RFC 5987 的 {@code filename*} 时以服务端为准，
+ *   这里只在响应头缺失文件名时生效
+ */
+export function startNativeDownload(url: string, fileName?: string): boolean {
+  if (typeof document === 'undefined') {
+    return false;
+  }
+  const link = document.createElement('a');
+  link.href = url;
+  // 同源取件也显式切断 opener：这一跳要么是下载要么是错误体，都不该拿到对本站窗口的引用
+  link.rel = 'noopener';
+  // 见上方说明：这个属性的存在与否，决定浏览器把取件当「下载」还是「顶层导航」
+  link.download = fileName || '';
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  // 只在这一次点击期间需要它；留在 DOM 里会让后续 querySelector / 表单提交带上一个游离链接
+  document.body.removeChild(link);
   return true;
 }
 

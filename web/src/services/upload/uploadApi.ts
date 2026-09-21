@@ -9,6 +9,9 @@
  * 2. 分片上传用 **XMLHttpRequest** 而非 axios/fetch：只有 XHR 能拿到
  *    `upload.onprogress`，从而给出平滑的单文件进度。
  * 3. 分片上传自带 `AbortSignal`，是暂停/取消得以「立即止血」的基础。
+ * 4. **暂停/恢复上报是尽力而为**（`changeTaskState` 吞异常）：服务端那笔只登记用户意图，
+ *    不是本地流程的前置条件。刻意不把它做成闸门——`abort` 与服务端落库天然竞态，
+ *    若服务端按「暂停=拒收分片」处理，客户端会收到一批无意义的 4102。
  */
 
 import { request } from '@umijs/max';
@@ -49,6 +52,15 @@ export const CODE_OVER_QUOTA = 4103;
 export const CODE_RATE_LIMIT = 4290;
 /** access token 过期 */
 const CODE_TOKEN_EXPIRED = 1002;
+
+/**
+ * 服务端任务状态：已暂停（`sys_upload_task.status = 2`）。
+ *
+ * 这只是服务端状态机的一格取值，不是本地 `UploadTaskStatus`——本地状态还包含
+ * `hashing`/`prechecking` 等纯前端阶段，两套状态词表刻意不合并（合并就得为每种
+ * 前端阶段编一个服务端数字）。此处只取续传对账需要的一格。
+ */
+export const TASK_STATUS_PAUSED = 2;
 
 /** 上传链路业务/网络错误（携带重试判定所需信息） */
 export class UploadApiError extends Error {
@@ -206,7 +218,8 @@ export async function precheck(
  * 查询服务端已收分片清单——**断点续传的唯一权威来源**。
  *
  * 本地 localStorage 里的 `received` 只是快照缓存，用于刷新后先行渲染进度；
- * 真正决定「哪些片要传」的永远是本接口返回值。
+ * 真正决定「哪些片要传」的永远是本接口返回值。返回值同时带上任务状态，
+ * 供续传时把「已暂停」追平（见 `ChunkUploadController#syncPartStatus`）。
  */
 export async function fetchPartStatus(uploadId: string): Promise<PartStatus> {
   const body = await callJson<Record<string, any>>(
@@ -233,6 +246,7 @@ export async function fetchPartStatus(uploadId: string): Promise<PartStatus> {
     received,
     chunkSize: Number(data.chunkSize) || undefined,
     chunkCount: Number(data.chunkCount) || undefined,
+    status: Number.isInteger(data.status) ? Number(data.status) : undefined,
   };
 }
 
@@ -276,6 +290,33 @@ export async function cancelUpload(uploadId: string): Promise<void> {
     });
   } catch {
     // 忽略：本地清理不依赖服务端回执
+  }
+}
+
+/**
+ * 上报暂停 / 恢复（部分更新任务状态）。
+ *
+ * **尽力而为，绝不抛错**，理由与取消同理但更强：暂停的即时止血发生在前端
+ * （`AbortSignal` 掐掉在途请求），而服务端这笔上报只是把「用户意图」登记下来——
+ * 让状态可读（换设备 / 清缓存后仍能看出是主动暂停）、免于被当作残留任务清理，
+ * 并且不会被在途分片回写成「传输中」。三件事没有一件是本地流程的前置条件，
+ * 所以网络抖动时宁可丢状态也不该打断用户的续传。
+ *
+ * 幂等：服务端对重复的同一动作直接回成功（`TransferTaskService#pause/#resume`），
+ * 因此重试、多端同时上报都不会报错。
+ */
+export async function changeTaskState(
+  uploadId: string,
+  action: 'pause' | 'resume',
+): Promise<void> {
+  try {
+    await request(UPLOAD_ENDPOINTS.task(uploadId), {
+      method: 'PATCH',
+      data: { action },
+      skipErrorHandler: true,
+    });
+  } catch {
+    // 忽略：上报失败只影响服务端状态显示，不影响续传（暂停态本就允许分片落库）
   }
 }
 

@@ -79,20 +79,23 @@ export const MessageType = {
  * 站内 / 会话消息（`NotifyMessageVO`）。
  *
  * <p>REST 列表元素与 WebSocket `NOTIFY`/`CHAT` 帧的 {@code data} 同构，前端只写一套解析逻辑。
+ *
+ * <p><b>ID 均为字符串</b>（19 位雪花 ID 超出 JS 安全整数范围，服务端统一以字符串下发）。
+ * {@link #id} 在乐观行（尚未收到服务端回执）时为 {@code ''}，排序时按「空串排在末尾」处理。</p>
  */
 export interface NotifyMessage {
-  id: number;
-  recipientUserId?: number | null;
-  senderUserId?: number | null;
+  id: string;
+  recipientUserId?: string | null;
+  senderUserId?: string | null;
   notifyType: number;
   messageType?: number | null;
   chatScope?: number | null;
-  chatTargetId?: number | null;
+  chatTargetId?: string | null;
   clientMsgId?: string | null;
   title?: string | null;
   content?: string | null;
   bizType?: string | null;
-  bizId?: number | null;
+  bizId?: string | null;
   readStatus?: number | null;
   readTime?: string | null;
   createTime?: string | null;

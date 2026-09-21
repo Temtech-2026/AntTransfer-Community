@@ -54,7 +54,7 @@ export function pageNotifications(params: { current?: number; pageSize?: number 
 }
 
 /** 单条已读（非本人消息后端返回 4040）。 */
-export function markNotificationRead(id: number) {
+export function markNotificationRead(id: string) {
   return requestData<boolean>(NOTIFY_ENDPOINTS.readOne(id), { method: 'POST' });
 }
 

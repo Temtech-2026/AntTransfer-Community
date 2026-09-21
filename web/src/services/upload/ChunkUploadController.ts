@@ -9,8 +9,10 @@
  *   localStorage 只负责「认出同一份文件」+ 复用已算好的 SHA-256；
  * - **进度单调不回退**：仅由「已上传字节 / 总字节」推进并取高水位（PRD US-01），
  *   哈希阶段不占用进度条，用文案表达；
- * - **暂停 = abort 在途请求 + 保留服务端已收分片**；
+ * - **暂停 = abort 在途请求 + 保留服务端已收分片 + 上报服务端登记意图**；
  *   **取消 = abort + 通知服务端清理 + 清本地记录**；
+ *   暂停上报是尽力而为的（失败只影响服务端状态显示），服务端也刻意不把「已暂停」当闸门——
+ *   分片写入与 abort 天然竞态，当闸门只会制造一批无意义的 4102；
  * - 重试用指数退避，只对可重试错误（网络 / 5xx / 429 / 超并发）生效；
  *   4003 完整性失败、4101 票据失效不重试。
  */
@@ -36,9 +38,11 @@ import type {
 import {
   CODE_UPLOAD_TASK_NOT_FOUND,
   cancelUpload,
+  changeTaskState,
   fetchPartStatus,
   mergeParts,
   precheck,
+  TASK_STATUS_PAUSED,
   UploadApiError,
   uploadPart,
 } from './uploadApi';
@@ -350,7 +354,12 @@ export class ChunkUploadController {
     return this.run(task);
   }
 
-  /** 暂停：中止在途请求，保留服务端已收分片（下次只传缺失片） */
+  /**
+   * 暂停：中止在途请求，保留服务端已收分片（下次只传缺失片），并上报服务端登记意图。
+   *
+   * 上报是**不 await 的**：暂停必须同步「立即止血」，网络往返不能挡在 `abort()` 后面；
+   * 上报失败也只是服务端状态显示不准，续传能力不受影响（服务端允许暂停态分片落库）。
+   */
   pause(id: string): void {
     const task = this.tasks.get(id);
     if (!task || isTerminalStatus(task.status)) {
@@ -359,6 +368,9 @@ export class ChunkUploadController {
     task.controller.abort();
     task.inflight.clear();
     task.status = 'paused';
+    if (task.uploadId) {
+      void changeTaskState(task.uploadId, 'pause');
+    }
     this.scheduleNotify();
   }
 
@@ -593,6 +605,13 @@ export class ChunkUploadController {
       task.received = new Set(status.received);
       task.doneBytes = receivedBytes(task.received, task.chunkSize, task.size);
       this.persist(task);
+      // 对账任务状态：能走到这里说明本地正在续传，而服务端若仍是「已暂停」，
+      // 只可能是上一次「恢复上报」丢了（暂停上报是尽力而为的）。此处补一次恢复，
+      // 让服务端状态自己追平，避免任务在库里永远停在「已暂停」。
+      // 信号已 abort 说明用户刚又点了暂停，此时不能反手把它恢复回来。
+      if (status.status === TASK_STATUS_PAUSED && !task.controller.signal.aborted) {
+        await changeTaskState(task.uploadId as string, 'resume');
+      }
       return 'ok';
     } catch (error) {
       if (

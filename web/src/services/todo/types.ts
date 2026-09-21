@@ -25,16 +25,16 @@ export const TodoBizType = {
 
 /** 待办条目（`TodoItemVO`）。 */
 export interface TodoItem {
-  /** 消息 ID，同时也是待办项 ID。 */
-  id: number;
+  /** 消息 ID，同时也是待办项 ID（19 位雪花 ID，字符串下发）。 */
+  id: string;
   /** 通知类型：1 待我审批 / 2 审批结果 / 8 传输完成。 */
   notifyType: number;
   title?: string | null;
   content?: string | null;
   /** 关联业务类型（APPLICATION / TRANSFER）。 */
   bizType?: string | null;
-  /** 关联业务 ID，据此跳转到申请单 / 传输详情。 */
-  bizId?: number | null;
+  /** 关联业务 ID，据此跳转到申请单 / 传输详情（字符串下发）。 */
+  bizId?: string | null;
   /** 是否未办（后端由 readStatus 判定，前端不反推）。 */
   pending: boolean;
   createTime?: string | null;

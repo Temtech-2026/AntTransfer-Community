@@ -16,7 +16,7 @@ export const NOTIFY_ENDPOINTS = {
   offline: '/api/v1/notifications/offline',
 
   /** 单条已读（非本人消息 → 4040）。 */
-  readOne: (id: number) => `/api/v1/notifications/${id}/read`,
+  readOne: (id: string) => `/api/v1/notifications/${id}/read`,
 
   /** 一键已读（清零系统通知红点与待办，不影响会话）。 */
   readAll: '/api/v1/notifications/read-all',

@@ -16,26 +16,26 @@ export const SYSTEM_ENDPOINTS = {
   /** 用户分页（system:user:list）。 */
   users: '/api/v1/system/users',
   /** 用户详情（system:user:list）。 */
-  userDetail: (id: number) => `/api/v1/system/users/${id}`,
+  userDetail: (id: string) => `/api/v1/system/users/${id}`,
   /** 调岗目标部门下拉：全部启用部门打平（system:user:list|create|update）。 */
   userDeptOptions: '/api/v1/system/users/dept-options',
   /** 可分配角色下拉（system:user:assign-role）。 */
   userRoleOptions: '/api/v1/system/users/role-options',
   /** 启停用户（system:user:update）。 */
-  userStatus: (id: number) => `/api/v1/system/users/${id}/status`,
+  userStatus: (id: string) => `/api/v1/system/users/${id}/status`,
   /** 重置口令（system:user:reset-password）。 */
-  userResetPassword: (id: number) => `/api/v1/system/users/${id}/reset-password`,
+  userResetPassword: (id: string) => `/api/v1/system/users/${id}/reset-password`,
   /** 分配角色（system:user:assign-role）。 */
-  userRoles: (id: number) => `/api/v1/system/users/${id}/roles`,
+  userRoles: (id: string) => `/api/v1/system/users/${id}/roles`,
 
   /** 角色分页（system:role:list）。 */
   roles: '/api/v1/roles',
   /** 角色下拉（system:role:list）。 */
   roleOptions: '/api/v1/roles/options',
   /** 角色详情（system:role:list）。 */
-  roleDetail: (id: number) => `/api/v1/roles/${id}`,
+  roleDetail: (id: string) => `/api/v1/roles/${id}`,
   /** 角色已授权限点 ID 列表（system:role:list）/ 授权（system:role:assign-perm）。 */
-  rolePermissions: (id: number) => `/api/v1/roles/${id}/permissions`,
+  rolePermissions: (id: string) => `/api/v1/roles/${id}/permissions`,
   /** 权限点树（持 system:role:list 或 system:role:assign-perm 任一）。 */
   permissionPoints: '/api/v1/permission-points',
 

@@ -211,6 +211,7 @@ export interface ApprovalRejectPayload {
 
 /** 「转审」入参（`ApplicationTransferDTO`）。 */
 export interface ApprovalTransferPayload {
-  targetApproverId: number;
+  /** 转审目标审批人用户 ID（19 位雪花 ID，字符串）。 */
+  targetApproverId: string;
   opinion?: string;
 }

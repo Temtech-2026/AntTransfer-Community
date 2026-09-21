@@ -219,3 +219,39 @@ export function isResult(body: unknown): body is Result {
     'data' in body
   );
 }
+
+/**
+ * 该错误是否已经由网络层统一提示过（`requestErrorConfig` 的 `errorHandler`）。
+ *
+ * <p>为什么页面 catch 需要问这个问题：`errorHandler` 会覆盖三类异常——
+ * `errorThrower` 抛出的业务错误（`name === 'BizError'`）、带统一响应体的 HTTP 错误
+ * （axios 错误，`isAxiosError`/`response`）、以及无响应体的网络异常——且**每一类都会弹一次提示**。
+ * 而 `errorHandler` 执行完 Umi 仍会 reject，页面 `catch` 同样会跑到，
+ * 于是「页面兜底 `message.error`」与「全局提示」叠加成<b>同一句话弹两遍</b>，
+ * 用户会误以为操作被提交了两次。</p>
+ *
+ * <p>用法：页面 catch 里写成
+ * `if (!isErrorHandledByRequestLayer(error)) message.error(兜底文案)`——
+ * 这样只兜住**不经 request 通道**的异常（组件自身的同步校验等），全局已提示的则保持静默。</p>
+ */
+export function isErrorHandledByRequestLayer(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+  const candidate = error as {
+    name?: string;
+    isAxiosError?: boolean;
+    response?: unknown;
+    request?: unknown;
+  };
+  // ① errorThrower 构造的业务错误
+  if (candidate.name === 'BizError') {
+    return true;
+  }
+  // ② axios 错误：带响应体（HTTP 4xx/5xx）或无响应体（网络中断 / 超时）
+  return (
+    candidate.isAxiosError === true ||
+    Boolean(candidate.response) ||
+    Boolean(candidate.request)
+  );
+}

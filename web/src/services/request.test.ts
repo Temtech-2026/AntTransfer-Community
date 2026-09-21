@@ -6,6 +6,8 @@ import {
   filenameFromDisposition,
   normalizePage,
   progressOf,
+  saveBlob,
+  startNativeDownload,
   toBizError,
   uploadBinary,
 } from './request';
@@ -259,5 +261,102 @@ describe('uploadBinary（进度 + 401 刷新重放）', () => {
       uploadBinary('/api/v1/files', null, {}, { createXhr, getToken: () => 't' }),
     ).rejects.toThrow('（HTTP 502）');
     expect(message.error).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('startNativeDownload（浏览器原生下载载体）', () => {
+  it('用隐藏 <a download> 点击取件地址，并清掉游离节点', () => {
+    // happy-dom 会真按 href 发一次导航，这里只关心「点的是谁、点的时候它在哪」
+    const clicks: Array<{ href: string | null; connected: boolean; download: string }> = [];
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        clicks.push({
+          href: this.getAttribute('href'),
+          connected: this.isConnected,
+          download: this.download,
+        });
+      });
+    const anchorsBefore = document.querySelectorAll('a').length;
+
+    try {
+      expect(startNativeDownload('/api/v1/files/1/content?ticket=t1', '季度报表.xlsx')).toBe(
+        true,
+      );
+
+      expect(clicks).toEqual([
+        {
+          href: '/api/v1/files/1/content?ticket=t1',
+          // 必须在文档里才点得动（未挂载的 <a> 点击不触发导航）
+          connected: true,
+          // 回归护栏：必须带 download。不带时浏览器只能把取件当「顶层导航」——当前文档
+          // 随之卸载，开发服务器的 HMR 客户端据此触发整页 reload 并取消这次取件，
+          // 火狐上必现（NS_BINDING_ABORTED），Chrome 只是抢先到达下载管理器
+          download: '季度报表.xlsx',
+        },
+      ]);
+      // 点完即移除，不把游离链接留在 body 里
+      expect(document.querySelectorAll('a')).toHaveLength(anchorsBefore);
+    } finally {
+      clickSpy.mockRestore();
+    }
+  });
+
+  it('未给兜底文件名时 download 属性依然存在（属性在不在才是下载 / 导航的分界）', () => {
+    const downloads: string[] = [];
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        // 取值用 getAttribute：属性缺失得到 null，空值得到 ''，两者语义不同
+        downloads.push(this.getAttribute('download') ?? 'MISSING');
+      });
+
+    try {
+      expect(startNativeDownload('/api/v1/files/1/content?ticket=t1')).toBe(true);
+      // 服务端仍会下发 filename*，这里空值只表示「文件名交给服务端」
+      expect(downloads).toEqual(['']);
+    } finally {
+      clickSpy.mockRestore();
+    }
+  });
+
+  it('非浏览器环境直接返回 false，不抛异常', () => {
+    // 服务端渲染 / 单测环境没有 document 时，调用方据此走降级分支
+    vi.stubGlobal('document', undefined);
+    try {
+      expect(startNativeDownload('/api/v1/files/1/content?ticket=t1')).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('saveBlob（Blob 落盘的释放时机）', () => {
+  it('点击后延迟撤销 objectURL，不在同一个任务里释放', () => {
+    vi.useFakeTimers();
+    const revoked: string[] = [];
+    const original = {
+      create: URL.createObjectURL,
+      revoke: URL.revokeObjectURL,
+    };
+    URL.createObjectURL = () => 'blob:fake';
+    URL.revokeObjectURL = (url: string) => {
+      revoked.push(url);
+    };
+
+    try {
+      expect(saveBlob(new Blob(['x']), 'a.csv')).toBe(true);
+      // 回归护栏：火狐对 blob 下载是异步接管的，同步撤销会让它在读到数据前就失效
+      // （表现为下载中断或文件名丢失，且只在火狐上暴露）
+      expect(revoked).toEqual([]);
+
+      vi.runAllTimers();
+      // 仍然要释放，否则每导出一次就泄漏一份 objectURL
+      expect(revoked).toEqual(['blob:fake']);
+    } finally {
+      URL.createObjectURL = original.create;
+      URL.revokeObjectURL = original.revoke;
+      vi.useRealTimers();
+    }
   });
 });

@@ -34,6 +34,14 @@ export interface PartStatus {
   chunkSize?: number;
   /** 服务端侧分片总数（可选，便于校验前端切片是否与后端一致） */
   chunkCount?: number;
+  /**
+   * 服务端任务状态（`sys_upload_task.status`，仅续传对账用）。
+   *
+   * 与本地 `UploadTaskStatus` 不是同一套词表：本地状态含 `hashing`/`prechecking`
+   * 等纯前端阶段，服务端只有 `0 排队 / 1 传输中 / 2 已暂停 / 3 完成 …`。
+   * 续传时若服务端仍是 `2`，说明「暂停」已在服务端落地而本地已在续传，需要上报恢复追平。
+   */
+  status?: number;
 }
 
 /** 分片上传结果 */

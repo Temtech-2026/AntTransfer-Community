@@ -63,7 +63,8 @@ export interface WsFrame<T = unknown> {
 
 /** `CONNECTED` 帧载荷。 */
 export interface WsConnectedPayload {
-  userId: number;
+  /** 当前连接用户主键（19 位雪花 ID，服务端以字符串下发）。 */
+  userId: string;
   /** 未读快照；后端在查询失败等场景可能给 null，此时保留本地值。 */
   unread?: UnreadCount | null;
 }

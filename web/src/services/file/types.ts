@@ -55,21 +55,41 @@ export function levelApplyHintId(level?: number | null): string {
 
 /* ============================ 文件条目 ============================ */
 
-/** 标签（服务端保证空数组而非 null）。 */
+/**
+ * 雪花 ID 的字符串形态。
+ *
+ * <p>用于在函数签名上表达「这里要的是 ID」，而不是任意字符串——提醒调用方
+ * 不要把 ID 转成 `number`（见 {@link TagVO} 的 ID 语境说明）。</p>
+ */
+export type SnowflakeId = string;
+
+/**
+ * 标签（服务端保证空数组而非 null）。
+ *
+ * <p><b>ID 语境统一说明</b>：文件域的所有 ID（条目 / 目录 / 标签 / 版本 / 分享 / 审批单）
+ * 都是 19 位雪花 ID，服务端已按「ID 以字符串过线」下发（对齐
+ * `PrecheckResultVO` / `MergeResultVO` 的口径）。JS 的 number 只有 53 位整数精度，
+ * 19 位 ID 一旦被 `JSON.parse` 成 number，末位会被静默取整；再拿它去拼
+ * `/v1/files/{nodeId}/preview`、`/ticket` 之类的路径，服务端就查不到资源
+ * ——典型症状正是「列表能看到文件，预览 / 下载却失败」。
+ *
+ * <p>因此这些字段一律用 `string` 承接，<b>禁止 `Number()` / `parseInt()` 归一</b>；
+ * 需要「未传」语义时用 {@link toOptionalId}。</p>
+ */
 export interface TagVO {
-  id: number;
+  id: string;
   name: string;
   color?: string | null;
 }
 
 /** 文件条目（列表 / 回收站 / 详情共用）。 */
 export interface FileNode {
-  /** 条目 ID，用户侧的「文件 ID」即此值 */
-  id: number;
+  /** 条目 ID，用户侧的「文件 ID」即此值（雪花 ID，以字符串承接，见 {@link TagVO}） */
+  id: string;
   /** 物理文件 ID（秒传 / 去重排查用） */
-  fileId?: number | null;
+  fileId?: string | null;
   /** 所在目录 ID（0 = 根） */
-  folderId?: number | null;
+  folderId?: string | null;
   name: string;
   /** 扩展名（小写无点） */
   ext?: string | null;
@@ -81,7 +101,7 @@ export interface FileNode {
   /** 状态：0-正常 1-回收站 */
   status?: number | null;
   recycleTime?: string | null;
-  uploadUserId?: number | null;
+  uploadUserId?: string | null;
   createTime?: string | null;
   updateTime?: string | null;
   tags?: TagVO[];
@@ -219,9 +239,9 @@ export function recycleElapsedDays(
 
 /** 目录节点（`/v1/folders/tree` 返回顶层数组，children 递归嵌套）。 */
 export interface FolderNode {
-  id: number;
+  id: string;
   /** 0 = 根 */
-  parentId?: number | null;
+  parentId?: string | null;
   name: string;
   children?: FolderNode[] | null;
 }
@@ -239,14 +259,14 @@ export interface FileNodeQuery {
   pageSize?: number;
   /** 排序表达式 `field,asc|desc` */
   sort?: string;
-  folderId?: number;
-  tagId?: number;
-  tagIds?: number[];
+  folderId?: string;
+  tagId?: string;
+  tagIds?: string[];
   keyword?: string;
   /** 单个扩展名（小写无点）；服务端不支持多扩展名集合 */
   ext?: string;
   level?: number;
-  uploadUserId?: number;
+  uploadUserId?: string;
   minSize?: number;
   maxSize?: number;
   startTime?: string;
@@ -270,8 +290,10 @@ export interface FileTableParams {
    * <p>它**不是**查询表单字段，只是挂在 `ProTable.params` 上用来触发「目录切换 → 重新请求」
    * （ProTable 仅在 params 变化时重发）。真正的查询参数由页面通过 `buildFileQuery` 的
    * `ctx.folderId` 注入，这里声明只是为了让 `params={{ folderId }}` 通过类型检查。
+   *
+   * <p>雪花 ID，以字符串承接（见 {@link TagVO}）——它只用于触发重发，不会进入查询串。</p>
    */
-  folderId?: number;
+  folderId?: string;
   /**
    * 是否为回收站视角。
    *
@@ -294,11 +316,26 @@ export function toOptionalNumber(value?: number | string | null): number | undef
   return undefined;
 }
 
+/**
+ * 宽松 ID 归一：空串 / 非纯数字一律视为「未传」。
+ *
+ * <p><b>刻意不做 `Number()` 转换</b>：19 位雪花 ID 超出 JS 安全整数范围，转成 number
+ * 会丢末位（详见 {@link TagVO} 的 ID 语境说明），因此这里只校验格式、原样保留字符串。</p>
+ */
+export function toOptionalId(value?: string | number | null): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  const raw = typeof value === 'number' ? (Number.isFinite(value) ? String(value) : '') : value.trim();
+  return /^\d+$/.test(raw) ? raw : undefined;
+}
+
 /** ProTable 排序状态（`request` 的第二个入参）。 */
 export type TableSorter = Record<string, 'ascend' | 'descend' | null | undefined>;
 
 export interface FileQueryContext {
-  folderId?: number;
+  /** 当前目录 ID（雪花 ID，字符串，见 {@link TagVO}） */
+  folderId?: string;
   sorter?: TableSorter;
 }
 
@@ -331,8 +368,9 @@ export function buildFileQuery(
     current: toOptionalNumber(params.current) ?? 1,
     pageSize: toOptionalNumber(params.pageSize) ?? 20,
   };
-  // 与 level 同一口径归一：NaN / 非数字一律视为「未传」，避免下发脏的 folderId=NaN
-  const folderId = toOptionalNumber(ctx.folderId);
+  // 与 level 同一口径归一，但**不做 Number() 转换**：folderId 是 19 位雪花 ID，
+  // 转 number 会丢末位，表现为「进入目录后列表空白」（详见 TagVO 的 ID 语境说明）。
+  const folderId = toOptionalId(ctx.folderId);
   if (folderId !== undefined) {
     query.folderId = folderId;
   }
@@ -396,7 +434,8 @@ export type PreviewStrategy = 'text' | 'pdf' | 'image' | 'download-only' | 'none
 
 /** 预览元信息。 */
 export interface PreviewInfo {
-  nodeId: number;
+  /** 条目 ID（雪花 ID，字符串，见 {@link TagVO}）；预览路径须与之一致 */
+  nodeId: string;
   name: string;
   ext?: string | null;
   contentType?: string | null;
@@ -428,19 +467,75 @@ export interface PreviewInfo {
  */
 export interface DownloadTicket {
   ticket: string;
-  /** 绑定的文件条目 ID：取件路径须与之一致，否则 `4018` */
-  nodeId: number;
+  /** 绑定的文件条目 ID（雪花 ID，字符串，见 {@link TagVO}）：取件路径须与之一致，否则 `4018` */
+  nodeId: string;
   /** 票据有效期（秒，默认 300）；**在该窗口内可重复取件** */
   expiresInSeconds: number;
   /** 取件地址（相对路径，前端补 host）；支持 `Range` 续传（`206` / `416`） */
   downloadUrl: string;
 }
 
+/* ========================== 外发分享：访客侧 ========================== */
+
+/** 访客换票请求（`POST /v1/shares/{token}/verify`）。 */
+export interface VerifySharePayload {
+  /** 明文提取码（服务端 BCrypt 比对，只进不出） */
+  extractCode: string;
+  /** 访问类型：download=下载 / preview=在线预览（省略则按 download） */
+  accessType?: 'download' | 'preview';
+}
+
+/**
+ * 访客换票结果（`POST /v1/shares/{token}/verify`）。
+ *
+ * <p>`ticket` 是<b>一次性</b>票据：核销时服务端 `GETDEL` 取用即焚，重放只会拿到 `4004`。
+ * 前端唯一正确用法是「拿到就立刻核销」，不要缓存、不要复用。</p>
+ */
+export interface ShareAccessTicket {
+  /** 一次性票据（高熵随机） */
+  ticket: string;
+  /** 票据对应的分享令牌 */
+  shareToken?: string | null;
+  /** 访问类型：download / preview */
+  accessType?: string | null;
+  /** 票据到期时间 */
+  expireAt?: string | null;
+  /** 票据剩余有效秒数 */
+  ttlSeconds?: number | null;
+  /** 换票时快照的剩余次数（核销时才是真实扣减点，并发下以核销结果为准） */
+  remainingCount?: number | null;
+}
+
+/**
+ * 访客核销结果（`POST /v1/shares/redeem`）：文件元信息 + 取件票。
+ *
+ * <p>`contentTicket` 与换票阶段的一次性票据是<b>两张票</b>：前者只用于把这一次取件读完
+ * （可重复读，撑 `Range` 断点续传与浏览器重试），后者负责「谁有权取件」（一次即焚）。
+ * 两者任一缺失都会让下载退化成 401/4004，故字段可空仅用于兼容旧后端。</p>
+ */
+export interface SharePayload {
+  /** 分享链接 ID（雪花 ID，字符串） */
+  shareId?: string | null;
+  /** 物理文件 ID（雪花 ID，字符串） */
+  fileId?: string | null;
+  fileName?: string | null;
+  sizeBytes?: number | null;
+  sha256?: string | null;
+  contentType?: string | null;
+  /** 本次访问类型：download / preview */
+  accessType?: string | null;
+  /** 取件票：拼 `content` 地址用 */
+  contentTicket?: string | null;
+  /** 取件票剩余有效期（秒） */
+  expiresInSeconds?: number | null;
+}
+
 /* ============================ 外发分享 ============================ */
 
 /** 创建外发分享的请求体（提取码只进不出，任何接口都不回显）。 */
 export interface CreateSharePayload {
-  fileId: number;
+  /** 物理文件 ID（雪花 ID，字符串，见 {@link TagVO}） */
+  fileId: string;
   /** 明文提取码，服务端立即 BCrypt 散列入库 */
   extractCode: string;
   /** 下载次数上限；省略取默认 10，超出硬上限以 2005 拒绝 */
@@ -453,7 +548,8 @@ export interface CreateSharePayload {
 export interface ShareLink {
   /** 拼装分享 URL 用 */
   token: string;
-  fileId?: number | null;
+  /** 物理文件 ID（雪花 ID，字符串，见 {@link TagVO}） */
+  fileId?: string | null;
   fileName?: string | null;
   expireAt?: string | null;
   downloadLimit?: number | null;
@@ -550,31 +646,66 @@ export function buildShareUrl(token: string, origin?: string): string {
   return `${base}/share/${encodeURIComponent(token)}`;
 }
 
-/** 文案翻译器：由展示层注入 `intl.formatMessage` 的等价物，服务层因此不必依赖任何 i18n 库。 */
-export type MessageTranslator = (
-  id: string,
-  values?: Record<string, unknown>,
-) => string;
+/**
+ * 分享链接里承载提取码的 fragment 键名。
+ *
+ * <p><b>写（创建者复制）与读（访客取件页预填）共用这一个常量。</b>两侧各写一遍字符串的话，
+ * 一旦拼写漂移，症状会是「复制出去的链接看着正常、取件页却永远不预填」——不报错、不崩溃，
+ * 只能靠人肉比对两处代码才能发现。</p>
+ */
+export const SHARE_CODE_FRAGMENT_KEY = 'code';
 
 /**
- * 分享卡片的复制文案：链接与提取码必须一起给出（提取码不回显，只能由前端拼）。
+ * 带提取码的分享链接，也就是「复制链接和提取码」真正写进剪贴板的那串文本。
  *
- * @param t 翻译器（展示层传 `(id, values) => intl.formatMessage({ id }, values)`）
+ * <p><b>为什么必须是「单行链接」，而不是「链接 + 提取码」的多行文本：</b>
+ * 用户拿到复制内容后的动作是「粘贴进浏览器地址栏并回车」。地址栏对多行文本的既定处理是
+ * <b>当成搜索词交给默认搜索引擎</b>——于是页面跳去百度（或任何默认搜索站），而不是取件页。
+ * 这不是某个浏览器的怪癖，而是「多行 = 不是 URL」的通用口径：只有整段文本本身就是一条
+ * 合法 URL，粘贴后才会直接导航。</p>
+ *
+ * <p><b>为什么提取码放 fragment（`#`）而不是 query（`?`）：</b>fragment 只留在浏览器本地，
+ * <b>不会进入请求行</b>，因此不会落进 Nginx / 网关的访问日志与 `Referer`。
+ * 外发分享的安全模型是「链接与提取码分两个渠道送达」；把提取码塞进 query，
+ * 等于让服务端日志同时拿到两个因子，把双因子降级成单因子。</p>
+ *
+ * <p>代价是链接里能直接看到提取码（地址栏可见）。这是「点开即自动预填」的必然代价：
+ * 用户要的就是一次粘贴直达，而不是打开页面后再手输一遍 6~32 位码。</p>
+ *
+ * @param url 由 {@link buildShareUrl} 生成的分享链接
+ * @param extractCode 本次创建的明文提取码（服务端不回显，只能由前端拼）
  */
-export function buildShareCopyText(
-  t: MessageTranslator,
+export function buildShareLinkWithCode(
   url: string,
   extractCode?: string,
-  expireAt?: string,
 ): string {
-  const lines = [t('file.shareCopy.url', { url })];
-  if (extractCode) {
-    lines.push(t('file.shareCopy.code', { code: extractCode }));
+  const code = extractCode?.trim();
+  return code
+    ? `${url}#${SHARE_CODE_FRAGMENT_KEY}=${encodeURIComponent(code)}`
+    : url;
+}
+
+/**
+ * 从地址栏 fragment 读回提取码：{@link buildShareLinkWithCode} 的逆运算，供取件页预填。
+ *
+ * <p>只接受<b>形状合法</b>的提取码（长度与字符集见 {@link isValidExtractCode}），
+ * 碎片里的其它内容一律当作「没带」，让访客自己输入。否则一段被聊天工具截断或改写的链接，
+ * 会把乱七八糟的字符串预填进输入框——访客点「提取文件」后收到「提取码错误」，
+ * 却完全看不出问题其实出在链接上。</p>
+ *
+ * @param hash 形如 `#code=ABC123` 的 fragment（带不带前导 `#` 都可以）
+ * @returns 合法提取码；没带 / 形状不合法时返回 `undefined`
+ */
+export function readShareCodeFromHash(
+  hash?: string | null,
+): string | undefined {
+  if (!hash) {
+    return undefined;
   }
-  if (expireAt) {
-    lines.push(t('file.shareCopy.expireAt', { time: expireAt }));
-  }
-  return lines.join('\n');
+  const code = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash)
+    .get(SHARE_CODE_FRAGMENT_KEY)
+    ?.trim();
+  return code && isValidExtractCode(code) ? code : undefined;
 }
 
 /* ============================ 权限申请 ============================ */
@@ -616,7 +747,8 @@ export type ResourceType = 'FILE' | 'SPACE' | 'GROUP';
 export interface PermissionApplicationPayload {
   applyType: ApplyType;
   resourceType: ResourceType;
-  resourceId: number;
+  /** 资源 ID（本页即条目 ID，雪花 ID 以字符串提交，见 {@link TagVO}） */
+  resourceId: string;
   /** 资源密级快照，供审批链路判定层级 */
   level?: number;
   /** 使用目的（必填） */
@@ -627,18 +759,19 @@ export interface PermissionApplicationPayload {
 
 /** 审批单视图对象（待我审批 / 我发起 列表与详情共用）。 */
 export interface ApprovalRequest {
-  id: number;
+  /** 申请单主键：19 位雪花 ID，服务端以字符串下发。 */
+  id: string;
   /** 申请单号，展示给用户便于线下催办 */
   applicationNo?: string | null;
-  applicantId?: number | null;
+  applicantId?: string | null;
   applyType?: string | null;
   resourceType?: string | null;
-  resourceId?: number | null;
+  resourceId?: string | null;
   level?: number | null;
   purpose?: string | null;
   desiredExpireAt?: string | null;
   status?: number | null;
-  approverId?: number | null;
+  approverId?: string | null;
   opinion?: string | null;
   decidedAt?: string | null;
   createdAt?: string | null;

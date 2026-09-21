@@ -9,9 +9,9 @@ import {
 } from './menu';
 import { MenuNodeType, type MenuDataNode, type MenuNode } from './types';
 
-function node(over: Partial<MenuNode> & { id: number }): MenuNode {
+function node(over: Partial<MenuNode> & { id: string }): MenuNode {
   return {
-    parentId: 0,
+    parentId: '0',
     permCode: `p${over.id}`,
     permName: `名称${over.id}`,
     type: MenuNodeType.MENU,
@@ -22,44 +22,44 @@ function node(over: Partial<MenuNode> & { id: number }): MenuNode {
 
 describe('isRenderableMenu', () => {
   it('仅菜单维度 / 未隐藏 / 有路由路径才算可渲染', () => {
-    expect(isRenderableMenu(node({ id: 1 }))).toBe(true);
-    expect(isRenderableMenu(node({ id: 1, type: MenuNodeType.ACTION }))).toBe(false);
-    expect(isRenderableMenu(node({ id: 1, visible: 0 }))).toBe(false);
-    expect(isRenderableMenu(node({ id: 1, routePath: null }))).toBe(false);
+    expect(isRenderableMenu(node({ id: '1' }))).toBe(true);
+    expect(isRenderableMenu(node({ id: '1', type: MenuNodeType.ACTION }))).toBe(false);
+    expect(isRenderableMenu(node({ id: '1', visible: 0 }))).toBe(false);
+    expect(isRenderableMenu(node({ id: '1', routePath: null }))).toBe(false);
     // 未回填 visible 视为显示
-    expect(isRenderableMenu(node({ id: 1, visible: null }))).toBe(true);
+    expect(isRenderableMenu(node({ id: '1', visible: null }))).toBe(true);
   });
 });
 
 describe('buildMenuTree', () => {
   it('扁平列表按 parentId 组装并按 sortNo 排序', () => {
     const tree = buildMenuTree([
-      node({ id: 2, parentId: 1, sortNo: 2 }),
-      node({ id: 1, parentId: 0, routePath: null, sortNo: 1 }),
-      node({ id: 3, parentId: 1, sortNo: 1 }),
+      node({ id: '2', parentId: '1', sortNo: 2 }),
+      node({ id: '1', parentId: '0', routePath: null, sortNo: 1 }),
+      node({ id: '3', parentId: '1', sortNo: 1 }),
     ]);
 
     expect(tree).toHaveLength(1);
-    expect(tree[0].id).toBe(1);
+    expect(tree[0].id).toBe('1');
     // 容器自身无 routePath → 取第一个后代路径，保证可点击
     expect(tree[0].routePath).toBe('/p3');
-    expect(tree[0].children?.map((child) => child.id)).toEqual([3, 2]);
+    expect(tree[0].children?.map((child) => child.id)).toEqual(['3', '2']);
   });
 
   it('剪掉隐藏节点与操作点', () => {
     const tree = buildMenuTree([
-      node({ id: 1 }),
-      node({ id: 2, visible: 0 }),
-      node({ id: 3, type: MenuNodeType.ACTION }),
+      node({ id: '1' }),
+      node({ id: '2', visible: 0 }),
+      node({ id: '3', type: MenuNodeType.ACTION }),
     ]);
 
-    expect(tree.map((item) => item.id)).toEqual([1]);
+    expect(tree.map((item) => item.id)).toEqual(['1']);
   });
 
   it('子项全被剪掉的空容器一并丢弃', () => {
     const tree = buildMenuTree([
-      node({ id: 1, routePath: null }),
-      node({ id: 2, parentId: 1, visible: 0 }),
+      node({ id: '1', routePath: null }),
+      node({ id: '2', parentId: '1', visible: 0 }),
     ]);
 
     expect(tree).toEqual([]);
@@ -67,11 +67,11 @@ describe('buildMenuTree', () => {
 
   it('已组装好的树也能吃（collect 去重）', () => {
     const tree = buildMenuTree([
-      node({ id: 1, routePath: null, children: [node({ id: 2, parentId: 1 })] }),
+      node({ id: '1', routePath: null, children: [node({ id: '2', parentId: '1' })] }),
     ]);
 
     expect(tree).toHaveLength(1);
-    expect(tree[0].children?.[0].id).toBe(2);
+    expect(tree[0].children?.[0].id).toBe('2');
   });
 
   it('空输入返回空数组', () => {
@@ -83,7 +83,7 @@ describe('buildMenuTree', () => {
 describe('toMenuData', () => {
   it('名称取 permName，图标只给键，perm 用于过滤', () => {
     const data = toMenuData([
-      node({ id: 1, permCode: 'file', permName: '文件', icon: 'folder', routePath: '/file' }),
+      node({ id: '1', permCode: 'file', permName: '文件', icon: 'folder', routePath: '/file' }),
     ]);
 
     expect(data).toEqual([
@@ -92,7 +92,7 @@ describe('toMenuData', () => {
   });
 
   it('permName 缺失时回退 permCode', () => {
-    const data = toMenuData([node({ id: 1, permCode: 'file', permName: '' })]);
+    const data = toMenuData([node({ id: '1', permCode: 'file', permName: '' })]);
 
     expect(data[0].name).toBe('file');
   });

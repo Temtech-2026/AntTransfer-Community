@@ -40,8 +40,10 @@ export async function fetchConversations(
  */
 export function fetchChatHistory(params: {
   scope: number;
-  targetId: number;
-  beforeId?: number;
+  /** 会话目标 ID（19 位雪花 ID，字符串）；禁止 `Number()` 归一，否则会取错人。 */
+  targetId: string;
+  /** 游标：只取 id 小于它的消息（同样为字符串 ID）。 */
+  beforeId?: string;
   limit?: number;
 }): Promise<NotifyMessage[]> {
   return requestData<NotifyMessage[]>(CHAT_ENDPOINTS.history, {
@@ -73,7 +75,7 @@ export function sendChatMessage(
 }
 
 /** 会话已读（返回本次置读条数；0 表示本来就没有未读）。 */
-export function markChatRead(scope: number, targetId: number): Promise<number> {
+export function markChatRead(scope: number, targetId: string): Promise<number> {
   return requestData<number>(CHAT_ENDPOINTS.read, {
     method: 'POST',
     params: { scope, targetId },

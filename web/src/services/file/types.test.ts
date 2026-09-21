@@ -5,12 +5,13 @@ import { testFormatMessage } from '@/locales/testTranslate';
 import {
   SHARE_LIMITS,
   buildFileQuery,
-  buildShareCopyText,
+  buildShareLinkWithCode,
   buildShareUrl,
   isValidExtractCode,
   levelColor,
   levelTextId,
   randomExtractCode,
+  readShareCodeFromHash,
   shareStatusId,
   sortExprOf,
   toOptionalNumber,
@@ -94,15 +95,25 @@ describe('buildFileQuery（查询体组装）', () => {
   it('folderId 与 sort 来自上下文而非表单字段', () => {
     const query = buildFileQuery(
       { ext: 'pdf' },
-      { folderId: 12, sorter: { updateTime: 'descend' } },
+      { folderId: '12', sorter: { updateTime: 'descend' } },
     );
-    expect(query.folderId).toBe(12);
+    expect(query.folderId).toBe('12');
     expect(query.sort).toBe('updateTime,desc');
     expect(query.ext).toBe('pdf');
   });
 
-  it('folderId 非数字（含 0 之外的非法值）不下发', () => {
-    expect(buildFileQuery({}, { folderId: Number.NaN })).not.toHaveProperty('folderId');
+  it('folderId 是雪花 ID 时原样下发，不得被 Number() 归一', () => {
+    // 19 位雪花 ID 超出 JS 安全整数：一旦走 Number() 再转回字符串，末位会失真，
+    // 服务端按失真的 folderId 过滤就会返回空列表（「进入目录后列表空白」）。
+    const snowflake = '1943123456789012345';
+    const query = buildFileQuery({}, { folderId: snowflake });
+    expect(query.folderId).toBe(snowflake);
+    expect(query.folderId).not.toBe(String(Number(snowflake)));
+  });
+
+  it('folderId 非纯数字（含空串）不下发', () => {
+    expect(buildFileQuery({}, { folderId: 'abc' })).not.toHaveProperty('folderId');
+    expect(buildFileQuery({}, { folderId: '' })).not.toHaveProperty('folderId');
     expect(buildFileQuery({}, {})).not.toHaveProperty('folderId');
   });
 
@@ -174,19 +185,43 @@ describe('分享链接与复制文案', () => {
     );
   });
 
-  it('复制文案必须同时给出链接与提取码', () => {
-    const text = buildShareCopyText(
-      t,
-      'https://x/share/t',
-      'ABC123',
-      '2026-09-21 00:00:00',
-    );
-    expect(text).toContain('链接：https://x/share/t');
-    expect(text).toContain('提取码：ABC123');
-    expect(text).toContain('有效期至：2026-09-21 00:00:00');
+  it('提取码拼进 fragment，复制文案仍是单行', () => {
+    const text = buildShareLinkWithCode('https://x/share/t', 'ABC123');
+    expect(text).toBe('https://x/share/t#code=ABC123');
+    // 回归护栏：复制内容一旦出现换行，粘进地址栏就会被当成搜索词交给搜索引擎，
+    // 用户看到的是百度而不是取件页（这正是本次要修的症状）
+    expect(text).not.toMatch(/[\r\n]/);
   });
 
-  it('未传提取码 / 有效期时不产生空行', () => {
-    expect(buildShareCopyText(t, 'https://x/share/t')).toBe('链接：https://x/share/t');
+  it('没带提取码（或只有空白）时不留下空 fragment', () => {
+    expect(buildShareLinkWithCode('https://x/share/t')).toBe('https://x/share/t');
+    expect(buildShareLinkWithCode('https://x/share/t', '   ')).toBe(
+      'https://x/share/t',
+    );
+  });
+
+  it('提取码做 URL 编码，不越出 fragment 的取值边界', () => {
+    // 当前字符集只有字母数字，编码是为将来放宽字符集时拼接不被破坏
+    expect(buildShareLinkWithCode('https://x/share/t', 'A B')).toBe(
+      'https://x/share/t#code=A%20B',
+    );
+  });
+
+  it('读回提取码：与写入口径对称', () => {
+    const link = buildShareLinkWithCode('https://x/share/t', 'ABC123');
+    expect(readShareCodeFromHash(new URL(link).hash)).toBe('ABC123');
+    expect(readShareCodeFromHash('#code=ABC123')).toBe('ABC123');
+    expect(readShareCodeFromHash('code=ABC123')).toBe('ABC123');
+    expect(readShareCodeFromHash('#code=ABC123&from=mail')).toBe('ABC123');
+  });
+
+  it('读回提取码：形状不合法一律忽略，交给访客手输', () => {
+    expect(readShareCodeFromHash('#code=ABC12')).toBeUndefined();
+    expect(readShareCodeFromHash('#code=ABC-123')).toBeUndefined();
+    expect(readShareCodeFromHash('#other=ABC123')).toBeUndefined();
+    expect(readShareCodeFromHash('#')).toBeUndefined();
+    expect(readShareCodeFromHash('')).toBeUndefined();
+    expect(readShareCodeFromHash(undefined)).toBeUndefined();
+    expect(readShareCodeFromHash(null)).toBeUndefined();
   });
 });
