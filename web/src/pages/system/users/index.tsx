@@ -35,6 +35,7 @@ import {
   type RoleVO,
   type UserVO,
 } from '@/services/system';
+import { formatDisplayDateTime } from '@/utils/datetime';
 import { asNumberParam, asStringParam } from '@/utils/query';
 
 import AssignRoleDrawer from './components/AssignRoleDrawer';
@@ -259,9 +260,15 @@ const UsersPage = () => {
       title: intl.formatMessage({ id: 'system.user.column.lastLogin' }),
       dataIndex: 'lastLoginTime',
       search: false,
-      valueType: 'dateTime',
       width: 180,
-      render: (_, row) => row.lastLoginTime || '--',
+      /*
+        刻意**不写** `valueType: 'dateTime'`：自定义 render 会覆盖它的读取态格式化，
+        两者并存只会让人以为格式化在生效（本列原来就因此直出带 `T` 的 ISO 串）。
+        而这里必须自己渲染，是因为「从未登录」要给 `--` 占位——这是本页缺失业务值的
+        统一写法（见 nickname / deptName / roleCodes），ProTable 的兜底只有 `-`，拿不到。
+      */
+      render: (_, row) =>
+        row.lastLoginTime ? formatDisplayDateTime(row.lastLoginTime) : '--',
     },
     {
       title: intl.formatMessage({ id: 'system.column.createTime' }),
@@ -458,6 +465,10 @@ const UsersPage = () => {
         onClose={closeForm}
         onSuccess={() => {
           closeForm();
+          reload();
+        }}
+        onAvatarUpdated={() => {
+          // 头像上传即生效且不关弹窗，这里只让列表跟上（下次打开「编辑」拿到新行）
           reload();
         }}
       />

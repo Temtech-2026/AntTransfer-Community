@@ -59,6 +59,14 @@ export default {
   'system.user.message.enabled': 'Enabled {name}',
   'system.user.message.deleted': 'Deleted {name}',
 
+  // Avatar (dedicated channel: takes effect on upload, not part of the form save)
+  'system.user.avatar.label': 'Avatar',
+  'system.user.avatar.upload': 'Upload avatar',
+  'system.user.avatar.hint': 'PNG / JPEG / GIF / WebP, up to {max}',
+  'system.user.avatar.updated': 'Avatar updated',
+  'system.user.avatar.tooLarge': 'Image must not exceed {max}',
+  'system.user.avatar.typeInvalid': 'Only PNG / JPEG / GIF / WebP images are supported',
+
   // User create / edit modal
   'system.userForm.title.edit': 'Edit user · {name}',
   'system.userForm.title.create': 'New user',

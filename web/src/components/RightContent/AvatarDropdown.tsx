@@ -20,7 +20,7 @@
 import { KeyOutlined, LogoutOutlined, UserOutlined } from '@ant-design/icons';
 import { history, useIntl, useModel } from '@umijs/max';
 import type { MenuProps } from 'antd';
-import { Alert, App, Descriptions, Form, Input, Modal, Spin, Tag } from 'antd';
+import { Alert, App, Avatar, Descriptions, Form, Input, Modal, Spin, Tag } from 'antd';
 import React, { startTransition, useMemo, useState } from 'react';
 
 import { DENY_ALL_PERMISSION } from '@/services/access';
@@ -224,6 +224,14 @@ export const AvatarDropdown: React.FC<GlobalHeaderRightProps> = ({ children }) =
         footer={null}
       >
         <Spin spinning={profileLoading}>
+          {/*
+            头像只读展示：`profile` 是打开弹窗时现拉的 `/auth/me`，因此这里永远是最新值。
+            换头像的入口只在用户管理页（需 system:user:update），本弹窗不提供上传，
+            避免「人人都能改自己头像」这条产品边界被悄悄放宽。
+          */}
+          <div style={{ textAlign: 'center', marginBottom: 16 }}>
+            <Avatar size={72} src={profile?.avatarUrl} icon={<UserOutlined />} />
+          </div>
           <Descriptions column={1} size="small" bordered>
             <Descriptions.Item label={intl.formatMessage({ id: 'component.avatar.account' })}>
               {profile?.username ?? '-'}

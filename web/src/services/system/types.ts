@@ -32,6 +32,38 @@ export const UserStatus = {
 /** 可由 {@code PATCH /status} 写入的状态子集（后端校验 {@code @Min(0) @Max(1)}，锁定态不可人工写入）。 */
 export type WritableUserStatus = 0 | 1;
 
+/** 头像字节上限，与后端 {@code AvatarStoragePort.MAX_AVATAR_BYTES} 对齐（2 MiB）。 */
+export const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
+
+/**
+ * 头像允许的 MIME 集合，与后端 {@code ImageTypes} 的魔数白名单同集合
+ * （png / jpeg / gif / webp；不含 svg 与 bmp）。
+ */
+export const AVATAR_ACCEPT_MIME: readonly string[] = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+
+/** {@code <input accept>} 用值：由 {@link AVATAR_ACCEPT_MIME} 派生，避免两处各写一遍后分叉。 */
+export const AVATAR_ACCEPT_ATTR = AVATAR_ACCEPT_MIME.join(',');
+
+/**
+ * 头像上传前置检查（<b>只为省一次无效往返，不是安全边界</b>）。
+ *
+ * <p>真正的类型判定在服务端：它按文件头魔数识别，客户端的 MIME 与扩展名都只是提示。
+ * 因此这里刻意留了一条宽松出口——<b>浏览器没给出类型时不拦截</b>
+ * （部分桌面环境的文件选择器会给出空 {@code type}），让服务端去下结论，
+ * 否则会出现「服务端明明支持，前端却直接拒了」的怪现象。</p>
+ *
+ * @returns {@code null} 表示通过；否则为提示文案的 i18n id
+ */
+export function checkAvatarFile(file: { type?: string; size: number }): string | null {
+  if (file.size > AVATAR_MAX_BYTES) {
+    return 'system.user.avatar.tooLarge';
+  }
+  if (file.type && !AVATAR_ACCEPT_MIME.includes(file.type)) {
+    return 'system.user.avatar.typeInvalid';
+  }
+  return null;
+}
+
 /** 用户视图：{@code UserVO}（不含口令 / 盐 / token，管理面列表连散列都不该外泄）。 */
 export interface UserVO {
   /** 用户主键：19 位雪花 ID，服务端以字符串下发（禁止 `Number()` 归一）。 */
@@ -40,6 +72,14 @@ export interface UserVO {
   username: string;
   /** 昵称 / 姓名。 */
   nickname: string;
+  /**
+   * 头像地址（可空 = 没有头像）。
+   *
+   * <p>服务端已拼成可直接放进 {@code <img src>} 的相对地址，且带 {@code ?v=} 版本参数
+   * （换头像后 key 变化 → 地址变化 → 浏览器不会拿旧缓存）。前端<b>不得</b>自己拼接、
+   * 也不得按「有无该字段」判断能力——它就是「有没有这张图」。</p>
+   */
+  avatarUrl?: string | null;
   email?: string | null;
   mobile?: string | null;
   /** 所属部门 ID（可空 = 未分配）；19 位雪花 ID，字符串下发。 */

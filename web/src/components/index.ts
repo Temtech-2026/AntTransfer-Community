@@ -20,6 +20,7 @@ export { default as ErrorBoundary } from './ErrorBoundary';
 export { default as GlobalSearch } from './GlobalSearch';
 export { default as GlobalUploadProgress } from './GlobalUploadProgress';
 export { default as PageSkeleton } from './PageSkeleton';
+export { default as ProfileSync } from './ProfileSync';
 export { default as NotificationBell } from './NotificationBell';
 export { default as OfflineBanner } from './OfflineBanner';
 export { default as OrgSwitcher } from './OrgSwitcher';

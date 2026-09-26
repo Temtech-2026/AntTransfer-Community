@@ -10,7 +10,8 @@
  * </ul>
  *
  * <p>⚠️ 映射的 perm_code 必须与后端 {@code sys_permission.perm_code} 逐字符一致
- * （来源：`sql/V2__init_data.sql`、`sql/V9__system_admin_permission_points.sql`）。
+ * （来源：`sql/V2__init_data.sql`、`sql/V9__system_admin_permission_points.sql`、
+ * `sql/V14__chat_group_permission_points.sql`）。
  */
 
 import type { PermCode } from './perm';

@@ -58,13 +58,64 @@ class FakeXhr {
   onload: (() => void) | null = null;
 
   status = 0;
-  responseType = '';
-  responseText = '';
   response: unknown = null;
   withCredentials = false;
   readonly requestHeaders: Record<string, string> = {};
 
+  private innerResponseType = '';
+  private innerResponseText = '';
+
   constructor(private readonly respond: (self: FakeXhr) => void) {}
+
+  get responseType(): string {
+    return this.innerResponseType;
+  }
+
+  set responseType(value: string) {
+    this.innerResponseType = value;
+  }
+
+  /**
+   * 与浏览器逐字一致的语义：只有 {@code '' / 'text'} 才读得到 {@code responseText}。
+   *
+   * <p><b>这条断言不能删</b>：真实成因就是 {@code uploadBinary} 用了 {@code responseType='json'}
+   * 却去读 {@code responseText}，在浏览器里抛 {@code InvalidStateError}，让「上传成功」
+   * 被当成解析失败。假 XHR 若允许随便读，测试会一直假绿（Chrome / jsdom 均抛此异常）。</p>
+   */
+  get responseText(): string {
+    if (this.innerResponseType !== '' && this.innerResponseType !== 'text') {
+      throw new DOMException(
+        "Failed to read the 'responseText' property from 'XMLHttpRequest': " +
+          "The value is only accessible if the object's 'responseType' is '' or 'text' " +
+          `(was '${this.innerResponseType}').`,
+        'InvalidStateError',
+      );
+    }
+    return this.innerResponseText;
+  }
+
+  set responseText(value: string) {
+    this.innerResponseText = value;
+  }
+
+  /**
+   * 按当前 {@code responseType} 填充响应体，模拟浏览器：
+   * {@code 'json'} 只填已解析的 {@code response}（解析失败为 null），文本型只填 {@code responseText}。
+   */
+  setBody(body: unknown): void {
+    const text = typeof body === 'string' ? body : JSON.stringify(body);
+    if (this.innerResponseType === 'json') {
+      try {
+        this.response = JSON.parse(text);
+      } catch {
+        // 非 JSON 响应体（网关 HTML 错误页）：浏览器给 null，由调用方按 HTTP 状态兜底
+        this.response = null;
+      }
+      return;
+    }
+    this.response = body;
+    this.innerResponseText = text;
+  }
 
   open(): void {}
   setRequestHeader(key: string, value: string): void {
@@ -96,13 +147,24 @@ function scriptedXhr(responses: Array<{ status: number; body: unknown }>) {
       index += 1;
       const xhr = new FakeXhr((self) => {
         self.status = response.status;
-        self.responseText = JSON.stringify(response.body);
+        self.setBody(response.body);
         self.onload?.();
       });
       created.push(xhr);
       return asXhr(xhr);
     },
   };
+}
+
+/** 造一个「连接层直接失败」的 XHR 工厂：无响应体，只触发 onerror / ontimeout。 */
+function failingXhr(trigger: (xhr: FakeXhr) => void) {
+  return () =>
+    asXhr(
+      new FakeXhr((self) => {
+        self.status = 0;
+        trigger(self);
+      }),
+    );
 }
 
 beforeEach(() => {
@@ -213,6 +275,46 @@ describe('uploadBinary（进度 + 401 刷新重放）', () => {
     expect(created[0].requestHeaders.Authorization).toBe('Bearer access-token');
   });
 
+  it('responseType=json 时从 xhr.response 取体，绝不去读 responseText', async () => {
+    // 头像上传的回归位：`avatarUrl` 就是「上传成功后要立刻显示的新图」，
+    // 一旦读取方式退回 responseText，浏览器会抛 InvalidStateError 使整次上传被误判为失败
+    const { createXhr, created } = scriptedXhr([
+      {
+        status: 200,
+        body: {
+          code: 0,
+          message: '成功',
+          data: { id: '1', avatarUrl: '/api/v1/users/1/avatar?v=k1.png' },
+          traceId: '',
+        },
+      },
+    ]);
+
+    const data = await uploadBinary<{ id: string; avatarUrl: string }>(
+      '/api/v1/system/users/1/avatar',
+      null,
+      {},
+      { createXhr, getToken: () => 't' },
+    );
+
+    expect(created[0].responseType).toBe('json');
+    expect(data.avatarUrl).toBe('/api/v1/users/1/avatar?v=k1.png');
+    expect(message.error).not.toHaveBeenCalled();
+  });
+
+  it('假 XHR 与浏览器同语义：json 响应下读 responseText 必抛 InvalidStateError', () => {
+    // 守住测试替身本身：它若允许随便读，上面那条回归测试就永远绿（真实成因正藏在这里）
+    const { createXhr } = scriptedXhr([{ status: 200, body: { code: 0 } }]);
+    const xhr = createXhr() as unknown as FakeXhr;
+
+    xhr.responseType = 'json';
+    xhr.setBody({ code: 0 });
+
+    expect(() => xhr.responseText).toThrowError(/responseType/);
+    // 同一份响应体在 response 上拿得到（浏览器已经解析好），这才是上传通道该读的地方
+    expect(xhr.response).toEqual({ code: 0 });
+  });
+
   it('1002 令牌过期：静默刷新一次后重放，调用方无感', async () => {
     const { createXhr, created } = scriptedXhr([
       { status: 401, body: { code: 1002, message: '令牌过期', data: null, traceId: '' } },
@@ -261,6 +363,34 @@ describe('uploadBinary（进度 + 401 刷新重放）', () => {
       uploadBinary('/api/v1/files', null, {}, { createXhr, getToken: () => 't' }),
     ).rejects.toThrow('（HTTP 502）');
     expect(message.error).toHaveBeenCalledTimes(1);
+  });
+
+  it('连接层失败（后端未启动 / 网关断开）时给出提示，不再静默', async () => {
+    const createXhr = failingXhr((xhr) => xhr.onerror?.());
+
+    await expect(
+      uploadBinary('/api/v1/files', null, {}, { createXhr, getToken: () => 't' }),
+    ).rejects.toThrow();
+    expect(message.error).toHaveBeenCalledTimes(1);
+  });
+
+  it('超时同样提示；silent 时只抛错不提示', async () => {
+    await expect(
+      uploadBinary('/api/v1/files', null, {}, {
+        createXhr: failingXhr((xhr) => xhr.ontimeout?.()),
+        getToken: () => 't',
+      }),
+    ).rejects.toThrow();
+    expect(message.error).toHaveBeenCalledTimes(1);
+
+    vi.clearAllMocks();
+    await expect(
+      uploadBinary('/api/v1/files', null, { silent: true }, {
+        createXhr: failingXhr((xhr) => xhr.onerror?.()),
+        getToken: () => 't',
+      }),
+    ).rejects.toThrow();
+    expect(message.error).not.toHaveBeenCalled();
   });
 });
 

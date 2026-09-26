@@ -19,6 +19,7 @@ import {
   put,
   requestPage,
   saveBlob,
+  uploadBinary,
 } from '@/services/request';
 
 import { SYSTEM_ENDPOINTS } from './endpoints';
@@ -103,6 +104,26 @@ export function createUser(payload: UserCreatePayload) {
 /** 编辑用户资料 / 调岗（需 {@code system:user:update}）。 */
 export function updateUser(id: string, payload: UserUpdatePayload) {
   return put<UserVO>(SYSTEM_ENDPOINTS.userDetail(id), payload);
+}
+
+/**
+ * 更换用户头像（需 {@code system:user:update}；<b>上传即生效</b>）。
+ *
+ * <p>走 {@link uploadBinary} 而不是 {@code post}：multipart 必须由 XHR 直接发
+ * （axios 实例会把 FormData 再包一层，服务端拿不到 {@code file} 部件），
+ * 且这条通道自带 401 静默刷新重放，与 JSON 通道共用同一把单飞锁。</p>
+ *
+ * <p><b>刻意不设置 {@code Content-Type}</b>：boundary 必须由浏览器生成，
+ * 手写会丢掉 boundary 导致服务端 400（或解析出空文件）。</p>
+ *
+ * @param file 已通过 {@link import('./types').checkAvatarFile} 预检的图片；
+ *   服务端仍会按文件头魔数复核类型，客户端 MIME 不是判定依据
+ */
+export function uploadUserAvatar(id: string, file: File) {
+  const form = new FormData();
+  // 字段名固定 file：与后端 @RequestPart("file") 及文件上传端点逐字一致
+  form.append('file', file);
+  return uploadBinary<UserVO>(SYSTEM_ENDPOINTS.userAvatar(id), form);
 }
 
 /** 启用 / 停用（需 {@code system:user:status}；停用会使在途会话立即失效）。 */

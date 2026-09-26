@@ -48,6 +48,10 @@ export default {
   'common.upload.viewQueue': '去查看',
   'common.upload.queue.default': '分片上传',
   'common.upload.queue.file-workbench': '文件工作台',
+  // 聊天里的「上传本机文件」：页与抽屉各用一条队列（见 ChatAttachmentPicker 文件头，
+  // 同 id 会让两者的完成回调互相串），但分组名是同一件事，文案不做区分
+  'common.upload.queue.chat-send': '聊天发文件',
+  'common.upload.queue.chat-send-drawer': '聊天发文件',
   'common.upload.queue.unknown': '上传任务',
   'common.upload.status.working': '上传中',
   'common.upload.status.paused': '已暂停',

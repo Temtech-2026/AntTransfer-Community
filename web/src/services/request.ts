@@ -295,9 +295,24 @@ export function filenameFromDisposition(disposition?: string | null): string {
 }
 
 /**
- * 读取响应体：blob 场景下若服务端其实返回了 Result（错误 / B 类分支），需要转成 JSON 再判定。
+ * 读取响应体。
+ *
+ * <p><b>⚠️ 真实浏览器特有的坑（假 XHR 里测不出来）：</b>{@code responseType} 一旦不是
+ * {@code '' / 'text'}，读 {@code xhr.responseText} 会立刻抛 {@code InvalidStateError}
+ * —— 规范只允许在这两种取值下读取它（Chrome / Firefox / Safari / jsdom 行为一致）。
+ * 而 {@link uploadBinary} 用的正是 {@code 'json'}（响应体是 {@code Result}），
+ * 于是「服务端已经返回成功」的响应每次都在这行炸掉，被上层当成解析失败：
+ * 用户看到的正是「上传完既没有成功提示、也看不到新头像」，而图其实早已落库。
+ * 因此非文本类型一律读 {@code xhr.response}——{@code 'json'} 下浏览器已把响应体解析好。</p>
+ *
+ * <p>blob 场景下若服务端返回的其实是 Result（错误 / B 类分支），需要转成 JSON 再判定。</p>
  */
 async function readBinaryBody(xhr: XMLHttpRequest, responseType: string): Promise<unknown> {
+  if (responseType === 'json') {
+    // 已由浏览器解析；响应体不是 JSON（网关 HTML 错误页等）时为 null，
+    // 交由调用方按 HTTP 状态给出兜底文案，**不要**回头去读 responseText
+    return xhr.response ?? null;
+  }
   if (responseType !== 'blob') {
     const text = xhr.responseText;
     if (!text) {
@@ -364,13 +379,31 @@ function sendOnce(
       onAbort();
     }
 
+    // 网络层失败（后端没起来 / 网关断开 / 超时）不经过 Result 分支，
+    // 也就没有 presentError 兜底；这里必须自己提示，否则调用方（如头像上传）点了没反应
     xhr.onerror = () => {
       options.signal?.removeEventListener('abort', onAbort);
-      reject(new Error(translateMessage(DEFAULT_ERROR_MESSAGE_ID)));
+      if (aborted) {
+        reject(abortError());
+        return;
+      }
+      const error = new Error(translateMessage(DEFAULT_ERROR_MESSAGE_ID));
+      if (!options.silent) {
+        message.error(error.message);
+      }
+      reject(error);
     };
     xhr.ontimeout = () => {
       options.signal?.removeEventListener('abort', onAbort);
-      reject(new Error(translateMessage('app.request.timeout')));
+      if (aborted) {
+        reject(abortError());
+        return;
+      }
+      const error = new Error(translateMessage('app.request.timeout'));
+      if (!options.silent) {
+        message.error(error.message);
+      }
+      reject(error);
     };
     xhr.onabort = () => {
       options.signal?.removeEventListener('abort', onAbort);
@@ -390,7 +423,13 @@ function sendOnce(
             disposition: xhr.getResponseHeader('Content-Disposition'),
           });
         })
-        .catch(() => reject(new Error(translateMessage('app.request.parseFailed'))));
+        .catch(() => {
+          const error = new Error(translateMessage('app.request.parseFailed'));
+          if (!options.silent) {
+            message.error(error.message);
+          }
+          reject(error);
+        });
     };
 
     xhr.send((options.body ?? null) as XMLHttpRequestBodyInit | null);

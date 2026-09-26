@@ -22,6 +22,7 @@ import {
   NotificationBell,
   OfflineBanner,
   OrgSwitcher,
+  ProfileSync,
   SiderFooter,
   TransferMonitor,
   VersionDropdown,
@@ -256,14 +257,19 @@ export const layout: RunTimeLayoutConfig = ({
     // },
     footerRender: () => <Footer />,
     /**
-     * 内容区外壳：主内容之外挂两块全局浮层。
+     * 内容区外壳：主内容之外挂三块全局浮层。
      *
      * <p>放在这里而不是 rootContainer —— 登录页（`layout: false`）不该出现它们，
      * 而 `childrenRender` 只在布局内生效。
+     *
+     * <p>`ProfileSync` 不渲染 UI，只是「本人头像变更」（`PROFILE`）帧的落地处。
+     * 它必须跟着布局常驻：用户不在聊天页时这一帧同样会来，丢了就表现为「另一端的
+     * 头像怎么都不变」，而这正是本轮要修的现象。</p>
      */
     childrenRender: (dom) => (
       <>
         {dom}
+        <ProfileSync />
         <ChatDrawer />
         <TransferMonitor />
       </>

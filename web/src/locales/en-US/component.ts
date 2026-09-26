@@ -117,6 +117,11 @@ export default {
   'component.chunkUpload.overallProgress': 'Overall progress',
   'component.chunkUpload.overallSummary': '{finished}/{total} files · {uploaded} / {totalSize}',
 
+  // Code block (sample code shown in documentation areas)
+  'component.codeBlock.copy': 'Copy',
+  'component.codeBlock.copied': 'Copied',
+  'component.codeBlock.copyFailed': 'Copy failed',
+
   // Transfer monitor panel
   'component.transfer.title': 'Transfer center',
   'component.transfer.expand': 'Expand transfer center',

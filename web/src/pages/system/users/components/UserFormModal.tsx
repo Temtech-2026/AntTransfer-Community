@@ -9,15 +9,33 @@
  * 角色（独立接口）、备注（{@code UserVO} 不回显备注，提交就成了「盲写」，宁可不可改）。</p>
  */
 
+import { UploadOutlined, UserOutlined } from '@ant-design/icons';
 import { useIntl } from '@umijs/max';
-import { Alert, App, Form, Input, Modal, Select } from 'antd';
+import {
+  Alert,
+  App,
+  Avatar,
+  Button,
+  Form,
+  Input,
+  Modal,
+  Select,
+  Space,
+  Typography,
+  Upload,
+} from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 
+import useRefreshCurrentUser from '@/hooks/useRefreshCurrentUser';
 import {
+  AVATAR_ACCEPT_ATTR,
+  AVATAR_MAX_BYTES,
   SYSTEM_PERM,
+  checkAvatarFile,
   createUser,
   dataScopeTextId,
   updateUser,
+  uploadUserAvatar,
   type DeptOptionVO,
   type RoleVO,
   type UserVO,
@@ -25,6 +43,9 @@ import {
 
 /** 与 {@code UserCreateDTO#username} 的 {@code @Pattern} 逐字一致。 */
 const USERNAME_PATTERN = /^[A-Za-z0-9_.-]{3,64}$/;
+
+/** 头像上限的展示文案：由字节常量派生，避免「改了上限忘了改文案」的静默分叉。 */
+const AVATAR_MAX_LABEL = `${AVATAR_MAX_BYTES / 1024 / 1024} MB`;
 
 export interface UserFormModalProps {
   open: boolean;
@@ -37,6 +58,13 @@ export interface UserFormModalProps {
   canAssignRole: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  /**
+   * 头像更新成功后的回调（<b>上传即生效</b>，不经过表单的「确定」）。
+   *
+   * <p>页面据此刷新列表：不刷新的话，关闭弹窗再点「编辑」拿到的还是旧行对象，
+   * 头像又变回上传前的样子。</p>
+   */
+  onAvatarUpdated?: (updated: UserVO) => void;
 }
 
 interface UserFormValues {
@@ -58,12 +86,23 @@ const UserFormModal = ({
   canAssignRole,
   onClose,
   onSuccess,
+  onAvatarUpdated,
 }: UserFormModalProps) => {
   const [form] = Form.useForm<UserFormValues>();
   const intl = useIntl();
   const { message } = App.useApp();
+  const refreshCurrentUser = useRefreshCurrentUser();
   const [submitting, setSubmitting] = useState(false);
   const editing = record != null;
+
+  /**
+   * 当前展示的头像地址。
+   *
+   * <p>刻意用本地 state 而不是读 {@code record.avatarUrl}：上传成功后要立刻换图，
+   * 而 {@code record} 是父级传入的不可变对象，本次打开的弹窗里它不会变。</p>
+   */
+  const [avatarUrl, setAvatarUrl] = useState<string | undefined>();
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
   const deptSelectOptions = useMemo(
     () => deptOptions.map((dept) => ({ label: dept.name, value: dept.id })),
@@ -101,10 +140,50 @@ const UserFormModal = ({
         email: record.email ?? undefined,
         mobile: record.mobile ?? undefined,
       });
+      setAvatarUrl(record.avatarUrl ?? undefined);
       return;
     }
     form.resetFields();
+    setAvatarUrl(undefined);
   }, [open, record, form]);
+
+  /**
+   * 上传头像（<b>上传即生效</b>，与「确定」保存资料互不相干）。
+   *
+   * <p>三步各自独立：预检只是省一次必然失败的往返（类型真伪由服务端按文件头魔数判定）；
+   * 成功后回调父级刷新列表，并刷新全局登录态 —— 被编辑的很可能就是操作者自己，
+   * 顶栏头像读的是全局登录态，不刷新就会一直停在旧图上（刷新整页的代价是丢掉列表筛选与分页）。</p>
+   */
+  const handleAvatarFile = async (file: File) => {
+    if (!record) {
+      return;
+    }
+    const errorTextId = checkAvatarFile(file);
+    if (errorTextId) {
+      message.error(intl.formatMessage({ id: errorTextId }, { max: AVATAR_MAX_LABEL }));
+      return;
+    }
+
+    setAvatarUploading(true);
+    try {
+      const updated = await uploadUserAvatar(record.id, file);
+      // 直接采用服务端下发的地址（已含 ?v= 缓存版本号），绝不自己拼接；
+      // 响应里没带地址时保留原图：把预览清成占位图会让「其实传成功了」看着像失败
+      if (updated?.avatarUrl) {
+        setAvatarUrl(updated.avatarUrl);
+      }
+      message.success(intl.formatMessage({ id: 'system.user.avatar.updated' }));
+      if (updated) {
+        onAvatarUpdated?.(updated);
+      }
+      void refreshCurrentUser();
+    } catch {
+      // 失败提示由上传通道负责（binaryRequest）：业务错误走 presentError，
+      // 网络层失败 / 超时也在通道内提示；此处只负责收尾 loading
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
 
   const handleSubmit = async () => {
     let values: UserFormValues;
@@ -177,6 +256,36 @@ const UserFormModal = ({
           title={intl.formatMessage({ id: 'system.userForm.alert.title' })}
           description={intl.formatMessage({ id: 'system.userForm.alert.desc' })}
         />
+      )}
+      {editing && (
+        <div style={{ marginBottom: 16 }}>
+          <Typography.Text strong>
+            {intl.formatMessage({ id: 'system.user.avatar.label' })}
+          </Typography.Text>
+          <Space align="center" size={16} wrap style={{ display: 'flex', marginTop: 8 }}>
+            <Avatar size={64} src={avatarUrl} icon={<UserOutlined />} />
+            <Upload
+              accept={AVATAR_ACCEPT_ATTR}
+              showUploadList={false}
+              // 受控空列表：beforeUpload 返回 false 只是「不自动上传」，文件仍会留在 antd
+              // 内部列表里占满 maxCount，之后再选文件时 beforeUpload 便不再触发 ——
+              // 表现就是「第一次之后点了没反应」。把列表钉成空数组即可每次都走预检与上传。
+              fileList={[]}
+              beforeUpload={(file) => {
+                void handleAvatarFile(file);
+                // 返回 false 拦截 antd 的默认上传：改由 uploadUserAvatar 走 XHR 直发 FormData
+                return false;
+              }}
+            >
+              <Button loading={avatarUploading} icon={<UploadOutlined />}>
+                {intl.formatMessage({ id: 'system.user.avatar.upload' })}
+              </Button>
+            </Upload>
+            <Typography.Text type="secondary">
+              {intl.formatMessage({ id: 'system.user.avatar.hint' }, { max: AVATAR_MAX_LABEL })}
+            </Typography.Text>
+          </Space>
+        </div>
       )}
       <Form form={form} layout="vertical" preserve={false} requiredMark>
         <Form.Item

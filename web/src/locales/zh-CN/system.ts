@@ -58,6 +58,14 @@ export default {
   'system.user.message.enabled': '已启用 {name}',
   'system.user.message.deleted': '已删除 {name}',
 
+  // 头像（专用通道：上传即生效，不参与编辑表单的保存）
+  'system.user.avatar.label': '头像',
+  'system.user.avatar.upload': '上传头像',
+  'system.user.avatar.hint': '支持 PNG / JPEG / GIF / WebP，不超过 {max}',
+  'system.user.avatar.updated': '头像已更新',
+  'system.user.avatar.tooLarge': '图片不能超过 {max}',
+  'system.user.avatar.typeInvalid': '仅支持 PNG / JPEG / GIF / WebP 图片',
+
   // 用户新建 / 编辑弹窗
   'system.userForm.title.edit': '编辑用户 · {name}',
   'system.userForm.title.create': '新建用户',

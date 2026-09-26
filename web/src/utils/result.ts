@@ -116,6 +116,28 @@ const STRATEGY_BY_CODE: Record<number, HandleStrategy> = {
   1014: HandleStrategy.BAD_REQUEST, // 消息类型不允许用于会话
   1029: HandleStrategy.BAD_REQUEST, // 原口令不正确：就地提示，弹窗不关、不跳登录
   1030: HandleStrategy.BAD_REQUEST, // 新口令不合规：就地提示，按策略文案修正后重试
+  // 1031~1033 建群提交被拒：属请求需修正（策略 E），弹窗留在原地改条件重试。
+  // 必须显式登记——按首段数字降级会把 1xxx 判成策略 D，虽同样不跳登录，
+  // 但 D 的语义是「拒绝」，而这里要的是「请修正后重试」
+  1031: HandleStrategy.BAD_REQUEST, // 群聊至少需要一位受邀成员
+  1032: HandleStrategy.BAD_REQUEST, // 群成员数（含群主）超出上限
+  1033: HandleStrategy.BAD_REQUEST, // 受邀成员不存在或不可用
+  // 1034~1036 撤回与引用被拒：同属「请求需修正」（策略 E）。
+  // 特别是 1034 超窗——它是终态错误（重试一万次也不会变成能撤），
+  // 但用户要的是「就地知道为什么撤不了」，既不该跳登录也不该走未知兜底
+  1034: HandleStrategy.BAD_REQUEST, // 撤回超出 2 分钟时间窗
+  1035: HandleStrategy.BAD_REQUEST, // 撤回目标不存在或非本人发送
+  1036: HandleStrategy.BAD_REQUEST, // 引用目标不存在、跨会话或已被撤回
+  // 1037~1041 群管理（群设置面板）被拒。分两档登记，理由与 1003 / 1012 同源：
+  // 1038~1041 是「权限 / 身份不足」→ 策略 D（就地提示，绝不清令牌、不跳登录）。
+  // 其中 1038 / 1041 与权限点 1003 是**两条正交的授权线**——「功能没给」vs「这个群里我说了不算」；
+  // 1037 / 1040 是「对象已不在」（群已解散 / 该成员已不在群）→ 策略 E，
+  // 刷新面板或会话列表即可收敛，原样重放不会成功。
+  1037: HandleStrategy.BAD_REQUEST, // 群聊不存在或已解散（404）
+  1038: HandleStrategy.DENY, // 群内身份不足：改名 / 邀请需群主或管理员（403）
+  1039: HandleStrategy.DENY, // 群主不能退群、也不能被移除（403）
+  1040: HandleStrategy.BAD_REQUEST, // 该成员不在群里（404）
+  1041: HandleStrategy.DENY, // 仅群主可执行：移除成员 / 解散群聊（403）
 
   // 2xxx 参数校验
   2001: HandleStrategy.BAD_REQUEST,
@@ -148,6 +170,12 @@ const STRATEGY_BY_CODE: Record<number, HandleStrategy> = {
   4021: HandleStrategy.STATE_CONFLICT, // 打包产物已过期：需重新发起打包
   4022: HandleStrategy.STATE_CONFLICT, // 标签重名：沿用已有或改名
   4023: HandleStrategy.BAD_REQUEST, // 历史版本不存在：刷新版本列表
+  // 4024~4028 会话附件（聊天里带附件发消息的授权与取件）
+  4024: HandleStrategy.BAD_REQUEST, // 附件不存在或不属于本人：刷新会话里的卡片状态
+  4025: HandleStrategy.STATE_CONFLICT, // 附件已过期 / 次数用尽：刷新后由发送方重发一份
+  4026: HandleStrategy.STATE_CONFLICT, // 附件已被发送方撤销：终态，刷新状态即可
+  4027: HandleStrategy.DENY, // 用途档位不允许该操作：403 就地提示，绝不跳登录（与 1003 同为策略 D）
+  4028: HandleStrategy.DENY, // 取件票据无效或已过期：重新换票即可，绝不跳登录（与 4018 同口径）
   4040: HandleStrategy.BAD_REQUEST,
   4101: HandleStrategy.BAD_REQUEST,
   4102: HandleStrategy.STATE_CONFLICT,

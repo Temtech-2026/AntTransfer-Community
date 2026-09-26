@@ -43,6 +43,10 @@ export default {
   'common.upload.viewQueue': 'View',
   'common.upload.queue.default': 'Chunked upload',
   'common.upload.queue.file-workbench': 'File workspace',
+  // Uploading from within chat: the page and the drawer each own a queue, but they are the
+  // same activity to the user, so both labels read the same
+  'common.upload.queue.chat-send': 'Send in chat',
+  'common.upload.queue.chat-send-drawer': 'Send in chat',
   'common.upload.queue.unknown': 'Upload queue',
   'common.upload.status.working': 'Uploading',
   'common.upload.status.paused': 'Paused',

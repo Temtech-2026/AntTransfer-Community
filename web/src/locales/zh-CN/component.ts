@@ -117,6 +117,11 @@ export default {
   'component.chunkUpload.overallSummary':
     '{finished}/{total} 个文件 · {uploaded} / {totalSize}',
 
+  // 代码块（文档区展示示例代码）
+  'component.codeBlock.copy': '复制',
+  'component.codeBlock.copied': '已复制',
+  'component.codeBlock.copyFailed': '复制失败',
+
   // 传输监控悬浮窗
   'component.transfer.title': '传输中心',
   'component.transfer.expand': '展开传输中心',

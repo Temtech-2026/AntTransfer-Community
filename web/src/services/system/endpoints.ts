@@ -23,6 +23,13 @@ export const SYSTEM_ENDPOINTS = {
   userRoleOptions: '/api/v1/system/users/role-options',
   /** 启停用户（system:user:update）。 */
   userStatus: (id: string) => `/api/v1/system/users/${id}/status`,
+  /**
+   * 更换头像（{@code system:user:update}，multipart 字段名 {@code file}）。
+   *
+   * <p>刻意与用户详情分开：这里是<b>上传即生效</b>，不参与编辑表单的保存。
+   * 与「状态 / 口令 / 角色」同属「有独立副作用的字段各走各的端点」这条既有约定。</p>
+   */
+  userAvatar: (id: string) => `/api/v1/system/users/${id}/avatar`,
   /** 重置口令（system:user:reset-password）。 */
   userResetPassword: (id: string) => `/api/v1/system/users/${id}/reset-password`,
   /** 分配角色（system:user:assign-role）。 */
