@@ -31,6 +31,9 @@ import java.util.List;
  * @param id            用户 ID
  * @param username      登录账号
  * @param nickname      昵称
+ * @param avatarUrl     头像地址（可空；已拼成可直接放进 {@code <img src>} 的相对地址，
+ *                      无头像时为 {@code null} 而不是空串——两者的前端处理是同一条兜底分支，
+ *                      但 {@code null} 能明确表达「没有这张图」，避免前端再判空串）
  * @param email         邮箱
  * @param mobile        手机号
  * @param deptId        部门 ID（可空）
@@ -51,6 +54,7 @@ public record UserVO(
         Long id,
         String username,
         String nickname,
+        String avatarUrl,
         String email,
         String mobile,
         @JsonSerialize(using = ToStringSerializer.class)

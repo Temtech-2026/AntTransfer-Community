@@ -177,15 +177,17 @@ class TransferControllerTest {
     }
 
     @Test
-    @DisplayName("合并成功：回文件 ID 与整件指纹")
+    @DisplayName("合并成功：回文件 ID / 条目 ID 与整件指纹")
     void shouldReturnMergedFileId() throws Exception {
         given(transferTaskService.merge(eq(USER_ID), eq(1004L), any(MergeRequest.class)))
-                .willReturn(MergeResultVO.merged(999L, SHA));
+                .willReturn(MergeResultVO.merged(999L, 1111L, SHA));
 
         mockMvc.perform(merge(1004L, 1, 8L))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(ErrorCode.SUCCESS.getCode()))
                 .andExpect(jsonPath("$.data.fileId").value("999"))
+                // 条目 ID 以字符串过线：19 位雪花 ID 走 JSON number 会丢末位
+                .andExpect(jsonPath("$.data.nodeId").value("1111"))
                 .andExpect(jsonPath("$.data.sha256").value(SHA));
     }
 

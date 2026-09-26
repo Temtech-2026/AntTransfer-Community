@@ -253,7 +253,9 @@ public class TransferTaskService {
                         uploadId, result.fileId());
             }
             chunkStore.deleteTaskDir(uploadId);
-            return MergeResultVO.merged(result.fileId(), actualSha);
+            // nodeId 必须一并回传：调用方（如聊天里「上传本地文件后直接发出去」）拿到的是
+            // 「用户侧的这份文件」，其身份是条目 ID 而不是物理文件 ID（见 MergeResultVO#merged）
+            return MergeResultVO.merged(result.fileId(), result.nodeId(), actualSha);
         } catch (BusinessException e) {
             stateStore.markFailed(uploadId, e.getErrorCode().getMessage(), userId);
             if (e.getErrorCode() == ErrorCode.FILE_INTEGRITY_ERROR) {

@@ -16,7 +16,10 @@
 package com.anttransfer.permission.service;
 
 import com.anttransfer.common.audit.OperationLog;
+import com.anttransfer.common.event.UserProfileChangedEvent;
 import com.anttransfer.common.exception.BusinessException;
+import com.anttransfer.common.file.AvatarStoragePort;
+import com.anttransfer.common.file.ImageTypes;
 import com.anttransfer.common.result.ErrorCode;
 import com.anttransfer.common.result.PageResult;
 import com.anttransfer.common.security.UserAdminPort;
@@ -44,9 +47,12 @@ import com.anttransfer.permission.security.AuthzContext;
 import com.anttransfer.permission.util.AfterCommitUtils;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -58,7 +64,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 用户管理（系统管理面）：CRUD + 重置口令 + 启停（离职）+ 分配角色 + 调岗。
+ * 用户管理（系统管理面）：CRUD + 重置口令 + 启停（离职）+ 分配角色 + 调岗 + 换头像。
  *
  * <p><b>读写分道：</b>{@code sys_user} 是 at-auth 的表族，本服务的所有账号写入
  * 一律经 {@link UserAdminPort} 委托表主（散列、会话吊销、唯一键口径都在那边收口）；
@@ -98,6 +104,15 @@ public class UserAdminService {
     private final AccessControlService accessControlService;
     private final PermissionGrantService permissionGrantService;
     private final PermissionAuditLogger auditLogger;
+    private final AvatarStoragePort avatarStoragePort;
+
+    /**
+     * 跨模块事件发布器。头像变更后在<b>提交后</b>广播 {@link UserProfileChangedEvent}，
+     * 由 at-collaboration 转成 WS 帧实现「同一账号的多端即时换图」。
+     *
+     * <p>本服务只发事件、不知道自己被谁消费——写侧不得编译期依赖聊天域（见事件类注）。</p>
+     */
+    private final ApplicationEventPublisher eventPublisher;
 
     public UserAdminService(UserAdminPort userAdminPort,
                             UserRoleMapper userRoleMapper,
@@ -107,7 +122,9 @@ public class UserAdminService {
                             PermissionService permissionService,
                             AccessControlService accessControlService,
                             PermissionGrantService permissionGrantService,
-                            PermissionAuditLogger auditLogger) {
+                            PermissionAuditLogger auditLogger,
+                            AvatarStoragePort avatarStoragePort,
+                            ApplicationEventPublisher eventPublisher) {
         this.userAdminPort = userAdminPort;
         this.userRoleMapper = userRoleMapper;
         this.roleMapper = roleMapper;
@@ -117,6 +134,8 @@ public class UserAdminService {
         this.accessControlService = accessControlService;
         this.permissionGrantService = permissionGrantService;
         this.auditLogger = auditLogger;
+        this.avatarStoragePort = avatarStoragePort;
+        this.eventPublisher = eventPublisher;
     }
 
     /* ============================ 查询 ============================ */
@@ -255,6 +274,99 @@ public class UserAdminService {
         audit.put("revokedGrants", revoked);
         auditLogger.success(OperationLog.ACTION_USER_UPDATE, OperationLog.TARGET_USER, userId, audit);
         return getUser(userId);
+    }
+
+    /**
+     * 更换用户头像（<b>上传即生效</b>，不参与 {@link #updateUser} 的表单保存）。
+     *
+     * <p><b>为什么不做成「表单里选图、点保存才提交」：</b>本页的编辑弹窗遵循一条既有约定——
+     * 账号名 / 口令 / 状态 / 角色都走独立端点（见 {@code UserFormModal} 的字段分区），
+     * 因为它们各有独立的权限与副作用；头像同理，且额外多一层：图片字节得先落盘才有 key 可提交。
+     * 若并进保存流程，则「新建用户」（还没有 ID）与「上传」必须拆成两段，
+     * 还得在表主侧处理「这次提交到底换没换图」的歧义。</p>
+     *
+     * <p><b>三步的顺序都是刻意的：</b>① 校验并落盘新图 → ② 改库指向新 key
+     * （成功即生效，且新图已经就位，不存在「库里有引用但文件还没写完」的窗口）
+     * → ③ 提交成功后再删旧图。任一步失败都只留下「无害的孤儿文件」，
+     * 而不会出现「库里指向一个不存在的文件」这种永久碎图。</p>
+     *
+     * <p>不做的事：<b>不吊销会话</b>（换头像不影响任何授权判定，把操作者踢下线是纯伤害）、
+     * <b>不触发权限重评估</b>（头像不参与任何授权计算）、<b>不改动头像以外的列</b>。</p>
+     *
+     * <p>做的事里有一条容易被忽略：<b>提交后广播 {@link UserProfileChangedEvent}</b>，
+     * 让同一账号的其他在线端（另一个标签页 / 另一台设备）立刻换图。事件与随之而来的
+     * {@code PROFILE} 帧都是<b>加速通道</b>，真值始终是 {@code sys_user.avatar_url}，
+     * 丢了只表现为「那几端要等下次拉会话列表才更新」，不需要补偿逻辑。</p>
+     *
+     * @param userId 目标用户 ID（受数据范围约束）
+     * @param file   上传的图片（必填；类型与大小见 {@link #readAvatar}）
+     * @return 更换后的用户视图（含新的头像地址）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public UserVO uploadAvatar(Long userId, MultipartFile file) {
+        AccessSnapshot snapshot = permissionService.current();
+        Long operatorId = snapshot.userId();
+        UserRow row = requireUser(userId);
+        accessControlService.assertResourceVisibleTo(snapshot, row.id(), row.deptId());
+
+        byte[] content = readAvatar(file);
+        String previousKey = row.avatarUrl();
+        String newKey = avatarStoragePort.store(content);
+
+        // 落盘已经发生且回滚不掉：事务失败时把新文件撤掉，否则磁盘上会留一份没人指向的文件
+        AfterCommitUtils.runIfRolledBack(() -> avatarStoragePort.delete(newKey));
+
+        userAdminPort.updateAvatar(userId, newKey, operatorId);
+
+        if (previousKey != null && !previousKey.isBlank()) {
+            // 旧图必须等提交成功后再删：提交前删，一旦事务回滚，库里的旧 key 就指向一个
+            // 已经不存在的文件——用户看到的是「操作失败，同时头像也永久碎了」
+            AfterCommitUtils.run(() -> avatarStoragePort.delete(previousKey));
+        }
+
+        // 多端同步：广播给本人的其他在线端（顶栏与聊天头像立刻换图）。
+        // 同样必须等提交后发——提交前发，事务一滚，各端就会去拉一个并不存在的 ?v=，必然碎图。
+        // 新地址在这里现算而不留到 afterCommit 里查库：少一次往返，也不会被「同一提交内的后续变更」串味
+        String newAvatarUrl = AvatarStoragePort.urlOf(userId, newKey);
+        AfterCommitUtils.run(() -> eventPublisher.publishEvent(
+                new UserProfileChangedEvent(userId, newAvatarUrl)));
+
+        Map<String, Object> audit = new LinkedHashMap<>();
+        audit.put("username", row.username());
+        // 刻意不记 avatar key：地址里含可直出访问的凭据，不该在审计表里长期留档
+        auditLogger.success(OperationLog.ACTION_USER_AVATAR, OperationLog.TARGET_USER, userId, audit);
+        log.info("[system] 更换用户头像: userId={}, operator={}", userId, operatorId);
+        return getUser(userId);
+    }
+
+    /**
+     * 头像准入：先按 size 拦掉超大文件，再按魔数确认是支持的光栅图。
+     *
+     * <p>两步都不能省：{@code POST} 的 multipart 上限是 64 MB（全局配置，为分片与附件服务），
+     * 不先看 size 就会把一个 64 MB 的文件整份读进内存；只信客户端给的扩展名 / MIME
+     * 则等于允许上传任意内容再以图片类型直出（存储型 XSS），故类型判定交给
+     * {@link ImageTypes#detect} 看字节。</p>
+     */
+    private byte[] readAvatar(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException(ErrorCode.PARAM_MISSING, "请选择要上传的头像图片");
+        }
+        if (file.getSize() > AvatarStoragePort.MAX_AVATAR_BYTES) {
+            throw new BusinessException(ErrorCode.FILE_TOO_LARGE,
+                    "头像不能超过 " + (AvatarStoragePort.MAX_AVATAR_BYTES / 1024 / 1024) + " MB");
+        }
+        byte[] content;
+        try {
+            content = file.getBytes();
+        } catch (IOException e) {
+            log.warn("读取上传头像失败：userId 未知，size={}", file.getSize(), e);
+            throw new BusinessException(ErrorCode.FILE_UPLOAD_FAIL);
+        }
+        if (ImageTypes.detect(content) == null) {
+            throw new BusinessException(ErrorCode.FILE_TYPE_NOT_ALLOWED,
+                    "头像仅支持 PNG / JPG / GIF / WebP 格式");
+        }
+        return content;
     }
 
     /**
@@ -533,6 +645,9 @@ public class UserAdminService {
                 row.id(),
                 row.username(),
                 row.nickname(),
+                // 库里存的是存储 key，这里换成可直出地址——映射的唯一真相源在端口上，
+                // 与 /auth/me 走同一段代码，避免两处各拼一次后悄悄分叉。
+                AvatarStoragePort.urlOf(row.id(), row.avatarUrl()),
                 row.email(),
                 row.mobile(),
                 row.deptId(),

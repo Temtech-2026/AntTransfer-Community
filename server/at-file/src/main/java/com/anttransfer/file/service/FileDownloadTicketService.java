@@ -191,7 +191,13 @@ public class FileDownloadTicketService {
         return CONTENT_URL.formatted(nodeId, ticket);
     }
 
-    /** 构造内联取件地址（浏览器原生渲染，仅对可内联类型有效）。 */
+    /**
+     * 构造内联取件地址（浏览器原生渲染）。
+     *
+     * <p>适用类型比「可内联渲染」宽一档：PDF / 光栅图由浏览器按原生 MIME 渲染，
+     * 文本则由取流层强制 {@code text/plain + nosniff} 下发后以纯文本显示
+     * （见 {@code FileDownloadService#streamSharedFile}）。Office / 压缩包等仍会被取流层拒绝。</p>
+     */
     public String inlineContentUrl(Long nodeId, String ticket) {
         return INLINE_CONTENT_URL.formatted(nodeId, ticket);
     }

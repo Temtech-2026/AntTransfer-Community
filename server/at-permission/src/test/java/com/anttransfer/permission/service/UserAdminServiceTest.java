@@ -16,6 +16,7 @@
 package com.anttransfer.permission.service;
 
 import com.anttransfer.common.exception.BusinessException;
+import com.anttransfer.common.file.AvatarStoragePort;
 import com.anttransfer.common.result.ErrorCode;
 import com.anttransfer.common.result.PageResult;
 import com.anttransfer.common.security.UserAdminPort;
@@ -45,6 +46,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.List;
 import java.util.Optional;
@@ -101,6 +103,10 @@ class UserAdminServiceTest {
     private PermissionGrantService permissionGrantService;
     @Mock
     private PermissionAuditLogger auditLogger;
+    @Mock
+    private AvatarStoragePort avatarStoragePort;
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     private UserAdminService service;
 
@@ -108,7 +114,8 @@ class UserAdminServiceTest {
     void setUp() {
         MybatisPlusTestSupport.initTableInfo();
         service = new UserAdminService(userAdminPort, userRoleMapper, roleMapper, roleAdminService,
-                rbacAccessMapper, permissionService, accessControlService, permissionGrantService, auditLogger);
+                rbacAccessMapper, permissionService, accessControlService, permissionGrantService,
+                auditLogger, avatarStoragePort, eventPublisher);
         AuthzTestSupport.loginAs(OPERATOR_ID);
     }
 
@@ -398,7 +405,7 @@ class UserAdminServiceTest {
     }
 
     private static UserRow user(Long id, String username, int status, Long deptId) {
-        return new UserRow(id, username, username, null, null, deptId, status, null, null);
+        return new UserRow(id, username, username, null, null, null, deptId, status, null, null);
     }
 
     private static SysRole role(Long id, String code, int dataScope, int builtIn) {

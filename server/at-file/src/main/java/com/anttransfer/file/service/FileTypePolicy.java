@@ -34,8 +34,14 @@ import java.util.Locale;
  * <p><b>内联判定是安全边界，不是体验开关：</b>浏览器对内联响应会按其 MIME 主动渲染，
  * 因此 {@code text/html}、{@code image/svg+xml}、{@code application/xml} 之流一旦内联，
  * 就等于让上传者在本站源下执行脚本（存储型 XSS）。故 {@link #inlineRenderable(String)}
- * 只认「PDF + 光栅图」——文本预览一律走 JSON 返回字符串（见 {@code FilePreviewService}），
- * 让浏览器永远没有机会把文件内容当代码解析。</p>
+ * 只认「PDF + 光栅图」——这两者即使被渲染也只是「显示内容」，不具备执行脚本的能力。</p>
+ *
+ * <p><b>但「不能内联」不等于「不能预览」：</b>文本恰好落在两者之间——可见，但绝不能被
+ * 当作文档渲染。它有一条独立通道：文件域以 JSON 字符串返回（见 {@code FilePreviewService}），
+ * 取件侧由服务端<b>硬编码</b> {@code text/plain} + {@code nosniff} 下发
+ * （见 {@code FileDownloadService}）。两条通道都不把 MIME 的决定权交给文件内容，
+ * 浏览器仍然没有机会把内容当代码解析。{@link #previewable(String)} 是把这条产品口径
+ * （「用户能不能在线看到」）与安全口径（{@link #inlineRenderable(String)}）显式分开的出口。</p>
  *
  * @author AntTransfer CE
  */
@@ -132,6 +138,22 @@ public class FileTypePolicy {
      */
     public boolean inlineRenderable(String ext) {
         return previewablePdf(ext) || thumbnailable(ext);
+    }
+
+    /**
+     * 是否存在「在线预览」路径。
+     *
+     * <p><b>与 {@link #inlineRenderable(String)} 的分工必须守住：</b>本方法回答的是<b>产品问题</b>
+     * 「用户能不能在线看到内容」，后者回答的是<b>安全边界问题</b>「能不能让浏览器按 MIME 主动渲染」。
+     * 二者混用会出两个方向的错：拿 {@code inlineRenderable} 当「可预览」，会把文本误判成
+     * 「无法在线预览」（同一份 {@code .txt} 在文件域能看、发给别人却看不了）；
+     * 拿本方法当「可内联」，则等于把 HTML / SVG 之流放上内联网。</p>
+     *
+     * <p>故本方法只用于<b>能力告知</b>（如会话附件换票下发 {@code previewSupported}），
+     * 绝不能用于判定能否内联。</p>
+     */
+    public boolean previewable(String ext) {
+        return inlineRenderable(ext) || previewableText(ext);
     }
 
     private static boolean contains(List<String> candidates, String ext) {

@@ -78,7 +78,7 @@ class AuditLogQueryServiceTest {
         OperationLog log = log(7L, 10L, OperationLog.ACTION_USER_CREATE, OperationLog.TARGET_USER, 99L);
         pageWith(List.of(log), 1L);
         when(userLookupPort.findContacts(Set.of(10L)))
-                .thenReturn(Map.of(10L, new UserContact(10L, "张三", "zhangsan@example.com")));
+                .thenReturn(Map.of(10L, new UserContact(10L, "张三", "zhangsan@example.com", null)));
 
         PageResult<AuditLogVO> result = service.pageLogs(query(1L, 20L));
 
@@ -155,7 +155,7 @@ class AuditLogQueryServiceTest {
         OperationLog log = log(11L, 2L, OperationLog.ACTION_APPROVE, OperationLog.TARGET_APPLICATION, 3L);
         when(operationLogMapper.selectList(any())).thenReturn(List.of(log));
         when(userLookupPort.findContacts(Set.of(2L)))
-                .thenReturn(Map.of(2L, new UserContact(2L, "李四", null)));
+                .thenReturn(Map.of(2L, new UserContact(2L, "李四", null, null)));
 
         List<AuditLogVO> exported = service.exportLogs(query(1L, 20L));
 

@@ -60,6 +60,16 @@ public class FileProperties {
     /** 临时 / 打包产物子目录名（位于 storageRoot 下，与内容寻址区隔离便于单独清理） */
     private String tempDirName = "_tmp";
 
+    /**
+     * 用户头像子目录名（位于 storageRoot 下）。
+     *
+     * <p>与内容寻址区（{@code {root}/{sha256[0:2]}/{sha256[2:4]}/{sha256}}）隔离：
+     * 头像<b>刻意不做内容寻址</b>——同一张图被两个人用、或同一人换回旧图，
+     * 都必须产生新的文件名，否则「key 变了 = 头像变了」这个缓存失效依据就不成立
+     * （详见 {@code AvatarStoragePort}）。</p>
+     */
+    private String avatarDirName = "_avatars";
+
     /* ============================== 回收站 ============================== */
 
     /** 回收站保留期：默认 30 天（PRD US-09 权威口径，到期物理清理） */

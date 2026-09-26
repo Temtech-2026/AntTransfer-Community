@@ -25,6 +25,7 @@ import com.anttransfer.file.security.FileOwnershipGuard;
 import com.anttransfer.file.service.FileDownloadTicketService.FileTicketPayload;
 import com.anttransfer.file.storage.BandwidthLimiter;
 import com.anttransfer.file.storage.FileStorage;
+import com.anttransfer.file.util.TextPreviewDecoder;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -239,7 +240,7 @@ public class FileDownloadService {
      * 传输未走完只记日志。</p>
      *
      * @param file                待下发的物理文件
-     * @param inline              {@code true} = 在线预览（仅可安全内联的类型），{@code false} = 下载
+     * @param inline              {@code true} = 在线预览（PDF / 光栅图原生内联，文本走专用通道），{@code false} = 下载
      * @param requestedSpeedLimit 任务级速率上限（字节/秒，可空；{@code 0} 表示不限速）
      * @param rangeHeader         {@code Range} 请求头（可空）
      * @param response            HTTP 响应
@@ -247,6 +248,11 @@ public class FileDownloadService {
     public void streamSharedFile(FileObject file, boolean inline, Long requestedSpeedLimit,
                                  String rangeHeader, HttpServletResponse response) {
         String ext = FileTypePolicy.extOfName(file.getOriginalName());
+        if (inline && typePolicy.previewableText(ext)) {
+            // 文本可见但不能按文档 MIME 内联，走专用通道（见 streamTextPreview）
+            streamTextPreview(file, response);
+            return;
+        }
         if (inline && !typePolicy.inlineRenderable(ext)) {
             // 预览票承载的是「能看」而不是「能拿走」：不可安全内联的类型没有预览路径，
             // 也绝不能为它退回 attachment —— 那等于把预览票降级成下载票
@@ -292,6 +298,78 @@ public class FileDownloadService {
         if (!outcome.ok()) {
             log.warn("分享取件下发未完成：fileId={}, sent={}, reason={}",
                     file.getId(), outcome.sent(), outcome.failureReason());
+        }
+    }
+
+    /* ============================== 文本预览 ============================== */
+
+    /**
+     * 文本在线预览：以服务端强制的 {@code text/plain} 直出内容。
+     *
+     * <p><b>为什么不能复用 {@link #pump} 的流式链路：</b>文本必须先完成编码判定
+     * （见 {@link TextPreviewDecoder}）再按 UTF-8 重新编码写出，否则 GBK 文件在浏览器里会整篇乱码；
+     * 而「判定编码」天然要求先把字节读进内存。代价是必须设上限，故截断到
+     * {@code previewTextMaxBytes}（与文件域文本预览同一上限、同一解码实现，保证两处看到的内容一致），
+     * 截断时回 {@code X-Preview-Truncated} 供排障区分「文件就这么长」与「被截断了」。</p>
+     *
+     * <p><b>为什么这里可以内联（与 {@link FileTypePolicy} 的安全口径不冲突）：</b>
+     * 危险来自 MIME——{@code text/html} / {@code image/svg+xml} 会让浏览器执行内容。
+     * 本方法的 MIME 是<b>硬编码</b>的 {@code text/plain} 且附 {@code nosniff}，
+     * 内容里写满 {@code <script>} 也只会被当可见字符显示，不会进入 HTML 解析器。</p>
+     *
+     * <p>本通道刻意不支持 {@code Range}：文本上限仅几 MiB，而按字节分段会把多字节字符切断、
+     * 使每段都解码失败。浏览器对 {@code text/plain} 预览也不会发 Range。</p>
+     *
+     * @param file     待下发的物理文件
+     * @param response HTTP 响应
+     */
+    private void streamTextPreview(FileObject file, HttpServletResponse response) {
+        String sha256 = file.getSha256();
+        long total = (sha256 == null || sha256.isBlank()) ? -1L : fileStorage.contentSize(sha256);
+        if (total < 0L) {
+            // 元数据在、字节流不在：属存储侧异常，必须显式失败而不是下发空内容
+            log.error("文本预览物理内容缺失：fileId={}, sha256={}", file.getId(), sha256);
+            throw new BusinessException(ErrorCode.FILE_DOWNLOAD_FAIL, "文件内容缺失，请联系管理员");
+        }
+
+        // 多读 1 字节用于判定截断：truncated 必须来自「还有没有更多」这一事实
+        long max = Math.max(properties.getPreviewTextMaxBytes(), 1L);
+        int capacity = (int) Math.min(max + 1L, Integer.MAX_VALUE);
+        byte[] head = new byte[capacity];
+        int read = 0;
+        try (InputStream in = fileStorage.contentResource(sha256).getInputStream()) {
+            while (read < capacity) {
+                int n = in.read(head, read, capacity - read);
+                if (n < 0) {
+                    break;
+                }
+                read += n;
+            }
+        } catch (IOException e) {
+            log.warn("读取文本预览失败：fileId={}", file.getId(), e);
+            throw new BusinessException(ErrorCode.FILE_DOWNLOAD_FAIL, "读取文件内容失败");
+        }
+        int length = (int) Math.min(read, max);
+        boolean truncated = read > length;
+        byte[] body = TextPreviewDecoder.decode(head, length).getBytes(StandardCharsets.UTF_8);
+
+        // 所有校验与解码都已完成，此刻才提交响应头
+        response.setStatus(HttpServletResponse.SC_OK);
+        // MIME 硬编码 + nosniff：缺任意一项，内容里的标签都可能被浏览器当文档执行
+        response.setContentType("text/plain;charset=UTF-8");
+        response.setHeader("X-Content-Type-Options", "nosniff");
+        response.setHeader(HttpHeaders.CONTENT_DISPOSITION, contentDisposition(file.getOriginalName(), true));
+        response.setHeader(HttpHeaders.CACHE_CONTROL, "private, no-store");
+        if (truncated) {
+            response.setHeader("X-Preview-Truncated", "true");
+        }
+        response.setContentLength(body.length);
+        try (OutputStream out = response.getOutputStream()) {
+            out.write(body);
+            out.flush();
+        } catch (IOException e) {
+            // 响应头已提交，改不了状态码；预览场景客户端断开是常态，不值得告警
+            log.debug("文本预览下发中断：fileId={}", file.getId(), e);
         }
     }
 

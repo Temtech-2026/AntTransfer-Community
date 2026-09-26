@@ -318,7 +318,7 @@ class TransferTaskServiceTest {
     }
 
     @Test
-    @DisplayName("合并成功：整件指纹一致才落库，回 fileId 字符串并清掉暂存")
+    @DisplayName("合并成功：整件指纹一致才落库，回 fileId / nodeId 字符串并清掉暂存")
     void shouldMergeAndIngestOnSuccess(@TempDir Path tempDir) throws IOException {
         Path merged = tempDir.resolve("merged.bin");
         Files.write(merged, new byte[UNIT]);
@@ -335,6 +335,8 @@ class TransferTaskServiceTest {
 
         assertThat(vo.isChunkMissing()).isFalse();
         assertThat(vo.fileId()).isEqualTo("999");
+        // 条目 ID 必须一并回传：下游（引用进聊天消息、权限申请、回跳文件域）认的是它
+        assertThat(vo.nodeId()).isEqualTo("1111");
         assertThat(vo.sha256()).isEqualTo(SHA);
         verify(chunkStore).deleteTaskDir(1004L);
     }

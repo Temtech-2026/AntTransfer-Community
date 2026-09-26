@@ -29,6 +29,7 @@ import com.anttransfer.permission.model.vo.RoleVO;
 import com.anttransfer.permission.model.vo.UserVO;
 import com.anttransfer.permission.service.UserAdminService;
 import jakarta.validation.Valid;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -38,7 +39,9 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -114,6 +117,30 @@ public class SystemUserController {
     @RequiresPerm(SystemAdminConstants.PERM_USER_UPDATE)
     public Result<UserVO> update(@PathVariable Long id, @Valid @RequestBody UserUpdateDTO dto) {
         return Result.ok(userAdminService.updateUser(id, dto));
+    }
+
+    /**
+     * 更换头像（<b>上传即生效</b>，不进 {@code PUT /{id}} 的保存流程）。
+     *
+     * <p><b>为什么要独立端点而不是在编辑表单一并提交：</b>本控制器与前端编辑弹窗
+     * 遵循同一条约定——「有独立权限点或独立副作用」的字段各走各的端点
+     * （状态 / 口令 / 角色已经是这样）。头像额外还多一层：图片字节必须先落盘才能拿到
+     * 可提交的引用，而新建用户时还没有 ID 可挂靠，合并进表单就得为「未保存的临时图」
+     * 再设计一套回收机制。</p>
+     *
+     * <p>权限点用 {@link SystemAdminConstants#PERM_USER_UPDATE}：头像是用户资料的一部分，
+     * 「能改资料」就应当包含「能换头像」；单独立一个 {@code user:avatar} 权限点会让
+     * 现有的「编辑」角色全部失去换头像能力，收益（更细的粒度）远小于成本。</p>
+     *
+     * @param id   目标用户 ID
+     * @param file 头像图片（multipart 字段名 {@code file}，与文件上传端点一致；png/jpg/gif/webp，≤2MB）
+     * @return 更换后的用户视图（含新的头像地址）
+     */
+    @PostMapping(value = "/{id}/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @RequiresPerm(SystemAdminConstants.PERM_USER_UPDATE)
+    public Result<UserVO> uploadAvatar(@PathVariable Long id,
+                                       @RequestPart("file") MultipartFile file) {
+        return Result.ok(userAdminService.uploadAvatar(id, file));
     }
 
     /** 启用 / 停用（停用即离职，回收审批类授权并吊销在途会话）。 */

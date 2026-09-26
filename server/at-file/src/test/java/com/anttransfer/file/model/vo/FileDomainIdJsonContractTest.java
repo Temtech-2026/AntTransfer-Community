@@ -65,7 +65,10 @@ class FileDomainIdJsonContractTest {
             ShareLinkVO.class,
             SharePayloadVO.class,
             ShareTicketVO.class,
-            PackTaskVO.class
+            PackTaskVO.class,
+            // 聊天附件链路（原漏登记，导致授权 ID 以 number 下发被取整，前端回查详情报 4024）
+            ChatAttachmentVO.class,
+            ChatAttachmentTicketVO.class
     );
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -109,6 +112,36 @@ class FileDomainIdJsonContractTest {
         assertTrue(json.get("sizeBytes").isNumber(),
                 "字节数是计数值，应保持数字，不能被连带字符串化");
         assertEquals(2048L, json.get("sizeBytes").asLong());
+    }
+
+    @Test
+    @DisplayName("防线②：会话附件授权 ID 以字符串下发（前端要拿它拼 #att:{id} 再回查详情）")
+    void chatAttachmentIdGoesOutAsExactString() throws Exception {
+        ChatAttachmentVO vo = ChatAttachmentVO.builder()
+                .id(SNOWFLAKE)
+                .nodeId(SNOWFLAKE)
+                .senderUserId(1L)
+                .receiverUserId(2L)
+                .fileName("报告.pdf")
+                .sizeBytes(2048L)
+                .usageMode(2)
+                .downloadLimit(3)
+                .downloadCount(0)
+                .build();
+
+        JsonNode json = objectMapper.readTree(objectMapper.writeValueAsString(vo));
+
+        assertTrue(json.get("id").isTextual(),
+                "授权 ID 必须是 JSON 字符串：取整后写进 #att:{id}，双方回查详情都报 4024");
+        assertEquals(String.valueOf(SNOWFLAKE), json.get("id").asText());
+        assertEquals(19, json.get("id").asText().length(),
+                "19 位必须一位不少；若走了 number，这里会是被取整的值");
+        assertTrue(json.get("nodeId").isTextual(), "文件条目 ID 也要过字符串");
+        assertTrue(json.get("senderUserId").isTextual(), "发送方用户 ID 也要过字符串");
+        assertTrue(json.get("receiverUserId").isTextual(), "接收方用户 ID 也要过字符串");
+
+        assertTrue(json.get("sizeBytes").isNumber(), "字节数是计数值，应保持数字");
+        assertTrue(json.get("downloadLimit").isNumber(), "次数上限是计数值，应保持数字");
     }
 
     /** 是否为 Long / long 字段（Java 里 ID 两种写法都可能出现，都要盯）。 */
