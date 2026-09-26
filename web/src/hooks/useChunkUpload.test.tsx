@@ -173,7 +173,7 @@ beforeEach(() => {
   });
   mockedParts.mockResolvedValue({ received: [], chunkSize: CHUNK });
   mockedUploadPart.mockResolvedValue(null);
-  mockedMerge.mockResolvedValue({ fileId: 'file-1' });
+  mockedMerge.mockResolvedValue({ fileId: 'file-1', nodeId: 'node-1' });
 });
 
 afterEach(() => {
@@ -185,7 +185,11 @@ describe('useChunkUpload', () => {
   /* ==================== 用户请求的三条上传分支 ==================== */
 
   it('秒传命中：直接完成，不发起任何分片请求、不调用合并', async () => {
-    mockedPrecheck.mockResolvedValue({ instant: true, fileId: 'exist-1' });
+    mockedPrecheck.mockResolvedValue({
+      instant: true,
+      fileId: 'exist-1',
+      nodeId: 'node-exist-1',
+    });
     renderHookWith(baseOptions());
 
     await act(async () => {
@@ -197,6 +201,7 @@ describe('useChunkUpload', () => {
     expect(task.status).toBe('success');
     expect(task.instant).toBe(true);
     expect(task.fileId).toBe('exist-1');
+    expect(task.nodeId).toBe('node-exist-1');
     expect(task.progress).toBe(100);
     // 秒传的全部价值就在这两条：一个字节都不上传、不做无谓合并
     expect(mockedUploadPart).not.toHaveBeenCalled();

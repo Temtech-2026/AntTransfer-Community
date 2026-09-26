@@ -12,13 +12,22 @@
  * <p>这些函数是纯函数，便于单测覆盖「脏数据 → null」的回落分支。
  */
 
+import { isPositiveIdString } from './id';
+
 /** 拖拽载荷的 MIME 类型。 */
 export const FILE_DRAG_MIME = 'application/x-anttransfer-file';
 
-/** 拖拽载荷：只带渲染卡片所需的最小字段，不传整个 FileNode。 */
+/** 拖拽载荷：只带渲染卡片与事后定位所需的最小字段，不传整个 FileNode。 */
 export interface FileDragPayload {
-  /** 文件主键（发送消息时只做引用，不重新上传） */
-  fileId: number;
+  /**
+   * 文件**条目**主键（`sys_file_node.id`），不是物理文件 ID。
+   *
+   * <p>为什么是条目 ID 而不是 `fileId`：这条链路下游要做的事——发送消息时做引用、
+   * 无权限时发起权限申请、从消息卡片回到文件域——标的都是「条目」，物理文件 ID
+   * 在这里没有任何消费方。而且它是 19 位雪花 ID，用 `number` 承接会静默丢末位
+   * （见 `services/file/types` 的 ID 口径红线），因此一律以字符串传递。</p>
+   */
+  nodeId: string;
   fileName: string;
   /** 字节数；未知传 0 */
   sizeBytes: number;
@@ -50,8 +59,7 @@ function isPayload(value: unknown): value is FileDragPayload {
   }
   const record = value as Record<string, unknown>;
   return (
-    typeof record.fileId === 'number' &&
-    Number.isFinite(record.fileId) &&
+    isPositiveIdString(record.nodeId) &&
     typeof record.fileName === 'string' &&
     record.fileName.length > 0 &&
     typeof record.sizeBytes === 'number' &&
@@ -93,9 +101,4 @@ export function hasDragPayload(
   }
   const types = Array.from(dataTransfer.types ?? []);
   return types.includes(FILE_DRAG_MIME);
-}
-
-/** 把载荷格式化成聊天消息正文（免附件表，纯文本引用）。 */
-export function toChatContent(payload: FileDragPayload, sizeText: string): string {
-  return `${payload.fileName}（${sizeText}）`;
 }

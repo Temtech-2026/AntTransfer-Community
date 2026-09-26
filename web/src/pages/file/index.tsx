@@ -33,7 +33,7 @@ import {
   UploadOutlined,
 } from '@ant-design/icons';
 import { type ProColumns, PageContainer, ProTable } from '@ant-design/pro-components';
-import { useIntl } from '@umijs/max';
+import { history, useIntl } from '@umijs/max';
 import {
   Alert,
   Breadcrumb,
@@ -55,7 +55,7 @@ import {
   theme,
 } from 'antd';
 import type { Dayjs } from 'dayjs';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Access, usePerm } from '@/components/Access';
 import { formatBytes } from '@/components/ChunkUpload';
@@ -74,6 +74,7 @@ import {
   destroyNode,
   downloadNode,
   emptyRecycle,
+  fetchFileNode,
   fetchFolderTree,
   levelColor,
   levelTextId,
@@ -83,6 +84,8 @@ import {
   recycleNode,
   restoreNode,
 } from '@/services/file';
+import { attachToChat } from '@/services/ui/panelHub';
+import { FILE_DEEPLINK_PARAM } from '@/utils/fileDeepLink';
 
 import FileGrid from './components/FileGrid';
 import FileIcon from './components/FileIcon';
@@ -92,6 +95,7 @@ import PreviewModal from './components/PreviewModal';
 import SecurityBadges from './components/SecurityBadges';
 import ShareModal from './components/ShareModal';
 import UploadModal from './components/UploadModal';
+import { nodeDragProps } from './dragSource';
 import { folderChildren, folderPath } from './folder-tree';
 import useStyles from './index.style';
 import { type NodeActionHandlers, NodeActionLinks } from './node-actions';
@@ -177,6 +181,32 @@ export default function FileWorkbenchPage() {
   });
 
   const refresh = useCallback(() => setReloadKey((key) => key + 1), []);
+
+  /**
+   * 深链：从聊天里的文件卡片点回来时带着 `?nodeId=`，直接把那个条目打开。
+   *
+   * <p>只认一次，并在处理前先把参数从地址里抹掉：否则用户关掉预览后随手翻页、
+   * 甚至只是触发一次重渲染，都会把它再弹一遍。</p>
+   */
+  const deepLinkConsumed = useRef(false);
+  useEffect(() => {
+    if (deepLinkConsumed.current) {
+      return;
+    }
+    deepLinkConsumed.current = true;
+    const nodeId = new URLSearchParams(history.location.search).get(
+      FILE_DEEPLINK_PARAM,
+    );
+    if (!nodeId) {
+      return;
+    }
+    history.replace('/file');
+    fetchFileNode(nodeId)
+      .then((node) => setPreviewNode(node))
+      .catch(() => {
+        // 失败提示由请求层给出（无权限或条目已不存在）；这里让列表保持原样
+      });
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -423,6 +453,13 @@ export default function FileWorkbenchPage() {
       onPreview: (node) => setPreviewNode(node),
       onDownload: (node) => void handleDownload(node),
       onShare: (node) => setShareNode(node),
+      onSendToChat: (node) =>
+        attachToChat({
+          nodeId: node.id,
+          fileName: node.name,
+          sizeBytes: node.sizeBytes ?? 0,
+          level: node.level,
+        }),
       onApply: (node) => setApplyNode(node),
       onRecycle: (node) => handleRecycle(node),
       onRestore: (node) => void handleRestore(node),
@@ -514,9 +551,16 @@ export default function FileWorkbenchPage() {
       {
         title: intl.formatMessage({ id: 'file.column.updateTime' }),
         dataIndex: 'updateTime',
-        width: 170,
+        /*
+          与系统管理「创建时间」同一口径：不写自定义 render，交给 ProTable 的
+          `dateTime` 渲染成 `YYYY-MM-DD HH:mm:ss`。服务端下发的是 ISO-8601
+          （`2026-09-26T14:30:00`，见 application.yml 的 write-dates-as-timestamps=false），
+          直出会把那个 `T` 摆到用户面前；空值仍由 ProTable 兜底成 `-`。
+          改动这里时须同步 `formatDisplayDateTime`，否则切到网格视图就是另一种写法。
+        */
+        valueType: 'dateTime',
+        width: 180,
         sorter: true,
-        render: (_, node) => node.updateTime ?? '-',
       },
       // 回收站专属列：正常态没有 recycleTime，这一列只在回收站视角出现
       ...(recycleMode
@@ -946,6 +990,8 @@ export default function FileWorkbenchPage() {
               options={false}
               toolBarRender={false}
               scroll={{ x: 960 }}
+              // 拖到聊天：回收站里的条目不该被拖出去，只有「我的文件」视角给拖拽源
+              onRow={recycleMode ? undefined : (node) => nodeDragProps(node)}
               rowSelection={
                 recycleMode
                   ? undefined

@@ -23,7 +23,7 @@ import {
   theme,
   Upload,
 } from 'antd';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   type UseChunkUploadResult,
@@ -34,6 +34,7 @@ import {
   DEFAULT_CONCURRENCY,
   MAX_CHUNK_SIZE,
 } from '@/services/upload/constants';
+import type { PartPayloadMode } from '@/services/upload/endpoints';
 import type { UploadTaskStatus, UploadTaskView } from '@/services/upload/types';
 
 const { Text } = Typography;
@@ -45,6 +46,13 @@ export interface ChunkUploadProps {
   chunkSize?: number;
   /** 单文件并发分片数（默认 3；上限 5） */
   concurrency?: number;
+  /**
+   * 分片请求体形态（默认 `multipart`）。
+   *
+   * <p>对**之后加入的任务**生效：任务入队时快照一次，中途切换不会让同一次上传
+   * 混用两种请求体（见 `ChunkUploadController`）。</p>
+   */
+  partPayloadMode?: PartPayloadMode;
   /** 失败自动重试次数（默认 3） */
   maxRetries?: number;
   /** 预检附加业务字段（如 spaceId / parentId） */
@@ -96,6 +104,17 @@ const BUSY_STATUSES: UploadTaskStatus[] = [
   'uploading',
   'merging',
 ];
+
+/** 分片请求体形态 → 称呼 / `Content-Type` 的 i18n id（与 /upload 页的卡片共用一套文案） */
+const MODE_TITLE_ID: Record<PartPayloadMode, string> = {
+  multipart: 'upload.mode.multipart.title',
+  'octet-stream': 'upload.mode.octetStream.title',
+};
+
+const MODE_TAG_ID: Record<PartPayloadMode, string> = {
+  multipart: 'upload.mode.multipart.tag',
+  'octet-stream': 'upload.mode.octetStream.tag',
+};
 
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) {
@@ -158,6 +177,7 @@ export function ChunkUpload(props: ChunkUploadProps) {
     id = 'default',
     chunkSize: chunkSizeProp,
     concurrency: concurrencyProp,
+    partPayloadMode = 'multipart',
     maxRetries,
     extra,
     accept,
@@ -183,10 +203,25 @@ export function ChunkUpload(props: ChunkUploadProps) {
     concurrencyProp ?? DEFAULT_CONCURRENCY,
   );
 
+  // 受控同步：调用方若把「分片大小 / 并发数」做成可切换的预设（见 /upload 页的
+  // 「上传方式」卡片），切预设后内部状态必须跟着走。仅在显式传入时同步，
+  // 未传时仍由组件自管这两个参数，原用法不受影响。
+  useEffect(() => {
+    if (chunkSizeProp !== undefined) {
+      setChunkSize(chunkSizeProp);
+    }
+  }, [chunkSizeProp]);
+  useEffect(() => {
+    if (concurrencyProp !== undefined) {
+      setConcurrency(concurrencyProp);
+    }
+  }, [concurrencyProp]);
+
   const hookResult = useChunkUpload({
     id,
     chunkSize,
     concurrency,
+    partPayloadMode,
     maxRetries,
     precheckExtra: extra,
     onTaskSuccess,
@@ -240,6 +275,12 @@ export function ChunkUpload(props: ChunkUploadProps) {
       title={
         <Space size={12}>
           <span>{displayTitle}</span>
+          {/* 当前方式就地可见：上传中也能一眼看出这批任务是按哪种请求体发的 */}
+          <Tooltip title={intl.formatMessage({ id: MODE_TAG_ID[partPayloadMode] })}>
+            <Tag color={partPayloadMode === 'octet-stream' ? 'geekblue' : 'blue'}>
+              {intl.formatMessage({ id: MODE_TITLE_ID[partPayloadMode] })}
+            </Tag>
+          </Tooltip>
           {summary.uploading > 0 ? (
             <Text type="secondary">
               {intl.formatMessage({ id: 'component.chunkUpload.busy' }, { count: summary.uploading })}

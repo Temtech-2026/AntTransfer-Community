@@ -93,8 +93,17 @@ interface InternalTask {
   chunkCount: number;
   /** 生成 chunkHashes 时所用的分片大小，用于判断是否需重算 */
   hashedChunkSize: number;
+  /**
+   * 分片请求体形态快照：入队时取一次，之后不再跟随 options 变化。
+   *
+   * <p>因此运行中切换上传方式只影响**之后加入的任务**，同一次上传的前后分片
+   * 不会混用两种请求体（表单与裸流的服务端接收方式互不兼容）。</p>
+   */
+  partPayloadMode?: PartPayloadMode;
   uploadId?: string;
   fileId?: string;
+  /** 引用条目 ID（`sys_file_node.id`）；上传成功后对外引用这份文件用的是它，不是 fileId */
+  nodeId?: string;
   instant: boolean;
   sha256?: string;
   /** 上次会话缓存的摘要，用于识别「同名同大小但内容已变」的文件 */
@@ -247,6 +256,7 @@ export class ChunkUploadController {
       speed: task.status === 'uploading' ? task.speed : 0,
       uploadId: task.uploadId,
       fileId: task.fileId,
+      nodeId: task.nodeId,
       instant: task.instant,
       chunkSize: task.chunkSize,
       chunkCount: task.chunkCount,
@@ -298,6 +308,7 @@ export class ChunkUploadController {
         chunkSize,
         chunkCount: Math.max(1, Math.ceil(file.size / chunkSize) || 1),
         hashedChunkSize: 0,
+        partPayloadMode: this.options.partPayloadMode,
         uploadId: record?.uploadId ?? undefined,
         instant: false,
         // 不复用缓存摘要来跳过哈希：分片摘要无法在 localStorage 里经济地缓存
@@ -509,7 +520,7 @@ export class ChunkUploadController {
           }),
         );
         if (result.instant) {
-          this.finishInstant(task, result.fileId);
+          this.finishInstant(task, result.fileId, result.nodeId);
           return;
         }
         task.uploadId = result.uploadId;
@@ -541,7 +552,7 @@ export class ChunkUploadController {
           chunkCount: task.chunkCount,
         }),
       );
-      this.finishSuccess(task, merged.fileId);
+      this.finishSuccess(task, merged.fileId, merged.nodeId);
     } catch (error) {
       if (isAbortError(error)) {
         this.onAborted(task);
@@ -699,7 +710,8 @@ export class ChunkUploadController {
           hash: task.chunkHashes[index],
           signal: task.controller.signal,
           timeoutMs: this.options.partTimeoutMs ?? 120000,
-          mode: this.options.partPayloadMode,
+          // 优先用任务自己的快照：切换方式不影响在途任务
+          mode: task.partPayloadMode ?? this.options.partPayloadMode,
           onProgress: (loaded) => {
             task.inflight.set(index, Math.min(loaded, meta.size));
             this.recordProgress(task);
@@ -868,17 +880,19 @@ export class ChunkUploadController {
     this.options.onAllFinished?.(this.snapshot);
   }
 
-  private finishInstant(task: InternalTask, fileId: string): void {
+  private finishInstant(task: InternalTask, fileId: string, nodeId?: string): void {
     task.instant = true;
     task.fileId = fileId || undefined;
+    task.nodeId = nodeId || undefined;
     task.doneBytes = task.size;
     task.inflight.clear();
     task.progress = 100;
     this.settle(task, 'success');
   }
 
-  private finishSuccess(task: InternalTask, fileId: string): void {
+  private finishSuccess(task: InternalTask, fileId: string, nodeId?: string): void {
     task.fileId = fileId || undefined;
+    task.nodeId = nodeId || undefined;
     task.doneBytes = task.size;
     task.inflight.clear();
     this.settle(task, 'success');

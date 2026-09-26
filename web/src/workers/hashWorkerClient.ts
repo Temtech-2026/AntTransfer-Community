@@ -6,8 +6,9 @@
  *    由打包器把 worker 单独拆成 chunk）；
  * 2. **任务串行化**——哈希是 CPU 密集任务，N 个文件并发哈希只会互相抢核、
  *    让每个文件都变慢；串行后「先选的文件先算完」体验更可预期；
- * 3. 环境不支持 Worker（SSR / happy-dom / 老浏览器）时**自动回退主线程**同算法实现，
- *    保证功能可用（只是会占用主线程）。
+ * 3. 环境不支持 Worker（SSR / happy-dom / 老浏览器），或 Worker 本身故障
+ *    （worker chunk 加载失败、模块 Worker 不受支持、Worker 内抛错 / 内存不足）时
+ *    **自动回退主线程**同算法实现，保证功能可用（只是会占用主线程）。
  */
 
 import { translateMessage } from '@/requestErrorConfig';
@@ -253,7 +254,34 @@ export function computeFileHashes(
     if (!instance) {
       return runOnMainThread(file, chunkSize, options);
     }
-    return runInWorker(instance, file, chunkSize, options);
+    try {
+      return await runInWorker(instance, file, chunkSize, options);
+    } catch (error) {
+      // 用户主动中止：原样上抛，绝不能当故障处理（否则中止会变成偷偷重算）
+      if (error instanceof UploadAbortError) {
+        throw error;
+      }
+      if (options.signal?.aborted) {
+        throw new UploadAbortError();
+      }
+      // Worker 故障：脚本加载失败（打包器 worker chunk 404 / 首次冷启动）、
+      // 模块 Worker 不受支持、Worker 内抛错或内存不足。
+      // 这类失败与「文件内容」无关，不应让整次上传直接判死——
+      // 丢弃可疑实例并回退主线程同算法实现，保证上传能继续（大文件时尤其关键）。
+      disposeWorker();
+      options.onProgress?.({
+        processed: 0,
+        total: file.size,
+        percent: 0,
+        index: 0,
+        chunkCount: Math.max(1, Math.ceil(file.size / chunkSize) || 1),
+      });
+      console.warn(
+        '[upload] hash worker unavailable, fallback to main thread:',
+        error,
+      );
+      return runOnMainThread(file, chunkSize, options);
+    }
   });
 }
 

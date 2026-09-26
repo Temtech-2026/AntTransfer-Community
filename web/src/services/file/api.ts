@@ -47,6 +47,16 @@ export function pageFiles(query: FileNodeQuery = {}): Promise<PageResult<FileNod
   });
 }
 
+/**
+ * 单条文件条目详情。
+ *
+ * <p>用于「从别处回到这个条目」的深链：聊天里的文件卡片只带得到条目 ID，
+ * 要把 ID 变成可渲染 / 可预览的对象就得先取一次详情。</p>
+ */
+export function fetchFileNode(nodeId: SnowflakeId): Promise<FileNode> {
+  return get<FileNode>(FILE_ENDPOINTS.detail(nodeId));
+}
+
 /** 当前用户的目录树（children 递归嵌套）。 */
 export async function fetchFolderTree(): Promise<FolderNode[]> {
   const tree = await get<FolderNode[]>(FOLDER_ENDPOINTS.tree);

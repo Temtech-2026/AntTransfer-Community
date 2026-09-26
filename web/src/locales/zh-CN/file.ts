@@ -56,6 +56,7 @@ export default {
   'file.action.preview': '预览',
   'file.action.download': '下载',
   'file.action.share': '分享',
+  'file.action.sendToChat': '发送到聊天',
   'file.action.applyPerm': '申请权限',
   'file.action.delete': '删除',
   'file.action.restore': '还原',

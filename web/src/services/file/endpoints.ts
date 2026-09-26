@@ -34,6 +34,47 @@ export const FILE_ENDPOINTS = {
   emptyRecycle: '/api/v1/files/recycle/empty',
 } as const;
 
+/**
+ * 会话附件端点（聊天里「带附件发消息」的授权与取件）。
+ *
+ * <p>路径前缀是 `chat-attachments` 而不是 `files`：这些端点的裁决依据是
+ * <b>附件授权行</b>（发送方设定的用途档位 / 有效期 / 次数），与文件域 RBAC 无关。
+ * 接收方通常对源条目没有任何权限点，却必须能取件——若与文件端点混在一组，
+ * 后来者很容易顺手给它挂上 `file:download`，于是功能对普通员工整体失效。</p>
+ *
+ * <p>{@link CHAT_ATTACHMENT_ENDPOINTS.content} 免登录（凭 `?ticket=`）：
+ * `<a href>` / `<img src>` 带不了 Authorization 头，故**不要**给它加请求头，
+ * 鉴权只发生在票据上。</p>
+ */
+export const CHAT_ATTACHMENT_ENDPOINTS = {
+  /** 创建授权（发送方在发出消息之前调用，需持有该条目） */
+  create: '/api/v1/chat-attachments',
+  /** 「我发出的」分页（含已撤销 / 已失效，不过滤终态） */
+  mine: '/api/v1/chat-attachments/mine',
+  /** 「我收到的」分页 */
+  received: '/api/v1/chat-attachments/received',
+  /** 详情（发送方与接收方均可） */
+  detail: (attachmentId: number | string) =>
+    `/api/v1/chat-attachments/${attachmentId}`,
+  /** 撤销（发送方，幂等；立即生效，不等票据过期） */
+  revoke: (attachmentId: number | string) =>
+    `/api/v1/chat-attachments/${attachmentId}`,
+  /**
+   * 换取件票据（登录态，两步式取件的第一步）。
+   *
+   * <p>`accessType`：`preview`（只预览，不消耗下载次数）/ `download`（消耗一次额度）。
+   * 全部裁决（归属 / 撤销 / 有效期 / 档位 / 次数原子扣减）都在这一步完成。</p>
+   */
+  ticket: (attachmentId: number | string, accessType: 'preview' | 'download') =>
+    `/api/v1/chat-attachments/${attachmentId}/ticket?accessType=${accessType}`,
+  /** 转存到自己的文件（需 `file:upload`，且档位须为「可转发转存」） */
+  save: (attachmentId: number | string) =>
+    `/api/v1/chat-attachments/${attachmentId}/save`,
+  /** 取件地址（免登录，凭票据；支持 Range 续传） */
+  content: (attachmentId: number | string, ticket: string) =>
+    `/api/v1/chat-attachments/${attachmentId}/content?ticket=${encodeURIComponent(ticket)}`,
+} as const;
+
 /** 目录端点。 */
 export const FOLDER_ENDPOINTS = {
   /** 当前用户的目录树（children 递归嵌套） */

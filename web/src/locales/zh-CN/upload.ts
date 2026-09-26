@@ -58,6 +58,35 @@ export default {
   'upload.column.method': '方式',
   'upload.column.chunked': '分片上传',
 
+  // 上传方式（分片请求体形态）—— 演示页卡片与上传组件共用同一套称呼
+  'upload.mode.title': '上传方式',
+  'upload.mode.subtitle': '两种分片请求体形态，参数各自独立保存',
+  'upload.mode.active': '当前使用',
+  'upload.mode.use': '使用此方式',
+  'upload.mode.fact.request': '请求体',
+  'upload.mode.fact.scene': '适用场景',
+  'upload.mode.unsupportedTag': '后端未支持',
+  'upload.mode.switchHint':
+    '切换只影响之后加入的任务：进行中的任务继续用它开始时的方式，因此不会出现同一次上传混用两种请求体；新参数同样从下一个任务开始生效。',
+  'upload.mode.multipart.title': '表单分片',
+  'upload.mode.multipart.tag': 'multipart/form-data',
+  'upload.mode.multipart.desc':
+    '每个分片包成 `FormData` 发送，分片序号与摘要随表单字段一并提交，兼容性最好，也是当前后端的默认口径。',
+  'upload.mode.multipart.request':
+    '`PUT` 分片接口，请求体为 `FormData`（`chunk` + `index` + `hash`）',
+  'upload.mode.multipart.scene':
+    '后端用 Spring `@RequestPart` / `MultipartFile` 接收分片（契约默认口径）',
+  'upload.mode.octetStream.title': '二进制流',
+  'upload.mode.octetStream.tag': 'application/octet-stream',
+  'upload.mode.octetStream.desc':
+    '分片以裸字节流直接作为请求体，分片序号由 URL 确定，少一层表单封装与一次内存拷贝。',
+  'upload.mode.octetStream.request':
+    '`PUT` 分片接口，请求体为裸字节流（`Content-Type: application/octet-stream`，不带 `hash` 字段）',
+  'upload.mode.octetStream.scene':
+    '对象存储直传，或网关按裸流透传、不做表单解析的场景',
+  'upload.mode.octetStream.unsupported':
+    '当前 at-transfer 分片接口只声明了 `multipart/form-data`，选它会在分片上报 HTTP 415；需后端先支持裸流接收（前端这一侧已就绪）。',
+
   // 演示页（/upload）。文案里的反引号由页面渲染为行内代码样式。
   'upload.demo.pageTitle': '分片上传',
   'upload.demo.pageSubtitle': '秒传 · 断点续传 · 并发分片',
@@ -79,9 +108,23 @@ export default {
   'upload.demo.finished.title': '已完成文件',
   'upload.demo.finished.subtitle': '最多保留最近 {count} 条',
   'upload.demo.usage.title': '接入方式',
-  'upload.demo.usage.subtitle': '组件与 Hook 两种用法',
+  'upload.demo.usage.subtitle': '组件与 Hook 两种用法，共用同一条队列',
   'upload.demo.usage.desc':
-    '组件已内置队列与进度展示；若要在业务页自己控制布局，可直接用 Hook `useChunkUpload()`，它返回 `tasks` / `resumable` 快照与 `start` / `pause` / `resume` / `retry` / `cancel` 等动作。',
+    '组件自带队列与进度展示，放进页面就能用；若要在业务页自己安排布局，改用 Hook `useChunkUpload()` 拿状态与动作，界面自己画。两者只认 `id`：`id` 相同即同一条队列，可以在同一页混用。',
+  'upload.demo.usage.tab.component': '组件用法',
+  'upload.demo.usage.tab.hook': 'Hook 用法',
+  'upload.demo.usage.component.point1':
+    '`id` 决定队列身份：同 id 的多个组件共用一条队列，切页或重新挂载都不会中断传输。',
+  'upload.demo.usage.component.point2':
+    '`chunkSize` 与 `concurrency` 在入队时收敛到契约范围内（≤ 8 MiB、1 ~ 5 并发），传超限值不会把非法分片发上线。',
+  'upload.demo.usage.component.point3':
+    '`partPayloadMode` 按任务生效：上传途中切换，只影响之后加入的任务。',
+  'upload.demo.usage.hook.point1':
+    '`tasks` 与 `resumable` 是订阅来的快照：进度刷新不靠轮询，也不会把高频进度写进 state。',
+  'upload.demo.usage.hook.point2':
+    '`start()` 加入文件即开始，并返回这批任务的 id；暂停 / 续传 / 重试 / 取消各有对应动作。',
+  'upload.demo.usage.hook.point3':
+    'Hook 只给状态与动作、不画界面：列表、进度条、按钮全部由业务页自己决定。',
   'upload.demo.tryRun.title': '如何试跑',
   'upload.demo.tryRun.localMock':
     '本页自带本地 mock（`src/pages/upload/_mock.ts`，umi 只加载页面目录下的 `_mock.ts`）：用 `npm run start` 启动（自动开启 mock）时，上传链路可离线走通，同一文件再传一次即命中秒传。',

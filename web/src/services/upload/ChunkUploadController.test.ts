@@ -7,7 +7,10 @@
  */
 
 import { computeFileHashes } from '@/workers/hashWorkerClient';
-import { ChunkUploadController } from './ChunkUploadController';
+import {
+  ChunkUploadController,
+  type ChunkUploadOptions,
+} from './ChunkUploadController';
 import { UploadAbortError } from './errors';
 import type { PartStatus } from './types';
 import {
@@ -147,7 +150,7 @@ beforeEach(() => {
   });
   mockedParts.mockResolvedValue({ received: [], chunkSize: CHUNK });
   mockedUploadPart.mockResolvedValue(null);
-  mockedMerge.mockResolvedValue({ fileId: 'file-1' });
+  mockedMerge.mockResolvedValue({ fileId: 'file-1', nodeId: 'node-1' });
   mockedCancel.mockResolvedValue(undefined);
   mockedTaskState.mockResolvedValue(undefined);
 });
@@ -173,13 +176,19 @@ describe('ChunkUploadController', () => {
     expect(task.status).toBe('success');
     expect(task.progress).toBe(100);
     expect(task.fileId).toBe('file-1');
+    // 条目 ID 必须一路带到任务视图：聊天「上传后直接发送」只有拿到它才能引用这份文件
+    expect(task.nodeId).toBe('node-1');
     expect(task.received).toEqual([0, 1, 2]);
     // 完成的任务不留在本地缓存里
     expect(findRecordByFile(makeFile(10))).toBeNull();
   });
 
   it('秒传命中：不传任何分片、不合并，直接完成', async () => {
-    mockedPrecheck.mockResolvedValue({ instant: true, fileId: 'exist-1' });
+    mockedPrecheck.mockResolvedValue({
+      instant: true,
+      fileId: 'exist-1',
+      nodeId: 'node-exist-1',
+    });
     const { controller } = makeController();
 
     controller.addFiles([makeFile(10)]);
@@ -189,6 +198,8 @@ describe('ChunkUploadController', () => {
     expect(task.status).toBe('success');
     expect(task.instant).toBe(true);
     expect(task.fileId).toBe('exist-1');
+    // 秒传复用的是内容，条目是新建的——引用必须用新条目
+    expect(task.nodeId).toBe('node-exist-1');
     expect(task.progress).toBe(100);
     expect(mockedUploadPart).not.toHaveBeenCalled();
     expect(mockedMerge).not.toHaveBeenCalled();
@@ -526,5 +537,45 @@ describe('ChunkUploadController', () => {
     const task = controller.getSnapshot()[0];
     expect(task.progress).toBe(100);
     expect(task.speed).toBe(0);
+  });
+
+  it('上传方式：入队时快照，运行中切换只影响之后加入的任务', async () => {
+    const state = gateUploads();
+    const options: ChunkUploadOptions = {
+      chunkSize: CHUNK,
+      concurrency: 1, // 串行，才能精确控制「第 0 片发出之后」再切
+      maxRetries: 3,
+      sleep: async () => {},
+      partPayloadMode: 'multipart',
+    };
+    const controller = new ChunkUploadController(options);
+
+    controller.addFiles([makeFile(16)]); // 4 片
+    await flush();
+    expect(mockedUploadPart).toHaveBeenCalledTimes(1); // 并发 1 → 只有第 0 片在途
+
+    // 在途期间改上传方式：表单与裸流的服务端接收方式互不兼容，
+    // 同一次上传必须锁死在入队时的形态上
+    options.partPayloadMode = 'octet-stream';
+    for (let round = 0; round < 4; round += 1) {
+      (state as unknown as { release?: () => void }).release?.();
+      await flush();
+    }
+
+    expect(mockedUploadPart.mock.calls.map((call) => call[0].mode)).toEqual([
+      'multipart',
+      'multipart',
+      'multipart',
+      'multipart',
+    ]);
+    expect(controller.getSnapshot()[0].status).toBe('success');
+
+    // 新方式从下一个任务开始生效（撤掉闸门，让新任务跑完）
+    mockedUploadPart.mockResolvedValue(null);
+    controller.addFiles([makeFile(8)]); // 2 片
+    await flush();
+    expect(
+      mockedUploadPart.mock.calls.slice(4).map((call) => call[0].mode),
+    ).toEqual(['octet-stream', 'octet-stream']);
   });
 });

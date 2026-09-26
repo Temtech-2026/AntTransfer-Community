@@ -59,6 +59,7 @@ export default {
   'file.action.preview': 'Preview',
   'file.action.download': 'Download',
   'file.action.share': 'Share',
+  'file.action.sendToChat': 'Send to chat',
   'file.action.applyPerm': 'Request access',
   'file.action.delete': 'Delete',
   'file.action.restore': 'Restore',

@@ -41,6 +41,7 @@ export interface NodeActionHandlers {
   onPreview: (node: FileNode) => void;
   onDownload: (node: FileNode) => void;
   onShare: (node: FileNode) => void;
+  onSendToChat: (node: FileNode) => void;
   onApply: (node: FileNode) => void;
   onRecycle: (node: FileNode) => void;
   onRestore: (node: FileNode) => void;
@@ -93,6 +94,14 @@ export function buildNodeActions(
       labelId: 'file.action.share',
       perm: 'file:share',
       onClick: () => handlers.onShare(node),
+    },
+    {
+      // 无权限点门禁：发送的只是「条目引用」，真正的取件边界在接收方那一侧
+      // （他要有 file:download 才能换票）。给这里加门禁只会让能看见文件的人发不出去，
+      // 与「申请权限」同理——它不触碰文件内容，不该被文件权限拦下。
+      key: 'sendToChat',
+      labelId: 'file.action.sendToChat',
+      onClick: () => handlers.onSendToChat(node),
     },
     {
       key: 'apply',

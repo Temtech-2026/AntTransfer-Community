@@ -186,7 +186,14 @@ export async function precheck(
         retryable: true,
       });
     }
-    return { instant: true, fileId: String(fileId) };
+    const nodeId = body.data?.nodeId;
+    return {
+      instant: true,
+      fileId: String(fileId),
+      // 条目 ID 与物理文件 ID 一起回：秒传复用的是内容，引用条目是新建的，
+      // 下游（如聊天发送）要的是条目
+      nodeId: nodeId ? String(nodeId) : undefined,
+    };
   }
 
   if (body.code === CODE_INSTANT_UPLOAD_MISS) {
@@ -272,8 +279,10 @@ export async function mergeParts(
   );
   ensureSuccess(body);
   const fileId = body.data?.fileId ?? body.data?.id;
+  const nodeId = body.data?.nodeId;
   return {
     fileId: fileId ? String(fileId) : '',
+    nodeId: nodeId ? String(nodeId) : undefined,
     sha256: body.data?.sha256,
   };
 }

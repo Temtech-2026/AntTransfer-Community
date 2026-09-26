@@ -14,6 +14,14 @@ export interface PrecheckPayload {
 export interface PrecheckHit {
   instant: true;
   fileId: string;
+  /**
+   * 命中的**引用条目** ID（`sys_file_node.id`，字符串承载）。
+   *
+   * <p>秒传只复用物理内容，引用条目是**新建**的一条，它才是用户侧的「这个文件」：
+   * 引用进聊天消息、发起权限申请、从卡片跳回文件域，标的都是条目而不是物理文件。
+   * 因此这里必然有值；缺失只可能来自旧后端，调用方按「拿不到条目」处理。</p>
+   */
+  nodeId?: string;
 }
 
 /** 预检未命中：拿到上传票据，进入分片上传 */
@@ -53,6 +61,8 @@ export interface PartUploadedResult {
 /** 合并结果 */
 export interface MergeResult {
   fileId: string;
+  /** 本次落库新建的引用条目 ID（见 {@link PrecheckHit.nodeId} 的口径说明） */
+  nodeId?: string;
   sha256?: string;
 }
 
@@ -87,8 +97,15 @@ export interface UploadTaskView {
   speed: number;
   /** 服务端上传票据 */
   uploadId?: string;
-  /** 秒传命中或合并完成后返回的文件 id */
+  /** 秒传命中或合并完成后返回的文件 id（物理文件 ID，`sys_file.id`） */
   fileId?: string;
+  /**
+   * 秒传命中或合并完成后返回的**引用条目** ID（`sys_file_node.id`，字符串）。
+   *
+   * <p>对外引用这份文件时必须用它：`fileId` 是去重后的物理内容，多个条目可以共用一个
+   * `fileId`，拿它回查「是哪一条」在重名 / 秒传共存时必然认错。</p>
+   */
+  nodeId?: string;
   /** 是否秒传命中（未实际传输字节） */
   instant: boolean;
   chunkSize: number;

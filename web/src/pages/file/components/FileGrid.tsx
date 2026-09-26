@@ -15,8 +15,10 @@ import { Checkbox, Empty, Spin, Tag, Tooltip } from 'antd';
 
 import { formatBytes } from '@/components/ChunkUpload';
 import { type FileNode, levelColor, levelTextId } from '@/services/file';
+import { formatDisplayDateTime } from '@/utils/datetime';
 
 import useStyles from '../index.style';
+import { nodeDragProps } from '../dragSource';
 import { type NodeActionHandlers, NodeActionLinks } from '../node-actions';
 import FileIcon from './FileIcon';
 import SecurityBadges from './SecurityBadges';
@@ -71,6 +73,7 @@ export default function FileGrid({
                 className={[styles.gridCard, selected ? styles.gridCardSelected : '']
                   .filter(Boolean)
                   .join(' ')}
+                {...(recycleMode ? {} : nodeDragProps(node))}
                 onClick={() => {
                   if (selectable) {
                     onToggleSelect(node.id);
@@ -96,7 +99,7 @@ export default function FileGrid({
                 </Tooltip>
 
                 <div className={styles.gridMeta}>
-                  {formatBytes(node.sizeBytes ?? 0)} · {node.updateTime ?? '-'}
+                  {formatBytes(node.sizeBytes ?? 0)} · {formatDisplayDateTime(node.updateTime)}
                 </div>
 
                 <div className={styles.gridMeta}>

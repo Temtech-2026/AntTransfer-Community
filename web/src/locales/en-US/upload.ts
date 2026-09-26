@@ -63,6 +63,36 @@ export default {
   'upload.column.method': 'Method',
   'upload.column.chunked': 'Chunked upload',
 
+  // Upload method (chunk request body form) — shared by the demo cards and the upload component
+  'upload.mode.title': 'Upload method',
+  'upload.mode.subtitle':
+    'Two chunk request body forms, each with its own saved parameters',
+  'upload.mode.active': 'In use',
+  'upload.mode.use': 'Use this method',
+  'upload.mode.fact.request': 'Request body',
+  'upload.mode.fact.scene': 'Best for',
+  'upload.mode.unsupportedTag': 'Backend unsupported',
+  'upload.mode.switchHint':
+    'Switching only affects tasks added afterwards: a running task keeps the method it started with, so one upload never mixes the two request body forms. New parameters also apply from the next task on.',
+  'upload.mode.multipart.title': 'Form chunks',
+  'upload.mode.multipart.tag': 'multipart/form-data',
+  'upload.mode.multipart.desc':
+    'Each chunk is wrapped in `FormData`, with the chunk index and digest submitted as form fields; the most compatible option and the current backend default.',
+  'upload.mode.multipart.request':
+    '`PUT` chunk endpoint, body is `FormData` (`chunk` + `index` + `hash`)',
+  'upload.mode.multipart.scene':
+    'The backend receives chunks via Spring `@RequestPart` / `MultipartFile` (the contract default)',
+  'upload.mode.octetStream.title': 'Raw binary stream',
+  'upload.mode.octetStream.tag': 'application/octet-stream',
+  'upload.mode.octetStream.desc':
+    'The chunk itself is the raw request body and the index comes from the URL, saving one layer of form wrapping and a memory copy.',
+  'upload.mode.octetStream.request':
+    '`PUT` chunk endpoint, body is the raw byte stream (`Content-Type: application/octet-stream`, no `hash` field)',
+  'upload.mode.octetStream.scene':
+    'Direct-to-object-storage uploads, or gateways that pass the raw stream through without parsing a form',
+  'upload.mode.octetStream.unsupported':
+    'The at-transfer chunk endpoint currently only declares `multipart/form-data`, so choosing this makes chunk uploads fail with HTTP 415; the backend must support raw streams first (the frontend side is ready).',
+
   // Demo page (/upload). Backticks in the text are rendered as inline code by the page.
   'upload.demo.pageTitle': 'Chunked upload',
   'upload.demo.pageSubtitle': 'Instant upload · Resume · Concurrent chunks',
@@ -88,9 +118,23 @@ export default {
   'upload.demo.finished.title': 'Completed files',
   'upload.demo.finished.subtitle': 'Keeps the latest {count} at most',
   'upload.demo.usage.title': 'How to integrate',
-  'upload.demo.usage.subtitle': 'Component and Hook, two ways',
+  'upload.demo.usage.subtitle': 'Component or Hook, sharing one upload queue',
   'upload.demo.usage.desc':
-    'The component ships with a queue and progress display built in; to control the layout yourself on a business page, use the Hook `useChunkUpload()`, which returns `tasks` / `resumable` snapshots along with `start` / `pause` / `resume` / `retry` / `cancel` actions.',
+    'The component brings its own queue and progress display, so it works as soon as it is on the page. To lay things out yourself on a business page, use the `useChunkUpload()` Hook for state and actions and render your own UI. Both only care about `id`: the same `id` means the same queue, so the two can be mixed on one page.',
+  'upload.demo.usage.tab.component': 'Component',
+  'upload.demo.usage.tab.hook': 'Hook',
+  'upload.demo.usage.component.point1':
+    '`id` defines the queue identity: components sharing an id share one queue, and navigation or remounting never interrupts a transfer.',
+  'upload.demo.usage.component.point2':
+    '`chunkSize` and `concurrency` are normalized to the contract range on enqueue (≤ 8 MiB, 1-5 in parallel), so an out-of-range value never puts illegal chunks on the wire.',
+  'upload.demo.usage.component.point3':
+    '`partPayloadMode` is per task: switching while uploading only affects tasks added afterwards.',
+  'upload.demo.usage.hook.point1':
+    '`tasks` and `resumable` are subscribed snapshots: progress is not polled, and high-frequency progress never goes into state.',
+  'upload.demo.usage.hook.point2':
+    '`start()` enqueues and begins immediately, returning the ids of that batch; pause / resume / retry / cancel each have their own action.',
+  'upload.demo.usage.hook.point3':
+    'The Hook gives state and actions but draws nothing: list, progress bar and buttons are all up to the business page.',
   'upload.demo.tryRun.title': 'How to try it',
   'upload.demo.tryRun.localMock':
     'This page ships with its own local mock (`src/pages/upload/_mock.ts`; Umi only loads the `_mock.ts` inside the page directory): when started with `npm run start` (mock enabled automatically), the upload pipeline works offline and uploading the same file again hits the instant-upload path.',
