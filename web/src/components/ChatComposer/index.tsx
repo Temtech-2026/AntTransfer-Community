@@ -22,6 +22,7 @@ import { Button, Input, Tooltip } from 'antd';
 import {
   type ReactNode,
   useCallback,
+  useEffect,
   useId,
   useMemo,
   useRef,
@@ -51,6 +52,18 @@ const useStyles = createStyles(({ token }) => ({
   /** 窄容器（抽屉）用的紧凑内边距——写法与聊天页的选中项一致：同类名追加覆盖。 */
   rootCompact: {
     padding: '10px 12px',
+  },
+
+  /**
+   * 无外壳（弹窗里内嵌使用）：输入区自身不带内边距与上分隔线。
+   *
+   * <p>「发起会话」弹窗的外层已有 Modal 的内边距，再叠一份 20px 水平内边距会把输入框挤窄，
+   * 顶上那道 `borderTop` 更是凭空多出一横（它本意是分隔「消息流」与「输入区」，
+   * 弹窗里并没有消息流）。与 {@link rootCompact} 同样是「同类名追加覆盖」。</p>
+   */
+  rootBare: {
+    padding: 0,
+    borderTop: 'none',
   },
 
   /** 微信式输入框本体：边框盒子包住正文 + 工具栏。 */
@@ -84,6 +97,13 @@ const useStyles = createStyles(({ token }) => ({
     padding: '2px 8px 6px',
   },
 
+  /** 工具栏左侧的工具簇：表情按钮与附加入口（文件等）并排，右侧仍只留发送。 */
+  tools: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 2,
+  },
+
   /** 表情面板：从输入框下方展开，高度固定以免撑高整页。 */
   panel: {
     marginTop: 8,
@@ -93,9 +113,17 @@ const useStyles = createStyles(({ token }) => ({
     boxShadow: token.boxShadowTertiary,
   },
 
+  /**
+   * 表情网格：高度随视口收敛。
+   *
+   * <p>写死 196px 时，聊天页那种「固定高度外壳 + 流内展开」的容器里，
+   * 面板会把消息流挤到几乎为零（外壳本身只有 calc(100vh - 260px)），
+   * 观感上就是表情区占满整个聊天区域。用 min() 给一个视口相关上限：
+   * 高屏仍取满 196px，矮屏（笔记本投屏、分屏）自动让步给消息流。</p>
+   */
   grid: {
     display: 'grid',
-    height: 196,
+    height: 'min(196px, 26vh)',
     gridTemplateColumns: 'repeat(auto-fill, minmax(32px, 1fr))',
     gap: 2,
     padding: 8,
@@ -184,10 +212,20 @@ export interface ChatComposerProps {
   placeholder: string;
   /** 发送按钮文案（页与抽屉各自的键）。 */
   sendLabel: string;
-  /** 输入框上方的附加内容：抽屉的待发文件条 / 拖拽提示。 */
+  /** 输入框上方的附加内容：待发文件条 / 拖拽提示（两个入口传同一个组件）。 */
   header?: ReactNode;
+  /**
+   * 工具栏左侧的附加入口（如文件传输），排在表情按钮之后。
+   *
+   * <p>做成插槽而不是在输入框里内联：输入框只管「怎么输入与怎么发出去」，
+   * 「能发什么东西」是调用方的业务（页与抽屉同用 `ChatAttachmentPicker`）。
+   * 放在框内工具栏而不是框外，是为了对齐微信的手感——入口与发送按钮同属输入框。</p>
+   */
+  tools?: ReactNode;
   /** 窄容器（即时通讯抽屉）用紧凑内边距。 */
   compact?: boolean;
+  /** 无外壳（弹窗里内嵌使用）：去掉输入区自身的内边距与上分隔线。 */
+  bare?: boolean;
 }
 
 /**
@@ -211,7 +249,9 @@ const ChatComposer = ({
   placeholder,
   sendLabel,
   header,
+  tools,
   compact = false,
+  bare = false,
 }: ChatComposerProps) => {
   const intl = useIntl();
   const { styles } = useStyles();
@@ -223,6 +263,8 @@ const ChatComposer = ({
 
   const domRef = useRef<HTMLTextAreaElement | null>(null);
   const caretRef = useRef<{ start: number; end: number } | null>(null);
+  /** 整个输入区的根节点：用来判定「点的是面板外面」。 */
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
   /** 同一页可能有多处输入框（页 + 抽屉），面板与页签的关联 id 必须唯一。 */
   const panelId = useId();
@@ -251,6 +293,44 @@ const ChatComposer = ({
       return true;
     });
   }, [storage]);
+
+  /**
+   * 面板收起的两条「不用找按钮」的路子：点面板外面、按 Esc。
+   *
+   * <p>此前只有「再点一次表情按钮」能收——面板占着消息流的位置，用户第一反应
+   * 是点旁边的聊天区或按 Esc，结果面板纹丝不动，才像是「退不下去」。
+   * 监听只在面板打开期间挂载，收起即卸载，不给整页留常驻监听。</p>
+   *
+   * <p>Esc 走 document 而不是输入框：面板打开时焦点未必在 textarea 上
+   * （用户可能刚点过分类页签），挂在输入框上的那份会漏掉。</p>
+   */
+  useEffect(() => {
+    if (!panelOpen) {
+      return undefined;
+    }
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const root = rootRef.current;
+      const target = event.target;
+      // 面板、表情按钮、输入框都在根节点内：命中就不算「点外面」
+      if (root && target instanceof Node && root.contains(target)) {
+        return;
+      }
+      setPanelOpen(false);
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setPanelOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [panelOpen]);
 
   /** 「最近使用」置顶后写入本地，下次打开直接可用。 */
   const rememberEmoji = useCallback(
@@ -301,6 +381,15 @@ const ChatComposer = ({
 
   const canSend = !disabled && !sending && (allowEmpty || value.trim() !== '');
 
+  /**
+   * 发送统一从这里出：正文已经交出去，面板就没有继续占着消息流的理由。
+   * 留着不收的话，刚发完消息想接着看上一条，面板还杵在那儿挡着。
+   */
+  const handleSend = useCallback(() => {
+    setPanelOpen(false);
+    onSend();
+  }, [onSend]);
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Escape' && panelOpen) {
       setPanelOpen(false);
@@ -322,12 +411,19 @@ const ChatComposer = ({
       return;
     }
     event.preventDefault();
-    onSend();
+    handleSend();
   };
 
   return (
     <div
-      className={compact ? `${styles.root} ${styles.rootCompact}` : styles.root}
+      ref={rootRef}
+      className={[
+        styles.root,
+        compact ? styles.rootCompact : '',
+        bare ? styles.rootBare : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
     >
       {header}
       <div className={styles.box}>
@@ -349,19 +445,22 @@ const ChatComposer = ({
           onKeyUp={(event) => rememberCaret(event.target)}
         />
         <div className={styles.toolbar}>
-          <Tooltip
-            title={intl.formatMessage({ id: 'chat.composer.emoji' })}
-          >
-            <Button
-              type="text"
-              icon={<SmileOutlined />}
-              aria-label={intl.formatMessage({ id: 'chat.composer.emoji' })}
-              aria-expanded={panelOpen}
-              // 按下不抢焦点：光标留在正文里，取表情才插得准
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={togglePanel}
-            />
-          </Tooltip>
+          <div className={styles.tools}>
+            <Tooltip
+              title={intl.formatMessage({ id: 'chat.composer.emoji' })}
+            >
+              <Button
+                type="text"
+                icon={<SmileOutlined />}
+                aria-label={intl.formatMessage({ id: 'chat.composer.emoji' })}
+                aria-expanded={panelOpen}
+                // 按下不抢焦点：光标留在正文里，取表情才插得准
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={togglePanel}
+              />
+            </Tooltip>
+            {tools}
+          </div>
           <Tooltip title={intl.formatMessage({ id: 'chat.composer.sendHint' })}>
             <Button
               type="primary"
@@ -370,7 +469,7 @@ const ChatComposer = ({
               disabled={!canSend}
               // 显式给出可访问名：图标自带 aria-label，否则读出来是「send 发送」
               aria-label={sendLabel}
-              onClick={onSend}
+              onClick={handleSend}
             >
               {sendLabel}
             </Button>

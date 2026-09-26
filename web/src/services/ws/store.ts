@@ -23,6 +23,13 @@ import {
 import { tokenStore } from '@/utils/token';
 
 import { WsClient, type WsStatus } from './ws-client';
+import type {
+  WsChatReadPayload,
+  WsChatRecallPayload,
+  WsPresencePayload,
+  WsProfilePayload,
+  WsTypingPayload,
+} from './protocol';
 
 /** 快照形状。 */
 export interface WsSnapshot {
@@ -40,11 +47,57 @@ type MessageListener = (message: NotifyMessage) => void;
  * 「错过了 N 条」）。所以这里单独开一个计数事件，而不是让页面去猜时序。
  */
 export type BackfillListener = (count: number) => void;
+/**
+ * 已读回执回调（对端读了我发的消息）。
+ *
+ * <p><b>回执是「加速通道」而非事实源</b>：它只在发送人在线时才有意义，离线期间发生的
+ * 阅读不会补推——真值在会话历史的 `readers` 字段里（进入会话 / 刷新即回正）。
+ * 因此这里也不落任何本地缓存，收到就直接转发给当前可见的聊天界面。</p>
+ */
+export type ReadReceiptListener = (receipt: WsChatReadPayload) => void;
+/**
+ * 消息撤回回调（某条已发出的消息被撤回）。
+ *
+ * <p><b>与 {@link ReadReceiptListener} 同样是加速通道</b>：真值是历史里的
+ * {@code recallStatus}，离线期间的撤回不会补推（补拉的历史自带状态）。
+ * 因此这里不缓存、不落库，收到就转发给当前可见的聊天界面；
+ * 订阅方需自行按会话过滤，再按 {@code clientMsgId} 定位本地那条。</p>
+ */
+export type RecallListener = (recall: WsChatRecallPayload) => void;
+/**
+ * 在线状态回调（对端三态变更）。
+ *
+ * <p>加速通道：权威值由打开会话时拉一次 + 打开期间每 30s 续订一次回正，因此这里不缓存、
+ * 不落库，收到直接转发给当前可见的聊天界面；订阅方自行按 {@code userId} 过滤会话。</p>
+ */
+export type PresenceListener = (presence: WsPresencePayload) => void;
+/**
+ * 输入状态回调（对端正在 / 不再输入）。
+ *
+ * <p>与 {@link PresenceListener} 同样不落缓存：它是瞬时信号，`typing=false` 与空闲兜底
+ * 都只是「收起提示」，没有任何需要回正的事实。</p>
+ */
+export type TypingListener = (typing: WsTypingPayload) => void;
+/**
+ * 用户资料变更回调（本人头像已更换）。
+ *
+ * <p><b>它不是加速通道里「等下一条就回正」的那一类</b>：头像换了就是换了，本端不跟进
+ * 就会一直显示旧图（直到刷新）。所以订阅方应当<b>立刻</b>用帧里的 `avatarUrl` 换图，
+ * 而不是等下一次拉取。真值仍在 `sys_user.avatar_url`，丢了只是本端晚一步。</p>
+ *
+ * <p>订阅方无需按 `userId` 过滤：该帧只推给变更者本人的连接（见 `protocol` 里载荷注释）。</p>
+ */
+export type ProfileListener = (profile: WsProfilePayload) => void;
 
 let state: WsSnapshot = { status: 'idle', unread: { ...EMPTY_UNREAD } };
 const listeners = new Set<Listener>();
 const messageListeners = new Set<MessageListener>();
 const backfillListeners = new Set<BackfillListener>();
+const readReceiptListeners = new Set<ReadReceiptListener>();
+const recallListeners = new Set<RecallListener>();
+const presenceListeners = new Set<PresenceListener>();
+const typingListeners = new Set<TypingListener>();
+const profileListeners = new Set<ProfileListener>();
 let started = false;
 
 function sameUnread(a: UnreadCount, b: UnreadCount): boolean {
@@ -86,6 +139,56 @@ function emitBackfill(count: number): void {
   });
 }
 
+function emitReadReceipt(receipt: WsChatReadPayload): void {
+  readReceiptListeners.forEach((listener) => {
+    try {
+      listener(receipt);
+    } catch (error) {
+      console.error('[anttransfer] WS 已读回执回调异常', error);
+    }
+  });
+}
+
+function emitRecall(recall: WsChatRecallPayload): void {
+  recallListeners.forEach((listener) => {
+    try {
+      listener(recall);
+    } catch (error) {
+      console.error('[anttransfer] WS 撤回回调异常', error);
+    }
+  });
+}
+
+function emitPresence(presence: WsPresencePayload): void {
+  presenceListeners.forEach((listener) => {
+    try {
+      listener(presence);
+    } catch (error) {
+      console.error('[anttransfer] WS 在线状态回调异常', error);
+    }
+  });
+}
+
+function emitTyping(typing: WsTypingPayload): void {
+  typingListeners.forEach((listener) => {
+    try {
+      listener(typing);
+    } catch (error) {
+      console.error('[anttransfer] WS 输入状态回调异常', error);
+    }
+  });
+}
+
+function emitProfile(profile: WsProfilePayload): void {
+  profileListeners.forEach((listener) => {
+    try {
+      listener(profile);
+    } catch (error) {
+      console.error('[anttransfer] WS 资料变更回调异常', error);
+    }
+  });
+}
+
 /** 重连成功后补拉离线消息，并以服务端快照纠正本地角标（离线期间可能有漂移）。 */
 async function syncAfterReconnect(): Promise<void> {
   const messages = await fetchOfflineMessages();
@@ -104,6 +207,11 @@ const client = new WsClient({
     status: (status) => patch({ status }),
     unread: (unread) => patch({ unread }),
     message: (message) => emitMessage(message),
+    readReceipt: (receipt) => emitReadReceipt(receipt),
+    recall: (recall) => emitRecall(recall),
+    presence: (presence) => emitPresence(presence),
+    typing: (typing) => emitTyping(typing),
+    profile: (profile) => emitProfile(profile),
     reconnected: () => {
       void syncAfterReconnect();
     },
@@ -144,6 +252,71 @@ export const wsStore = {
     backfillListeners.add(listener);
     return () => {
       backfillListeners.delete(listener);
+    };
+  },
+
+  /**
+   * 订阅实时已读回执。
+   *
+   * <p>订阅方必须先按 `(chatScope, chatTargetId)` 判断这帧是不是当前打开的会话
+   * （服务端推给的是发送人，而其可能同时开着多个会话窗口）。</p>
+   */
+  subscribeReadReceipt(listener: ReadReceiptListener): () => void {
+    readReceiptListeners.add(listener);
+    return () => {
+      readReceiptListeners.delete(listener);
+    };
+  },
+
+  /**
+   * 订阅消息撤回（某条已发出的消息被其发送人撤回）。
+   *
+   * <p>订阅方必须先按 `(chatScope, chatTargetId)` 判断这帧是不是当前打开的会话
+   * （服务端推给的是该消息的全部参与人，一次会到多条），再按 `clientMsgId` 定位。</p>
+   */
+  subscribeRecall(listener: RecallListener): () => void {
+    recallListeners.add(listener);
+    return () => {
+      recallListeners.delete(listener);
+    };
+  },
+
+  /**
+   * 订阅对端在线状态变更。
+   *
+   * <p>订阅方必须先按 `presence.userId` 判断这帧是不是当前会话的对端
+   * （页面 + 抽屉 + 多标签页可能各看着不同的人）。</p>
+   */
+  subscribePresence(listener: PresenceListener): () => void {
+    presenceListeners.add(listener);
+    return () => {
+      presenceListeners.delete(listener);
+    };
+  },
+
+  /**
+   * 订阅对端输入状态。
+   *
+   * <p>订阅方必须先按 `(chatScope, chatTargetId)` 判断会话是否匹配；`typing=false`
+   * 必须照常处理，否则提示只能等本端空闲兜底收起。</p>
+   */
+  subscribeTyping(listener: TypingListener): () => void {
+    typingListeners.add(listener);
+    return () => {
+      typingListeners.delete(listener);
+    };
+  },
+
+  /**
+   * 订阅本人资料变更（头像）。
+   *
+   * <p>订阅方无需过滤：帧只推给本人各端。头像换了就应立刻换图——它不像在线状态那样
+   * 有「打开会话拉一次」的回正时机，本端不跟进就会一直显示旧图直到刷新。</p>
+   */
+  subscribeProfile(listener: ProfileListener): () => void {
+    profileListeners.add(listener);
+    return () => {
+      profileListeners.delete(listener);
     };
   },
 

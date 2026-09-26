@@ -27,11 +27,21 @@ import {
   buildWsUrl,
   createClientPingFrame,
   nextBackoffDelay,
+  parseChatReadPayload,
+  parseChatRecallPayload,
+  parsePresencePayload,
+  parseProfilePayload,
+  parseTypingPayload,
   parseWsFrame,
   shouldReconnect,
   type BackoffOptions,
+  type WsChatReadPayload,
+  type WsChatRecallPayload,
   type WsFrame,
   type WsLocationLike,
+  type WsPresencePayload,
+  type WsProfilePayload,
+  type WsTypingPayload,
 } from './protocol';
 
 /** 连接状态。 */
@@ -45,6 +55,47 @@ export interface WsClientEvents {
   unread?: (unread: UnreadCount) => void;
   /** 收到 NOTIFY / CHAT 消息帧（data 为单条 {@link NotifyMessage}）。 */
   message?: (message: NotifyMessage, frame: WsFrame) => void;
+  /**
+   * 收到 `CHAT_READ` 已读回执帧（对端读了我发的消息）。
+   *
+   * <p>与 {@link WsClientEvents.message} 分开一条事件：回执不是消息，既不进消息流、
+   * 也不影响未读，混进 message 里会让每个消费方都写一遍「是不是消息」的判据。</p>
+   */
+  readReceipt?: (receipt: WsChatReadPayload, frame: WsFrame) => void;
+  /**
+   * 收到 `CHAT_RECALL` 撤回帧（某条已发出的消息被其发送人撤回）。
+   *
+   * <p><b>与 {@link WsClientEvents.message} 分开一条事件</b>：撤回不产生新消息，
+   * 混进 message 里会被当作「来了新消息」插进列表并重算未读——而它改变的是
+   * <b>已存在那条</b>的状态。订阅方按 {@code (chatScope, chatTargetId)} 比对当前会话，
+   * 再按 {@code clientMsgId} 定位并标记。</p>
+   */
+  recall?: (recall: WsChatRecallPayload, frame: WsFrame) => void;
+  /**
+   * 收到 `PRESENCE` 在线状态帧（对端状态变更）。
+   *
+   * <p>与 {@link WsClientEvents.readReceipt} 同一纪律：这是加速通道，权威值由
+   * 「打开会话时拉一次 + 打开期间每 30s 续订一次」回正。订阅方必须先按 {@code userId}
+   * 判断这帧是否属于当前打开的会话——状态可能同属多个会话窗口。</p>
+   */
+  presence?: (presence: WsPresencePayload, frame: WsFrame) => void;
+  /**
+   * 收到 `TYPING` 输入状态帧。
+   *
+   * <p>瞬时信号，客户端不做补偿重试；订阅方按 `(chatScope, chatTargetId)` 比对当前会话，
+   * 并必须处理 `typing=false`（否则提示只能靠空闲兜底收起）。</p>
+   */
+  typing?: (typing: WsTypingPayload, frame: WsFrame) => void;
+  /**
+   * 收到 `PROFILE` 用户资料帧（本人的头像已更换）。
+   *
+   * <p><b>它只推给变更者本人的全部在线端</b>，所以订阅方<b>无需</b>按 userId 过滤——
+   * 收到即代表「我自己的资料变了」。这与 `PRESENCE` 恰好相反（那里必须按 userId 比对），
+   * 因为在线状态帧会送到多个「认识该用户」的接收人手上。</p>
+   *
+   * <p>不是消息：不进消息流、不影响未读三口径。</p>
+   */
+  profile?: (profile: WsProfilePayload, frame: WsFrame) => void;
   /** 重连成功（首次连接不算）：用于触发离线补拉。 */
   reconnected?: () => void;
   /** 协议层错误 / 不可恢复的关闭（4001）。 */
@@ -290,6 +341,47 @@ export class WsClient {
         this.setUnread(
           applyIncomingMessage(this.unread, message.notifyType, isSelfSentMessage(message)),
         );
+        break;
+      }
+      case WsFrameType.CHAT_READ: {
+        // 回执不进未读、不进消息流：它只改「我发的某几条」的读者展示（见 services/chat/readReceipt）
+        const receipt = parseChatReadPayload(frame.data);
+        if (receipt) {
+          this.emit('readReceipt', receipt, frame);
+        }
+        break;
+      }
+      case WsFrameType.CHAT_RECALL: {
+        // 撤回不进未读、不进消息流：它只把「已存在的那条」标记为已撤回
+        //（帧体不完整就丢弃，刷新拉历史即回正，见 protocol 解析器注释）
+        const recall = parseChatRecallPayload(frame.data);
+        if (recall) {
+          this.emit('recall', recall, frame);
+        }
+        break;
+      }
+      case WsFrameType.PRESENCE: {
+        // 状态点属加速通道：帧体不完整就丢弃，等下一次续订回正（见 protocol 里解析器注释）
+        const presence = parsePresencePayload(frame.data);
+        if (presence) {
+          this.emit('presence', presence, frame);
+        }
+        break;
+      }
+      case WsFrameType.TYPING: {
+        const typing = parseTypingPayload(frame.data);
+        if (typing) {
+          this.emit('typing', typing, frame);
+        }
+        break;
+      }
+      case WsFrameType.PROFILE: {
+        // 资料帧不是消息：只改「本人的头像」，不进消息流、不动未读。
+        // 帧体不完整即丢弃——真值在库，下次拉取（刷新 / 重连）自然回正
+        const profile = parseProfilePayload(frame.data);
+        if (profile) {
+          this.emit('profile', profile, frame);
+        }
         break;
       }
       case WsFrameType.PING: {

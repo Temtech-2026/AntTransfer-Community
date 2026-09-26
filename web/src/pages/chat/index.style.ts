@@ -20,6 +20,13 @@ const useStyles = createStyles(({ token }) => ({
     background: token.colorBgContainer,
   },
 
+  /** 拖着文件悬停在本区上：与即时通讯抽屉完全同一套反馈（描边 + 底色），别让两处手感分叉。 */
+  shellDragOver: {
+    outline: `2px dashed ${token.colorPrimary}`,
+    outlineOffset: -6,
+    background: token.colorPrimaryBg,
+  },
+
   /** 左栏（会话列表）。 */
   aside: {
     display: 'flex',
@@ -152,6 +159,20 @@ const useStyles = createStyles(({ token }) => ({
     fontWeight: 600,
   },
 
+  /**
+   * 标题行 + 对端状态：两行堆叠，状态在会话名下方。
+   *
+   * <p>与微信同口径——「在线 / 正在输入…」挂在标题下面而不是挤在右侧：
+   * 右侧是标签与窗口元信息的位置，状态放那儿会在窄屏被先挤掉，
+   * 而这个信息恰恰是用户扫一眼会话头就想知道的。</p>
+   */
+  mainHeading: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 2,
+    minWidth: 0,
+  },
+
   stream: {
     flex: 1,
     overflowY: 'auto',
@@ -217,7 +238,55 @@ const useStyles = createStyles(({ token }) => ({
     borderLeft: `3px solid ${token.colorPrimaryBorder}`,
   },
 
+  /**
+   * 已撤回气泡：底色与正文色一起退到「这不是一句话」的层级。
+   *
+   * <p><b>为什么不能只靠文字：</b>同一条消息撤回前后占的是同一个位置，正文却被清空了，
+   * 若外观不变，用户扫一眼消息流仍会以为那句话还在（气泡忽然变窄只会被当成渲染抖动）。
+   * 因此画成系统提示的样子：虚线描边、无底色、次要色文字。</p>
+   *
+   * <p>不与 `bubbleSelf` 叠加（调用方二者只取其一）：emotion 生成的类名顺序由样式插入
+   * 顺序决定，靠「后写的类覆盖先写的类」在 className 里排顺序并不可靠。</p>
+   */
+  bubbleRecalled: {
+    border: `1px dashed ${token.colorBorderSecondary}`,
+    background: 'transparent',
+    color: token.colorTextTertiary,
+    fontStyle: 'italic',
+  },
+
   bubbleMeta: {
+    color: token.colorTextQuaternary,
+    fontSize: token.fontSizeSM,
+  },
+
+  /** 已读回执：气泡下那排读者头像（只在自己发的消息上渲染）。 */
+  readers: {
+    display: 'flex',
+    alignItems: 'center',
+  },
+
+  /**
+   * 头像外壳：负外边距让后一位压住前一位的右半边，一眼看出「不止一个人读过」。
+   *
+   * <p>描边画在外壳上而不是头像上：头像与外壳同为一个圆，描边才不会被相邻头像盖掉半圈。</p>
+   */
+  readerAvatar: {
+    display: 'inline-flex',
+    marginInlineStart: -6,
+    border: `1px solid ${token.colorBgContainer}`,
+    borderRadius: '50%',
+  },
+
+  /** 第一位不缩进，否则整排会从气泡外侧开始、看起来脱离了气泡。 */
+  readerAvatarFirst: {
+    display: 'inline-flex',
+    border: `1px solid ${token.colorBgContainer}`,
+    borderRadius: '50%',
+  },
+
+  readerMore: {
+    marginInlineStart: 4,
     color: token.colorTextQuaternary,
     fontSize: token.fontSizeSM,
   },

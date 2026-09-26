@@ -174,4 +174,41 @@ describe('ChatComposer 表情', () => {
     openEmojiPanel();
     expect(screen.getByRole('tab', { name: RECENT_TAB })).toBeInTheDocument();
   });
+
+  it('点面板外面收起，不挡着看消息', () => {
+    render(<Harness onSend={vi.fn()} />);
+    openEmojiPanel();
+    expect(screen.getByRole('tablist')).toBeInTheDocument();
+
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+  });
+
+  it('按 Esc 收起（焦点不在输入框上也生效）', () => {
+    render(<Harness onSend={vi.fn()} />);
+    openEmojiPanel();
+    expect(screen.getByRole('tablist')).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+  });
+
+  it('发送后面板收起，消息流不再被占着', () => {
+    const onSend = vi.fn();
+    render(<Harness onSend={onSend} />);
+    fireEvent.change(textarea(), { target: { value: '在吗' } });
+    openEmojiPanel();
+
+    fireEvent.click(sendButton());
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+  });
+
+  it('点表情按钮本身不算「点外面」，可反复开合', () => {
+    render(<Harness onSend={vi.fn()} />);
+    openEmojiPanel();
+    fireEvent.mouseDown(emojiToggle());
+    fireEvent.click(emojiToggle());
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+  });
 });

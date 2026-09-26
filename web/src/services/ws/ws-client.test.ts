@@ -2,6 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { NotifyMessage, UnreadCount } from '@/services/notify/types';
 
+import type {
+  WsChatReadPayload,
+  WsPresencePayload,
+  WsProfilePayload,
+  WsTypingPayload,
+} from './protocol';
+
 import {
   WsClient,
   type WsClientEvents,
@@ -55,6 +62,10 @@ function createClient(over: Partial<WsClientOptions> = {}) {
     statuses: [] as string[],
     unreads: [] as UnreadCount[],
     messages: [] as NotifyMessage[],
+    readReceipts: [] as WsChatReadPayload[],
+    presences: [] as WsPresencePayload[],
+    typings: [] as WsTypingPayload[],
+    profiles: [] as WsProfilePayload[],
     reconnects: 0,
     errors: [] as unknown[],
   };
@@ -62,6 +73,10 @@ function createClient(over: Partial<WsClientOptions> = {}) {
     status: (status) => recorder.statuses.push(status),
     unread: (unread) => recorder.unreads.push(unread),
     message: (message) => recorder.messages.push(message),
+    readReceipt: (receipt) => recorder.readReceipts.push(receipt),
+    presence: (presence) => recorder.presences.push(presence),
+    typing: (typing) => recorder.typings.push(typing),
+    profile: (profile) => recorder.profiles.push(profile),
     reconnected: () => {
       recorder.reconnects += 1;
     },
@@ -221,6 +236,140 @@ describe('未读维护', () => {
     sockets[0].open();
     sockets[0].onmessage?.({ data: '<html>502</html>' });
 
+    expect(client.getStatus()).toBe('open');
+  });
+
+  it('CHAT_READ 走独立事件，且不改未读、不进消息流', () => {
+    const { client, recorder } = createClient();
+
+    client.connect();
+    sockets[0].open();
+    sockets[0].receive({ type: 'UNREAD', data: { inbox: 1, todo: 0, chat: 3 } });
+    sockets[0].receive({
+      type: 'CHAT_READ',
+      data: {
+        chatScope: 1,
+        chatTargetId: '2',
+        reader: { userId: '2', displayName: '张三' },
+        clientMsgIds: ['c-1'],
+      },
+    });
+
+    expect(recorder.readReceipts).toHaveLength(1);
+    // 回执不是消息：既不加未读（chat 仍是 3），也不该出现在消息流里
+    expect(client.getUnread()).toEqual({ inbox: 1, todo: 0, chat: 3 });
+    expect(recorder.messages).toHaveLength(0);
+  });
+
+  it('缺字段的 CHAT_READ 脏帧被丢弃（不抛事件、不崩连接）', () => {
+    const { client, recorder } = createClient();
+
+    client.connect();
+    sockets[0].open();
+    sockets[0].receive({ type: 'CHAT_READ', data: { chatScope: 1, clientMsgIds: ['c-1'] } });
+
+    expect(recorder.readReceipts).toHaveLength(0);
+    expect(client.getStatus()).toBe('open');
+  });
+
+  it('PRESENCE / TYPING 走独立事件，且不改未读、不进消息流', () => {
+    const { client, recorder } = createClient();
+
+    client.connect();
+    sockets[0].open();
+    sockets[0].receive({ type: 'UNREAD', data: { inbox: 1, todo: 0, chat: 3 } });
+    sockets[0].receive({
+      type: 'PRESENCE',
+      data: { userId: '2', status: 'UNSTABLE', lastActiveAt: 1_700_000_000_000 },
+    });
+    sockets[0].receive({
+      type: 'TYPING',
+      data: { chatScope: 1, chatTargetId: '2', typing: true },
+    });
+
+    expect(recorder.presences).toEqual([
+      { userId: '2', status: 'UNSTABLE', lastActiveAt: 1_700_000_000_000 },
+    ]);
+    expect(recorder.typings).toEqual([
+      { chatScope: 1, chatTargetId: '2', typing: true },
+    ]);
+    // 两者都是瞬时信号：既不加未读（chat 仍是 3），也不该出现在消息流里
+    expect(client.getUnread()).toEqual({ inbox: 1, todo: 0, chat: 3 });
+    expect(recorder.messages).toHaveLength(0);
+  });
+
+  it('typing=false 照常投递（停止输入不是脏数据，丢了提示就收不起来）', () => {
+    const { client, recorder } = createClient();
+
+    client.connect();
+    sockets[0].open();
+    sockets[0].receive({
+      type: 'TYPING',
+      data: { chatScope: 1, chatTargetId: '2', typing: false },
+    });
+
+    expect(recorder.typings).toEqual([
+      { chatScope: 1, chatTargetId: '2', typing: false },
+    ]);
+  });
+
+  it('缺字段的 PRESENCE / TYPING 脏帧被丢弃（状态点宁可不更新也不崩聊天页）', () => {
+    const { client, recorder } = createClient();
+
+    client.connect();
+    sockets[0].open();
+    sockets[0].receive({ type: 'PRESENCE', data: { status: 'ONLINE' } });
+    sockets[0].receive({ type: 'PRESENCE', data: { userId: '2', status: 'BUSY' } });
+    sockets[0].receive({ type: 'TYPING', data: { chatScope: 1, chatTargetId: '2' } });
+    sockets[0].receive({
+      type: 'TYPING',
+      data: { chatScope: 1, chatTargetId: '2', typing: 'false' },
+    });
+
+    expect(recorder.presences).toHaveLength(0);
+    expect(recorder.typings).toHaveLength(0);
+    expect(client.getStatus()).toBe('open');
+  });
+
+  it('PROFILE 走独立事件：它是「我自己的头像变了」，不进消息流、不动未读', () => {
+    const { client, recorder } = createClient();
+
+    client.connect();
+    sockets[0].open();
+    sockets[0].receive({ type: 'UNREAD', data: { inbox: 1, todo: 0, chat: 3 } });
+    sockets[0].receive({
+      type: 'PROFILE',
+      data: { userId: '2', avatarUrl: '/v1/users/2/avatar?v=5' },
+    });
+
+    expect(recorder.profiles).toEqual([{ userId: '2', avatarUrl: '/v1/users/2/avatar?v=5' }]);
+    expect(client.getUnread()).toEqual({ inbox: 1, todo: 0, chat: 3 });
+    expect(recorder.messages).toHaveLength(0);
+  });
+
+  it('PROFILE 的 avatarUrl 缺失 / 空串归一为 null（换成默认头像也是有效变更，不能整帧丢掉）', () => {
+    const { client, recorder } = createClient();
+
+    client.connect();
+    sockets[0].open();
+    sockets[0].receive({ type: 'PROFILE', data: { userId: '2' } });
+    sockets[0].receive({ type: 'PROFILE', data: { userId: '2', avatarUrl: '' } });
+
+    expect(recorder.profiles).toEqual([
+      { userId: '2', avatarUrl: null },
+      { userId: '2', avatarUrl: null },
+    ]);
+  });
+
+  it('缺 userId 的 PROFILE 脏帧被丢弃（不抛事件、不崩连接）', () => {
+    const { client, recorder } = createClient();
+
+    client.connect();
+    sockets[0].open();
+    sockets[0].receive({ type: 'PROFILE', data: { avatarUrl: '/v1/users/2/avatar?v=5' } });
+    sockets[0].receive({ type: 'PROFILE', data: null });
+
+    expect(recorder.profiles).toHaveLength(0);
     expect(client.getStatus()).toBe('open');
   });
 

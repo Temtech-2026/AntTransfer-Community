@@ -75,6 +75,34 @@ export const MessageType = {
   APPROVAL: 3,
 } as const;
 
+/** 撤回状态（与后端 {@code NotifyMessage.RECALL_*} 逐值对齐）。 */
+export const RecallStatus = {
+  /** 正常（未撤回）。 */
+  NONE: 0,
+  /** 已撤回：正文已被服务端清空，渲染成「已撤回」占位。 */
+  DONE: 1,
+} as const;
+
+/**
+ * 已读某条会话消息的读者（对齐后端 {@code ChatReaderVO}）。
+ *
+ * <p><b>为什么必须有独立的类型而不是复用会话对端</b>：读者是「这条消息被谁读了」，
+ * 与「这条消息属于哪个会话」无关——群聊里一条消息可以挂一串读者。展示只需要
+ * 「画得出头像」的几项（ID + 展示名 + 头像地址），故服务端也只回这几项。</p>
+ */
+export interface ChatReader {
+  /** 读者用户 ID（19 位雪花 ID，服务端以字符串下发）。 */
+  userId: string;
+  /** 读者展示名（与消息头像同一口径；服务端保证非空，为空的行不会下发）。 */
+  displayName: string;
+  /**
+   * 读者头像对外地址（含 `?v=` 缓存版本号）；null 表示该读者没有头像。
+   *
+   * <p>缺失时渲染回落展示名首字符——头像缺失不该让「谁读了」这块信息消失。</p>
+   */
+  avatarUrl?: string | null;
+}
+
 /**
  * 站内 / 会话消息（`NotifyMessageVO`）。
  *
@@ -87,6 +115,21 @@ export interface NotifyMessage {
   id: string;
   recipientUserId?: string | null;
   senderUserId?: string | null;
+  /**
+   * 发送人展示名（服务端反查，仅会话消息下发）。
+   *
+   * <p><b>为什么消息要自带发送人是谁</b>：群聊里一个会话流有多个发送人，
+   * 只靠「当前会话对端」画不出每行头像与首字符兜底；单聊里它与对端展示名同源，
+   * 前端因此不必分场景取名字。</p>
+   */
+  senderDisplayName?: string | null;
+  /**
+   * 发送人头像对外地址（含 `?v=` 缓存版本号）；null = 没有头像，渲染回落首字符。
+   *
+   * <p>「我发的」那一行恒为 null：自己的头像不在消息载荷里，前端从登录态取
+   * （见 `hooks/useCurrentUserAvatar`），少一次冗余查库。</p>
+   */
+  senderAvatarUrl?: string | null;
   notifyType: number;
   messageType?: number | null;
   chatScope?: number | null;
@@ -96,9 +139,51 @@ export interface NotifyMessage {
   content?: string | null;
   bizType?: string | null;
   bizId?: string | null;
+  /**
+   * <b>本行接收人</b>是否已读。
+   *
+   * <p><b>不能当已读回执用</b>：写扩散下「我发的」那一行接收人就是我自己，
+   * 落库即已读，于是我自己发的消息在这里恒为已读（1）。「谁读了我发的消息」
+   * 是另一个方向的信息：历史里由 {@link NotifyMessage.readers} 给出，
+   * 实时由 `CHAT_READ` 帧增量补上（见 {@code services/chat/readReceipt}）。</p>
+   */
   readStatus?: number | null;
   readTime?: string | null;
+  /**
+   * 撤回状态：0-正常 1-已撤回（见 {@link RecallStatus}）。
+   *
+   * <p><b>不要用「content 为空」判定撤回</b>：空正文是合法状态（文件 / 审批类消息的
+   * 展示文案可以为空），以空串判定会把正常消息渲染成「已撤回」。
+   * 服务端撤回时会两件事一起做（本字段置 1，且 content 清空），
+   * 前者是给渲染用的语义标记。</p>
+   */
+  recallStatus?: number | null;
+  /** 撤回时间（未撤回为 null）。 */
+  recallTime?: string | null;
+  /**
+   * 被引用消息的幂等键（非空即为「引用回复」）。
+   *
+   * <p><b>用它而不是消息 id 定位原消息</b>：写扩散下同一条消息在发送人与接收人那里
+   * 是不同的行（id 不同），只有幂等键跨行、跨端一致。</p>
+   */
+  quoteClientMsgId?: string | null;
+  /** 被引用消息的发送人用户 ID（引用块里显示「谁说的」）。 */
+  quoteSenderUserId?: string | null;
+  /**
+   * 被引用消息的正文快照（服务端已按码点截断）。
+   *
+   * <p><b>是快照不是实时值</b>：原消息随后被撤回也不会让它变空，
+   * 因此渲染时不要再回查原消息。</p>
+   */
+  quoteContent?: string | null;
   createTime?: string | null;
+  /**
+   * 读过这条消息的人（**仅会话历史**填充；实时到达的读者见 `CHAT_READ` 帧）。
+   *
+   * <p>只对「我发的」消息有意义——别人发的消息上这个字段恒为空数组：
+   * 「谁读了我的话」与「我读没读别人的话」是两条互不相干的信息。</p>
+   */
+  readers?: ChatReader[] | null;
 }
 
 /** 是否会话消息（6/7）。 */

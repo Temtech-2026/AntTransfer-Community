@@ -5,9 +5,16 @@
  * <ol>
  *   <li><b>不喧宾夺主</b>：默认隐藏，从屏幕右侧滑出 380px，主内容区不被永久占用；</li>
  *   <li><b>聊天是文件的附属品</b>：可以从文件列表拖文件进来发送，消息气泡渲染成
- *       文件迷你卡片（见 {@link ChatFileCard} 的正文口径说明）；</li>
+ *       文件迷你卡片（见 {@link ChatFileCard} 的正文口径说明）；待发文件、用途限制
+ *       与授权建立走 {@link useChatAttachmentDraft}，与 `/chat` 页是同一套实现；</li>
  *   <li><b>与会话页同源</b>：会话、历史、发送、已读全部复用 `services/chat`，
- *       抽屉与 `/chat` 页看到的是同一份数据；实时帧走应用级 WebSocket 单例。</li>
+ *       抽屉与 `/chat` 页看到的是同一份数据；实时帧走应用级 WebSocket 单例。
+ *       消息流与<b>会话列表</b>的规则都不在组件里自己维护，一律取
+ *       `services/chat/messages`：去重与排序走 {@link mergeMessage}，未读增量与重排走
+ *       {@link applyIncomingToConversations}——自己发的消息同时经 HTTP 响应与 WS
+ *       回推帧两条路到达，两处各写一份规则迟早会漂移（曾经的消息追加逻辑就这么漏出了
+ *       「两个气泡」）。<b>已读同样是同口径</b>：只对别人发来的置读，且置读真的改了行
+ *       才 {@code wsStore.refresh()} 回正顶栏红点（未读数的唯一事实源是 wsStore）。</li>
  * </ol>
  *
  * <p>窄抽屉放不下「列表 + 消息」两栏，因此采用主从切换：未选中会话时是会话列表，
@@ -16,15 +23,14 @@
 
 import {
   ArrowLeftOutlined,
-  CloseCircleOutlined,
   CloseOutlined,
-  FileOutlined,
   ReloadOutlined,
+  SettingOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import { useIntl } from '@umijs/max';
 import { createStyles } from 'antd-style';
-import { Alert, Avatar, Badge, Button, Drawer, Empty, Spin } from 'antd';
+import { App, Avatar, Badge, Button, Drawer, Empty, Spin } from 'antd';
 import React, {
   useCallback,
   useEffect,
@@ -34,45 +40,73 @@ import React, {
   useSyncExternalStore,
 } from 'react';
 
+import ChatAttachmentHeader from '@/components/ChatAttachmentHeader';
+import ChatAttachmentPicker from '@/components/ChatAttachmentPicker';
+import ChatFileCard from '@/components/ChatFileCard';
+import ChatGroupPanel from '@/components/ChatGroupPanel';
 import ChatComposer from '@/components/ChatComposer';
-import { formatBytes } from '@/components/ChunkUpload';
+import ChatMessageMenu from '@/components/ChatMessageMenu';
+import ChatMessageQuote from '@/components/ChatMessageQuote';
+import ChatPeerStatus from '@/components/ChatPeerStatus';
+import ChatQuoteBar from '@/components/ChatQuoteBar';
+import useChatAttachmentDraft from '@/hooks/useChatAttachmentDraft';
+import useChatPresence from '@/hooks/useChatPresence';
+import useCurrentUserAvatar from '@/hooks/useCurrentUserAvatar';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import {
   fetchChatHistory,
   fetchConversations,
   markChatRead,
+  recallChatMessage,
   sendChatMessage,
 } from '@/services/chat/api';
+import { parseFileCardContent } from '@/services/chat/fileCard';
 import {
-  buildFileCardContent,
-  parseFileCardContent,
-} from '@/services/chat/fileCard';
+  applyIncomingToConversations,
+  applyRecall,
+  clearSessionUnread,
+  isRecallable,
+  markConversationRecalled,
+  mergeMessage,
+  sortConversations,
+} from '@/services/chat/messages';
+import { toQuoteDraft, type ChatQuoteDraft } from '@/services/chat/quote';
+import {
+  applyReadReceipt,
+  isReceiptOfSession,
+  summarizeReaders,
+} from '@/services/chat/readReceipt';
 import {
   conversationInitial,
   conversationSummary,
   conversationTitle,
   isMine,
+  isRecalled,
   isSameSession,
-  newClientMsgId,
+  messageSenderInitial,
+  messageSenderLabel,
+  resolveSessionDisplay,
   sessionKey,
   sessionOfMessage,
   truncate,
-  type ChatSendPayload,
+  type ChatGroupDetail,
   type ChatSession,
   type Conversation,
+  type MessageSenderLabels,
 } from '@/services/chat/types';
-import { MessageType, type NotifyMessage } from '@/services/notify';
+import { ChatScope, MessageType, type NotifyMessage } from '@/services/notify';
+import { wsStore } from '@/services/ws';
+import type {
+  WsChatReadPayload,
+  WsChatRecallPayload,
+} from '@/services/ws/protocol';
 import {
   consumeAttachment,
   setChatOpen,
   shellPanelStore,
 } from '@/services/ui/panelHub';
 import { SHELL } from '@/theme/tokens';
-import {
-  hasDragPayload,
-  readDragPayload,
-  type FileDragPayload,
-} from '@/utils/dragFile';
+import { isErrorHandledByRequestLayer } from '@/utils/result';
 
 /** 一次拉取的历史条数（够看一屏上下文即可，抽屉不做无限翻页） */
 const HISTORY_LIMIT = 30;
@@ -99,8 +133,19 @@ const useStyles = createStyles(({ token, css }) => ({
     padding: 10px 12px;
     border-bottom: 1px solid ${token.colorSplit};
   `,
-  headTitle: css`
+  /**
+   * 标题 + 对端状态：两行堆叠，状态在会话名下方。
+   *
+   * <p>抽屉只有 380px 宽，把「在线 / 正在输入…」并排放在标题右侧，长会话名会被挤成两三个字。
+   * 竖排后标题独占一行，状态另起一行——与 `/chat` 页的会话头同一个版式。</p>
+   */
+  headMain: css`
+    display: flex;
     flex: 1;
+    flex-direction: column;
+    min-width: 0;
+  `,
+  headTitle: css`
     min-width: 0;
     overflow: hidden;
     white-space: nowrap;
@@ -201,61 +246,53 @@ const useStyles = createStyles(({ token, css }) => ({
   bubbleMine: css`
     background: ${token.colorPrimaryBg};
   `,
+  /**
+   * 已撤回气泡：虚线描边 + 次要色文字，与 `/chat` 页同一个观感。
+   *
+   * <p>撤回后正文已被清空，只写「撤回了一条消息」而外观不变的话，
+   * 用户扫一眼消息流会以为那句话还在。不与 `bubbleMine` 叠加（口径见页面样式注释）。</p>
+   */
+  bubbleRecalled: css`
+    border: 1px dashed ${token.colorBorderSecondary};
+    background: transparent;
+    color: ${token.colorTextTertiary};
+    font-style: italic;
+  `,
   bubbleTime: css`
     margin-top: 4px;
     color: ${token.colorTextQuaternary};
     font-size: 11px;
     text-align: end;
   `,
-  fileCard: css`
+  /** 已读回执：气泡下的读者头像（只渲染自己发的消息）。 */
+  readers: css`
     display: flex;
     align-items: center;
-    gap: 8px;
-    min-width: 180px;
-    padding: 8px 10px;
-    border: 1px solid ${token.colorBorderSecondary};
-    border-radius: ${token.borderRadius}px;
-    background: ${token.colorBgElevated};
+    justify-content: flex-end;
+    margin-top: 3px;
   `,
-  fileIcon: css`
-    flex: none;
-    font-size: 20px;
-    color: ${token.colorPrimary};
+  /** 头像外壳：负外边距让相邻头像叠放，描边画在壳上才不会被压掉半圈。 */
+  readerAvatar: css`
+    display: inline-flex;
+    margin-inline-start: -5px;
+    border: 1px solid ${token.colorBgContainer};
+    border-radius: 50%;
   `,
-  fileMeta: css`
-    min-width: 0;
+  readerAvatarFirst: css`
+    display: inline-flex;
+    border: 1px solid ${token.colorBgContainer};
+    border-radius: 50%;
   `,
-  fileName: css`
-    display: block;
-    max-width: 200px;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+  /** 头像本体（`Avatar` 不收 title / aria-*，颜色只能这样给）。 */
+  readerAvatarInner: css`
+    background: ${token.colorPrimary};
+    color: ${token.colorTextLightSolid};
+    font-size: 10px;
   `,
-  fileSize: css`
-    color: ${token.colorTextTertiary};
-    font-size: ${token.fontSizeSM}px;
-  `,
-  attach: css`
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
-    padding: 6px 8px;
-    border: 1px dashed ${token.colorBorder};
-    border-radius: ${token.borderRadius}px;
-    background: ${token.colorFillQuaternary};
-    font-size: ${token.fontSizeSM}px;
-  `,
-  attachName: css`
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  `,
-  hint: css`
-    margin-bottom: 8px;
+  readerMore: css`
+    margin-inline-start: 4px;
+    color: ${token.colorTextQuaternary};
+    font-size: 11px;
   `,
 }));
 
@@ -282,79 +319,13 @@ function formatClock(value?: string | null): string {
 }
 
 /**
- * 把新到达的消息并入会话列表。
- *
- * <p>当前正打开的会话、以及我自己发的消息都不加未读——否则抽屉开着还会长角标。
- *
- * @param activeKey 当前打开会话的 {@link sessionKey}
- */
-function applyIncoming(
-  list: Conversation[],
-  session: ChatSession,
-  msg: NotifyMessage,
-  activeKey: string | null,
-): Conversation[] {
-  const key = sessionKey(session);
-  const index = list.findIndex((item) => sessionKey(item) === key);
-  const mine = isMine(msg);
-  if (index < 0) {
-    // 全新会话：插到最前。targetName 缺失时展示名由 conversationTitle 回落
-    return [
-      {
-        chatScope: session.chatScope,
-        targetId: session.targetId,
-        targetName: null,
-        lastMessageId: msg.id,
-        lastContent: msg.content,
-        lastMessageType: msg.messageType,
-        lastMessageMine: mine,
-        lastTime: msg.createTime,
-        unreadCount: activeKey === key || mine ? 0 : 1,
-      },
-      ...list,
-    ];
-  }
-  const next = [...list];
-  const current = next[index];
-  next[index] = {
-    ...current,
-    lastMessageId: msg.id,
-    lastContent: msg.content,
-    lastMessageType: msg.messageType,
-    lastMessageMine: mine,
-    lastTime: msg.createTime,
-    unreadCount:
-      activeKey === key || mine ? current.unreadCount : current.unreadCount + 1,
-  };
-  return next;
-}
-
-/** 抽屉样式对象类型（避免用 any 传递样式） */
-type DrawerStyles = ReturnType<typeof useStyles>['styles'];
-
-/** 消息正文里的文件迷你卡片（解析失败时由调用方回落为文本） */
-const FileCard: React.FC<{
-  name: string;
-  sizeText: string;
-  styles: DrawerStyles;
-}> = ({ name, sizeText, styles }) => (
-  <div className={styles.fileCard}>
-    <FileOutlined className={styles.fileIcon} />
-    <div className={styles.fileMeta}>
-      <span className={styles.fileName} title={name}>
-        {name}
-      </span>
-      <span className={styles.fileSize}>{sizeText}</span>
-    </div>
-  </div>
-);
-
-/**
  * 即时通讯抽屉：会话列表 / 消息流 / 文件投递。
  */
 const ChatDrawer: React.FC = () => {
   const intl = useIntl();
   const { styles } = useStyles();
+  // 撤回成功的反馈：抽屉比页面小，气泡变灰之外再给一句，避免用户怀疑没点上
+  const { message: toast } = App.useApp();
   const panel = useSyncExternalStore(
     shellPanelStore.subscribe,
     shellPanelStore.getSnapshot,
@@ -363,32 +334,61 @@ const ChatDrawer: React.FC = () => {
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [active, setActive] = useState<ChatSession | null>(null);
+  /**
+   * 群设置面板开关（只在群会话下可开）。
+   *
+   * <p>与 `/chat` 页同口径：只存开关，要配的群由当前会话推出——抽屉里另存一个群 ID
+   * 会出现「面板开着、已经返回列表」时说不清在配哪个群。</p>
+   */
+  const [groupPanelOpen, setGroupPanelOpen] = useState(false);
   const [messages, setMessages] = useState<NotifyMessage[]>([]);
   const [listLoading, setListLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [draft, setDraft] = useState('');
-  const [attachment, setAttachment] = useState<FileDragPayload | null>(null);
   const [sending, setSending] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
+  /**
+   * 正在引用的消息（右键气泡「引用」后进入，口径见 services/chat/quote）。
+   *
+   * <p>与 `/chat` 页各存一份而不是塞进共用状态：两个入口可以同时开着（抽屉浮在页面上），
+   * 共用一个草稿会让「在抽屉里引用的那句」跑到页面的输入框上方去。</p>
+   */
+  const [quote, setQuote] = useState<ChatQuoteDraft | null>(null);
+  // 待发送文件、用途限制、拖拽投放与「先建授权再发消息」全部来自共用草稿机——
+  // `/chat` 页用的是同一份实现，两处不会各走各的（见 hooks/useChatAttachmentDraft 文件头）
+  const {
+    attachment,
+    setAttachment,
+    policy,
+    setPolicy,
+    dragOver,
+    dropZoneProps,
+    buildMessage,
+  } = useChatAttachmentDraft();
 
   const streamRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<ChatSession | null>(null);
   activeRef.current = active;
+  // 实时帧回调不随渲染重建，直接在闭包里读 conversations 会拿到旧数组，因此走 ref
+  const conversationsRef = useRef<Conversation[]>([]);
+  conversationsRef.current = conversations;
   // 实时帧回调不该随渲染重建，但又要知道抽屉是否还开着，因此走 ref
   const chatOpenRef = useRef(panel.chatOpen);
   chatOpenRef.current = panel.chatOpen;
 
-  /** 关闭抽屉：顺手清掉待发送文件，避免下次打开还挂着上一轮的附件 */
+  /** 关闭抽屉：顺手清掉待发送文件与引用草稿，避免下次打开还挂着上一轮的东西 */
   const closeDrawer = useCallback(() => {
     setChatOpen(false);
+    setGroupPanelOpen(false);
     setAttachment(null);
+    setQuote(null);
   }, []);
 
   const loadConversations = useCallback(async () => {
     setListLoading(true);
     try {
       const list = await fetchConversations(CONVERSATION_LIMIT);
-      setConversations(list);
+      // 排序交给共用规则（按最后一条消息 ID 倒序），不依赖服务端返回顺序
+      setConversations(sortConversations(list));
     } catch (_error) {
       // 请求层已统一提示；这里兜住异常，抽屉不至于白屏
     } finally {
@@ -396,8 +396,47 @@ const ChatDrawer: React.FC = () => {
     }
   }, []);
 
+  /**
+   * 群资料变更（改名 / 邀请 / 移除）后同步会话标题与列表项。
+   *
+   * <p>口径与 `/chat` 页一致：标题与列表项同源渲染，只改一处会让同一屏里出现两个群名。</p>
+   */
+  const applyGroupUpdate = useCallback((detail: ChatGroupDetail) => {
+    setActive((prev) =>
+      prev && prev.chatScope === ChatScope.GROUP && prev.targetId === detail.id
+        ? { ...prev, targetName: detail.name }
+        : prev,
+    );
+    setConversations((prev) =>
+      prev.map((item) =>
+        item.chatScope === ChatScope.GROUP && item.targetId === detail.id
+          ? { ...item, targetName: detail.name }
+          : item,
+      ),
+    );
+  }, []);
+
+  /**
+   * 我已退出 / 解散该群：退回会话列表并刷新。
+   *
+   * <p>离开必须真的退出去：成员行已被服务端清掉，留在详情里继续发消息只会撞上 1012。</p>
+   */
+  const handleGroupLeft = useCallback(
+    (groupId: string) => {
+      setActive((prev) => (prev && prev.targetId === groupId ? null : prev));
+      setGroupPanelOpen(false);
+      setMessages([]);
+      setQuote(null);
+      setAttachment(null);
+      void loadConversations();
+    },
+    [loadConversations, setAttachment],
+  );
+
   const openSession = useCallback(async (session: ChatSession) => {
     setActive(session);
+    // 引用草稿跟着会话走：留着会让下一条消息被挂到另一个会话的引用上
+    setQuote(null);
     setHistoryLoading(true);
     try {
       // 接口按 id 倒序返回：反转成时间正序后再渲染
@@ -407,17 +446,17 @@ const ChatDrawer: React.FC = () => {
         limit: HISTORY_LIMIT,
       });
       setMessages([...history].reverse());
-      void markChatRead(session.chatScope, session.targetId);
-      setConversations((prev) =>
-        prev.map((item) =>
-          isSameSession(item, session) ? { ...item, unreadCount: 0 } : item,
-        ),
-      );
+      setConversations((prev) => clearSessionUnread(prev, session));
     } catch (_error) {
       setMessages([]);
     } finally {
       setHistoryLoading(false);
     }
+    // 置读与顶栏角标对齐，口径同 `/chat` 页：只有真的改了行（affected > 0）才拉一次未读快照，
+    // 未读数的唯一事实源是 wsStore，不拉顶栏红点就停在旧数字上
+    void markChatRead(session.chatScope, session.targetId)
+      .then((affected) => (affected > 0 ? wsStore.refresh() : undefined))
+      .catch(() => undefined);
   }, []);
 
   // 打开抽屉时刷新会话列表；关闭时收起浮层状态
@@ -449,15 +488,79 @@ const ChatDrawer: React.FC = () => {
         return;
       }
       const current = activeRef.current;
-      setConversations((prev) =>
-        applyIncoming(prev, session, msg, current ? sessionKey(current) : null),
-      );
       if (current && isSameSession(session, current)) {
-        setMessages((prev) => [...prev, msg]);
-        void markChatRead(session.chatScope, session.targetId);
+        // 合并而不是追加：推送覆盖该用户全部连接，自己刚发的那条会被原样推回来，
+        // 直接追加就会在抽屉里画出两个气泡（`/chat` 页走的是同一条规则）
+        setMessages((prev) => mergeMessage(prev, msg));
+        if (!isMine(msg)) {
+          // 置读口径同 `/chat` 页：自己发的帧（多标签页会把自己的消息收回来）标了也没意义，
+          // 「别人发的 + 会话正开着」才置读，并回正顶栏角标
+          void markChatRead(session.chatScope, session.targetId)
+            .then((affected) => (affected > 0 ? wsStore.refresh() : undefined))
+            .catch(() => undefined);
+        }
+      }
+      // 会话列表（摘要 / 未读增量 / 重排）同样交给共用规则，不与 `/chat` 页各写一份
+      const result = applyIncomingToConversations(
+        conversationsRef.current,
+        msg,
+        { activeSession: current },
+      );
+      if (result.knownSession) {
+        setConversations(result.conversations);
+      } else {
+        // 列表里还没有这个会话：就地插会缺 targetName（先显示「用户 #id」再跳真名），改拉一次
+        void loadConversations();
       }
     },
+    // 已读回执：抽屉收起时不必处理（重开时历史自带 readers，不会丢事实）
+    onReadReceipt: (receipt: WsChatReadPayload) => {
+      if (!chatOpenRef.current) {
+        return;
+      }
+      const current = activeRef.current;
+      if (!isReceiptOfSession(receipt, current)) {
+        return;
+      }
+      setMessages((prev) => applyReadReceipt(prev, receipt));
+    },
+    /**
+     * 撤回帧：对方撤回时我这端也要变（口径与 `/chat` 页完全一致）。
+     *
+     * <p>服务端把撤回推给该消息的全部参与人，而这些帧可能同时属于多个会话
+     * （页面 + 抽屉 + 多标签页），因此先比对 {@code (scope, targetId)} 再按幂等键定位；
+     * 抽屉收起时不处理——重开时历史里带的就是撤回后的状态，不会丢事实。</p>
+     */
+    onRecall: (recall: WsChatRecallPayload) => {
+      if (!chatOpenRef.current) {
+        return;
+      }
+      const current = activeRef.current;
+      if (!isReceiptOfSession(recall, current)) {
+        return;
+      }
+      setMessages((prev) =>
+        applyRecall(prev, recall.clientMsgId, recall.recallTime),
+      );
+    },
   });
+
+  /**
+   * 对端在线状态与「正在输入」。
+   *
+   * <p>抽屉收起时把会话传成 null：订阅、续订与输入上报一并停掉——
+   * 关掉的面板不该继续每 30s 发请求，也不该再把「我在输入」报给对端
+   * （与上面实时帧 {@code chatOpenRef} 的取舍同源）。</p>
+   */
+  const { peerStatus, peerTyping, notifyTyping } = useChatPresence({
+    session: panel.chatOpen ? active : null,
+  });
+
+  /** 输入框变化：把「我在输入」告诉对端（节流与续订在 Hook 内）。 */
+  const handleDraftChange = (next: string) => {
+    setDraft(next);
+    notifyTyping(next.trim() !== '');
+  };
 
   // 新消息滚动到底
   useEffect(() => {
@@ -475,66 +578,180 @@ const ChatDrawer: React.FC = () => {
     if (!attachment && !text) {
       return;
     }
-    const payload: ChatSendPayload = {
-      scope: active.chatScope,
-      targetId: active.targetId,
-      messageType: attachment ? MessageType.FILE : MessageType.TEXT,
-      content: attachment
-        ? buildFileCardContent(
-            attachment.fileName,
-            formatBytes(attachment.sizeBytes),
-          )
-        : text,
-      clientMsgId: newClientMsgId(),
-    };
     setSending(true);
     try {
-      const sent = await sendChatMessage(payload);
-      setMessages((prev) => [...prev, sent]);
-      setConversations((prev) =>
-        applyIncoming(prev, active, sent, sessionKey(active)),
+      // 幂等键与授权建立都在共用草稿机里（含仅预览传 0、群聊不建授权等规则）
+      const sent = await sendChatMessage(
+        await buildMessage(active, text, quote?.clientMsgId),
       );
+      // 同上：响应与 WS 回推帧几乎同时到达，去重交给 mergeMessage（同时认 id 与 clientMsgId）
+      setMessages((prev) => mergeMessage(prev, sent));
+      const result = applyIncomingToConversations(
+        conversationsRef.current,
+        sent,
+        { activeSession: active },
+      );
+      if (result.knownSession) {
+        setConversations(result.conversations);
+      } else {
+        // 新会话（首条消息）不在列表里：拉一次列表拿回 targetName
+        void loadConversations();
+      }
       setDraft('');
+      // 引用随发送成功一起清掉：失败时保留，让用户改完正文能直接重试同一句引用
+      setQuote(null);
+      // 显式收尾：清空走的是 setState 而非 onChange，不补这一帧对端要等空闲兜底才收起
+      notifyTyping(false);
       setAttachment(null);
     } catch (_error) {
-      // 发送失败：保留输入与附件，让用户可以重发（请求层已提示原因）
+      // 发送失败：保留输入、附件与引用，让用户可以重发（请求层已提示原因）
     } finally {
       setSending(false);
     }
-  }, [active, attachment, draft, sending]);
+  }, [
+    active,
+    attachment,
+    draft,
+    quote,
+    buildMessage,
+    sending,
+    loadConversations,
+  ]);
 
-  const handleDrop = useCallback(
-    (event: React.DragEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      setDragOver(false);
-      const payload = readDragPayload(event.dataTransfer);
-      if (payload) {
-        setAttachment(payload);
-      }
-    },
-    [],
+  /** 我自己的头像（登录态）：气泡里的「我」那一行不走消息载荷，见 `useCurrentUserAvatar`。 */
+  const myAvatar = useCurrentUserAvatar();
+
+  /**
+   * 当前会话的展示对象（名字与头像已回填，见 {@link resolveSessionDisplay}）。
+   *
+   * <p>标题与消息头像都必须从这里取值：曾经标题做了回查、头像直接拿裸定位去取首字，
+   * 结果列表里的「系」一进详情就变成「用」。
+   */
+  const activeDisplay = useMemo(
+    () => (active ? resolveSessionDisplay(active, conversations) : null),
+    [active, conversations],
   );
 
-  const handleDragOver = useCallback(
-    (event: React.DragEvent<HTMLDivElement>) => {
-      if (!hasDragPayload(event.dataTransfer)) {
-        return;
-      }
-      // 必须阻止默认行为，否则浏览器不会派发 drop
-      event.preventDefault();
-      setDragOver(true);
-    },
-    [],
+  const activeTitle = activeDisplay
+    ? conversationTitle(activeDisplay)
+    : intl.formatMessage({ id: 'chat.drawer.title' });
+
+  /**
+   * 引用块里的「谁说的」、撤回占位里的「谁撤的」（口径与 `/chat` 页同源）。
+   *
+   * <p>单聊的对端名就是会话标题，直接复用；群聊没有唯一对端，传 `null` 让
+   * {@link messageSenderLabel} 把 ID 兜出去——抽屉比页面还窄，写错名字的代价更大。</p>
+   */
+  const senderLabels = useMemo<MessageSenderLabels>(
+    () => ({
+      mine: intl.formatMessage({ id: 'chat.sender.mine' }),
+      peer: active?.chatScope === ChatScope.PRIVATE ? activeTitle : null,
+      unknown: (userId: string) =>
+        intl.formatMessage({ id: 'chat.session.userFallback' }, { id: userId }),
+    }),
+    [intl, active?.chatScope, activeTitle],
   );
 
-  /** 当前会话展示名：targetName 只在会话列表里，因此回查一次再回落 */
-  const activeTitle = useMemo(() => {
-    if (!active) {
-      return intl.formatMessage({ id: 'chat.drawer.title' });
+  /** 撤回后的气泡占位：自己撤的说「你」，别人撤的写名字。 */
+  const recalledText = (message: NotifyMessage) =>
+    isMine(message)
+      ? intl.formatMessage({ id: 'chat.message.recalled.mine' })
+      : intl.formatMessage(
+          { id: 'chat.message.recalled.other' },
+          {
+            name: messageSenderLabel(
+              message.senderUserId,
+              message,
+              senderLabels,
+            ),
+          },
+        );
+
+  /**
+   * 撤回一条自己发出的消息（右键菜单里那一项）。
+   *
+   * <p>先发请求、成功后再改本地：撤回成功的表现是正文永久消失，一旦本地先改了、
+   * 服务端却拒绝（超窗 / 不是你的消息），原文已经找不回来。失败原因由请求层给出
+   * （撤回是显式动作，接口刻意非静默），这里只兜住不经请求通道的异常，
+   * 避免同一句话弹两遍。</p>
+   */
+  const handleRecall = async (message: NotifyMessage) => {
+    const clientMsgId = message.clientMsgId;
+    if (!clientMsgId) {
+      return;
     }
-    const found = conversations.find((item) => isSameSession(item, active));
-    return conversationTitle({ ...active, targetName: found?.targetName });
-  }, [active, conversations, intl]);
+    try {
+      await recallChatMessage(clientMsgId);
+      setMessages((prev) => applyRecall(prev, clientMsgId));
+      const session = activeRef.current;
+      if (session) {
+        setConversations((prev) =>
+          markConversationRecalled(prev, session, message.id),
+        );
+      }
+      toast.success(intl.formatMessage({ id: 'chat.message.recall.success' }));
+    } catch (error) {
+      if (!isErrorHandledByRequestLayer(error)) {
+        toast.error(intl.formatMessage({ id: 'chat.message.recall.failed' }));
+      }
+    }
+  };
+
+  /**
+   * 气泡下的读者头像（已读回执）。
+   *
+   * <p>数据来源与 `/chat` 页完全一致：历史里每条消息自带 {@code readers}，在线时由
+   * `CHAT_READ` 帧增量补上；渲染规则也共用 {@link summarizeReaders}（封顶后折成「+N」），
+   * 区别只是抽屉更窄、头像更小。</p>
+   */
+  const renderReaders = (msg: NotifyMessage) => {
+    const { shown, overflow } = summarizeReaders(msg.readers);
+    if (shown.length === 0) {
+      return null;
+    }
+    const names = (msg.readers ?? []).map((reader) => reader.displayName);
+    return (
+      <div
+        className={styles.readers}
+        role="img"
+        aria-label={intl.formatMessage(
+          { id: 'chat.read.by' },
+          { names: names.join(', ') },
+        )}
+      >
+        {shown.map((reader, index) => (
+          // 头像内容只是姓名首字：`role="img"` 的元素后代本就不进入无障碍树，读者名单
+          // 由外层 aria-label 一次性给全；外壳承载 title / 叠放与描边（Avatar 不收这些属性）
+          <span
+            key={reader.userId}
+            title={reader.displayName}
+            className={
+              index === 0 ? styles.readerAvatarFirst : styles.readerAvatar
+            }
+          >
+            <Avatar
+              size={16}
+              className={styles.readerAvatarInner}
+              src={reader.avatarUrl ?? undefined}
+            >
+              {reader.displayName.slice(0, 1).toUpperCase()}
+            </Avatar>
+          </span>
+        ))}
+        {overflow > 0 ? (
+          <span
+            className={styles.readerMore}
+            title={intl.formatMessage(
+              { id: 'chat.read.more' },
+              { count: overflow },
+            )}
+          >
+            {`+${overflow}`}
+          </span>
+        ) : null}
+      </div>
+    );
+  };
 
   return (
     <Drawer
@@ -547,9 +764,7 @@ const ChatDrawer: React.FC = () => {
     >
       <div
         className={dragOver ? `${styles.body} ${styles.bodyDragOver}` : styles.body}
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onDragLeave={() => setDragOver(false)}
+        {...dropZoneProps}
       >
         <div className={styles.head}>
           {active ? (
@@ -568,7 +783,29 @@ const ChatDrawer: React.FC = () => {
           ) : (
             <UserOutlined />
           )}
-          <span className={styles.headTitle}>{activeTitle}</span>
+          <span className={styles.headMain}>
+            <span className={styles.headTitle}>{activeTitle}</span>
+            {/*
+              对端状态：会话列表视图（active 为空）不渲染——那里的标题是面板名「消息」，
+              挂一个状态点会被读成「消息这个人」的状态
+            */}
+            {active ? (
+              <ChatPeerStatus compact status={peerStatus} typing={peerTyping} />
+            ) : null}
+          </span>
+          {/*
+            群设置入口：只在打开的会话是群聊时出现（与 /chat 页同口径）。
+            抽屉只有 380px，这里只留图标 + aria-label，文案由无障碍名承担。
+          */}
+          {active?.chatScope === ChatScope.GROUP ? (
+            <Button
+              type="text"
+              size="small"
+              icon={<SettingOutlined />}
+              aria-label={intl.formatMessage({ id: 'chat.group.title' })}
+              onClick={() => setGroupPanelOpen(true)}
+            />
+          ) : null}
           <Button
             type="text"
             size="small"
@@ -602,6 +839,11 @@ const ChatDrawer: React.FC = () => {
                 const session: ChatSession = {
                   chatScope: conversation.chatScope,
                   targetId: conversation.targetId,
+                  // 名字随定位一起带进详情：否则只能靠回查列表补，
+                  // 列表尚未加载（深链 / 刚到的新会话）时标题与头像会双双回落成「用户 #<id>」
+                  targetName: conversation.targetName,
+                  // 头像同理：带上就不必等列表回查，深链时详情气泡与标题头像也不会打架
+                  targetAvatarUrl: conversation.targetAvatarUrl,
                 };
                 return (
                   <button
@@ -615,7 +857,11 @@ const ChatDrawer: React.FC = () => {
                     onClick={() => void openSession(session)}
                   >
                     <Badge count={conversation.unreadCount} size="small">
-                      <Avatar size={36} className={styles.avatar}>
+                      <Avatar
+                        size={36}
+                        className={styles.avatar}
+                        src={conversation.targetAvatarUrl ?? undefined}
+                      >
                         {conversationInitial(conversation)}
                       </Avatar>
                     </Badge>
@@ -655,47 +901,92 @@ const ChatDrawer: React.FC = () => {
               ) : (
                 messages.map((msg) => {
                   const mine = isMine(msg);
+                  // 撤回是终态、正文已被清空：判定只看标记（见 isRecalled）
+                  const recalled = isRecalled(msg);
                   const card =
-                    msg.messageType === MessageType.FILE
+                    !recalled && msg.messageType === MessageType.FILE
                       ? parseFileCardContent(msg.content)
                       : null;
+                  // 非空即代表「这条消息现在可以被引用」：菜单项的显隐直接由它决定，
+                  // 不另写一套判断（口径见 services/chat/quote）
+                  const quoteDraft = toQuoteDraft(
+                    msg,
+                    messageSenderLabel(msg.senderUserId, msg, senderLabels),
+                  );
                   return (
                     <div
                       key={msg.id}
                       className={mine ? `${styles.row} ${styles.rowMine}` : styles.row}
                     >
-                      <Avatar size={28} className={styles.avatar}>
+                      <Avatar
+                        size={28}
+                        className={styles.avatar}
+                        /* 「我发的」那一行不带发送人头像（服务端刻意省掉这一次查库），
+                           自己的头像只认登录态，与顶栏同源；别人发的优先用消息自带的
+                           发送人头像，缺失时回落当前会话头像（单聊里发送人即对端，
+                           与标题、首字兜底同源） */
+                        src={mine ? myAvatar : msg.senderAvatarUrl ?? activeDisplay?.targetAvatarUrl ?? undefined}
+                      >
                         {mine
                           ? intl.formatMessage({ id: 'chat.drawer.mineAvatar' })
-                          : conversationInitial(active)}
+                          : messageSenderInitial(msg, conversationInitial(activeDisplay ?? active))}
                       </Avatar>
-                      <div
-                        className={
-                          mine
-                            ? `${styles.bubble} ${styles.bubbleMine}`
-                            : styles.bubble
-                        }
+                      <ChatMessageMenu
+                        canRecall={isRecallable(msg)}
+                        canQuote={quoteDraft != null}
+                        onRecall={() => void handleRecall(msg)}
+                        onQuote={() => setQuote(quoteDraft)}
                       >
-                        {card ? (
-                          <FileCard
-                            name={card.name}
-                            sizeText={card.sizeText}
-                            styles={styles}
-                          />
-                        ) : (
-                          <span>
-                            {msg.messageType === MessageType.FILE
-                              ? intl.formatMessage(
-                                  { id: 'chat.drawer.fileFallback' },
-                                  { content: truncate(msg.content ?? '', 120) },
-                                )
-                              : msg.content}
-                          </span>
-                        )}
-                        <div className={styles.bubbleTime}>
-                          {formatClock(msg.createTime)}
+                        <div
+                          className={
+                            // 已撤回的不叠 bubbleMine：撤回后两个方向长得一样是刻意的
+                            recalled
+                              ? `${styles.bubble} ${styles.bubbleRecalled}`
+                              : mine
+                                ? `${styles.bubble} ${styles.bubbleMine}`
+                                : styles.bubble
+                          }
+                        >
+                          {recalled ? (
+                            recalledText(msg)
+                          ) : card ? (
+                            <ChatFileCard
+                              name={card.name}
+                              sizeText={card.sizeText}
+                              nodeId={card.nodeId}
+                              attachmentId={card.attachmentId}
+                              mine={mine}
+                            />
+                          ) : (
+                            <span>
+                              {/*
+                                引用块取服务端写入时的快照，不回查原消息：
+                                原消息随后被撤回时正文已清空，回查会让引用块一起变空白
+                              */}
+                              {msg.quoteClientMsgId ? (
+                                <ChatMessageQuote
+                                  senderName={messageSenderLabel(
+                                    msg.quoteSenderUserId,
+                                    msg,
+                                    senderLabels,
+                                  )}
+                                  summary={msg.quoteContent ?? ''}
+                                />
+                              ) : null}
+                              {msg.messageType === MessageType.FILE
+                                ? intl.formatMessage(
+                                    { id: 'chat.drawer.fileFallback' },
+                                    { content: truncate(msg.content ?? '', 120) },
+                                  )
+                                : msg.content}
+                            </span>
+                          )}
+                          <div className={styles.bubbleTime}>
+                            {formatClock(msg.createTime)}
+                          </div>
+                          {mine ? renderReaders(msg) : null}
                         </div>
-                      </div>
+                      </ChatMessageMenu>
                     </div>
                   );
                 })
@@ -705,52 +996,63 @@ const ChatDrawer: React.FC = () => {
             <ChatComposer
               compact
               value={draft}
-              onChange={setDraft}
+              onChange={handleDraftChange}
               onSend={() => void send()}
               sending={sending}
               allowEmpty={Boolean(attachment)}
               autoSize={{ minRows: 1, maxRows: 4 }}
               placeholder={intl.formatMessage({
                 id: attachment
-                  ? 'chat.drawer.placeholderWithAttachment'
-                  : 'chat.drawer.placeholder',
+                  ? 'chat.attach.placeholder'
+                  : 'chat.composer.placeholder',
               })}
               sendLabel={intl.formatMessage({ id: 'chat.drawer.send' })}
+              tools={
+                <ChatAttachmentPicker
+                  // 与 /chat 页分成两条上传队列：抽屉挂在布局外壳上，页与抽屉会同时挂载，
+                  // 共用 id 会让「在抽屉里选的文件附到页面的草稿上」（见组件文件头）
+                  queueId="chat-send-drawer"
+                  onPick={setAttachment}
+                  disabled={sending || Boolean(attachment)}
+                />
+              }
               header={
-                attachment ? (
-                  <div className={styles.attach}>
-                    <FileOutlined />
-                    <span
-                      className={styles.attachName}
-                      title={attachment.fileName}
-                    >
-                      {attachment.fileName}
-                    </span>
-                    <span>{formatBytes(attachment.sizeBytes)}</span>
-                    <Button
-                      type="text"
-                      size="small"
-                      icon={<CloseCircleOutlined />}
-                      aria-label={intl.formatMessage({
-                        id: 'chat.drawer.removeAttachment',
-                      })}
-                      onClick={() => setAttachment(null)}
+                <>
+                  {/* 「正在引用」条在最上面：它是这次发送要带上的唯一一条上下文 */}
+                  {quote ? (
+                    <ChatQuoteBar
+                      draft={quote}
+                      onCancel={() => setQuote(null)}
+                      disabled={sending}
                     />
-                  </div>
-                ) : (
-                  <Alert
-                    className={styles.hint}
-                    type="info"
-                    showIcon
-                    banner
-                    message={intl.formatMessage({ id: 'chat.drawer.dropHint' })}
+                  ) : null}
+                  <ChatAttachmentHeader
+                    attachment={attachment}
+                    policy={policy}
+                    onPolicyChange={setPolicy}
+                    onRemove={() => setAttachment(null)}
+                    showPolicy={active?.chatScope === ChatScope.PRIVATE}
+                    disabled={sending}
                   />
-                )
+                </>
               }
             />
           </>
         )}
       </div>
+
+      {/*
+        群设置面板：与 /chat 页共用同一个组件，口径因此不会分叉。
+        groupId 只在群会话下给出——返回列表后（active 为空）即使面板还开着，
+        也不会再去拉一个说不清是谁的群。
+      */}
+      <ChatGroupPanel
+        open={groupPanelOpen}
+        groupId={active?.chatScope === ChatScope.GROUP ? active.targetId : null}
+        onClose={() => setGroupPanelOpen(false)}
+        onUpdated={applyGroupUpdate}
+        onLeft={handleGroupLeft}
+      />
     </Drawer>
   );
 };

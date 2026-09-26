@@ -1,19 +1,25 @@
 import { describe, expect, it } from 'vitest';
 
-import type { Conversation } from '@/services/chat';
+import type { Conversation } from './types';
 import {
   ChatScope,
   MessageType,
   type NotifyMessage,
   NotifyType,
+  RecallStatus,
 } from '@/services/notify';
 
 import {
   applyIncomingToConversations,
+  applyRecall,
   clearSessionUnread,
+  isRecallable,
+  markConversationRecalled,
   mergeMessage,
   messageKey,
   prependHistory,
+  RECALL_CLOCK_TOLERANCE_MS,
+  RECALL_WINDOW_MS,
   sortConversations,
   sortMessages,
 } from './messages';
@@ -114,6 +120,36 @@ describe('mergeMessage', () => {
 
     expect(merged).toHaveLength(1);
     expect(merged[0].readStatus).toBe(1);
+  });
+
+  it('已读回执不被重复到达的消息帧擦掉（消息通道永远不带 readers）', () => {
+    const withReaders = chatMessage({
+      id: '8',
+      content: '原始',
+      readers: [{ userId: '9', displayName: '张三' }],
+    });
+    // WS `CHAT` 帧不带读者：若直接覆盖，头像会消失且再也补不回来（回执不重放）
+    const frame = chatMessage({ id: '8', content: '原始', readers: [] });
+
+    expect(mergeMessage([withReaders], frame)[0].readers).toEqual([
+      { userId: '9', displayName: '张三' },
+    ]);
+  });
+
+  it('历史带来新读者时以新值为准（已读只会从无到有）', () => {
+    const before = chatMessage({
+      id: '8',
+      readers: [{ userId: '9', displayName: '张三' }],
+    });
+    const after = chatMessage({
+      id: '8',
+      readers: [
+        { userId: '9', displayName: '张三' },
+        { userId: '10', displayName: '李四' },
+      ],
+    });
+
+    expect(mergeMessage([before], after)[0].readers).toHaveLength(2);
   });
 
   it('乐观插入只有 clientMsgId，服务端帧同时带 id 与 clientMsgId 时收敛为一条', () => {
@@ -277,5 +313,157 @@ describe('applyIncomingToConversations', () => {
     expect(hit.lastMessageId).toBe('50');
     expect(hit.lastContent).toBe('最新');
     expect(hit.unreadCount).toBe(2);
+  });
+});
+
+/**
+ * 撤回的入口显隐（{@link isRecallable}）。
+ *
+ * <p>钉的是「前端不做权威判定」这条边界：时间窗只决定菜单项显不显示，
+ * 真正的裁决在服务端（超窗回 `1034`）。因此超窗必须<b>不给入口</b>——
+ * 给一个必然被拒的菜单项，用户只会以为功能坏了；反过来，钟差容忍内必须给，
+ * 否则一台快几分钟的设备上「刚发出去的话」立刻就撤不掉了。</p>
+ */
+describe('isRecallable', () => {
+  /** 我发的一条消息：写扩散下自己发的那行 recipient 就是自己。 */
+  const mineAt = (
+    createTime: string,
+    overrides: Partial<NotifyMessage> = {},
+  ) =>
+    chatMessage({
+      id: '20',
+      senderUserId: '7',
+      recipientUserId: '7',
+      clientMsgId: 'c-20',
+      content: '刚发的话',
+      createTime,
+      ...overrides,
+    });
+
+  const sentAt = Date.parse('2026-09-16T10:00:00');
+
+  it('自己发的 + 有幂等键 + 1 分钟内：可以撤回', () => {
+    expect(isRecallable(mineAt('2026-09-16T10:00:00'), sentAt + 60_000)).toBe(
+      true,
+    );
+  });
+
+  it('超出「2 分钟 + 30s 钟差」后不再给入口', () => {
+    const tooLate =
+      sentAt + RECALL_WINDOW_MS + RECALL_CLOCK_TOLERANCE_MS + 1;
+    expect(isRecallable(mineAt('2026-09-16T10:00:00'), tooLate)).toBe(false);
+  });
+
+  it('钟差容忍内仍然给入口（设备时钟快于服务端时最需要撤回）', () => {
+    const stillInTime =
+      sentAt + RECALL_WINDOW_MS + RECALL_CLOCK_TOLERANCE_MS - 1;
+    expect(isRecallable(mineAt('2026-09-16T10:00:00'), stillInTime)).toBe(true);
+  });
+
+  it('别人发的不可撤回（服务端也只允许本人）', () => {
+    expect(isRecallable(incoming(21, '别人的话'), sentAt + 1000)).toBe(false);
+  });
+
+  it('没有幂等键的消息连请求都发不出去：不给入口', () => {
+    expect(
+      isRecallable(
+        mineAt('2026-09-16T10:00:00', { clientMsgId: undefined }),
+        sentAt,
+      ),
+    ).toBe(false);
+  });
+
+  it('已撤回的不能二次撤回', () => {
+    expect(
+      isRecallable(
+        mineAt('2026-09-16T10:00:00', { recallStatus: RecallStatus.DONE }),
+        sentAt,
+      ),
+    ).toBe(false);
+  });
+
+  it('时间缺失（脏数据）时不拦：交给服务端裁决比永远撤不掉更好', () => {
+    expect(isRecallable(mineAt(''), sentAt)).toBe(true);
+  });
+});
+
+/**
+ * 撤回的本地收敛（{@link applyRecall}）：帧与撤回响应共用同一条规则。
+ *
+ * <p>「按幂等键而不是消息 id 定位」是写扩散下的硬约束——同一条逻辑消息在每个人
+ * 那里是不同的行（id 不同），只有幂等键跨行、跨端一致。</p>
+ */
+describe('applyRecall', () => {
+  const sent = (id: string, overrides: Partial<NotifyMessage> = {}) =>
+    chatMessage({
+      id,
+      clientMsgId: `c-${id}`,
+      content: `原话${id}`,
+      recallStatus: RecallStatus.NONE,
+      ...overrides,
+    });
+
+  it('按幂等键命中：标记撤回并清空正文（本地也读不到原文）', () => {
+    const hit = sent('20');
+    const other = sent('21');
+
+    const next = applyRecall([hit, other], 'c-20', '2026-09-16T10:03:00');
+
+    expect(next[0]).toMatchObject({
+      recallStatus: RecallStatus.DONE,
+      recallTime: '2026-09-16T10:03:00',
+      content: '',
+    });
+    expect(next[1]).toBe(other);
+  });
+
+  it('未命中时返回原数组引用：撤回帧推给全部参与人，别的会话不该重渲染', () => {
+    const list = [sent('20')];
+
+    expect(applyRecall(list, 'c-unknown')).toBe(list);
+  });
+
+  it('已撤回的不重复处理：后到的帧不覆盖本地已有的撤回时间', () => {
+    const list = [
+      sent('20', {
+        recallStatus: RecallStatus.DONE,
+        recallTime: 'T1',
+        content: '',
+      }),
+    ];
+
+    expect(applyRecall(list, 'c-20', 'T2')).toBe(list);
+  });
+
+  it('帧没带撤回时间时保留本地值（HTTP 响应路径没有这个字段）', () => {
+    const next = applyRecall([sent('20', { recallTime: 'T0' })], 'c-20');
+
+    expect(next[0].recallTime).toBe('T0');
+  });
+});
+
+/** 撤回落在会话最后一条时，左栏摘要要跟着变（{@link markConversationRecalled}）。 */
+describe('markConversationRecalled', () => {
+  const session = { chatScope: ChatScope.PRIVATE, targetId: '9' };
+
+  it('撤回的正是该会话最后一条：摘要清空并标成已撤回', () => {
+    const list = [conversation({ lastMessageId: '10', lastContent: '旧消息' })];
+
+    const next = markConversationRecalled(list, session, '10');
+
+    expect(next[0]).toMatchObject({
+      lastRecallStatus: RecallStatus.DONE,
+      lastContent: '',
+    });
+  });
+
+  it('不是最后一条 / 不是这个会话 / 乐观行没有服务端 id：原样返回同一引用', () => {
+    const list = [conversation({ lastMessageId: '10' })];
+
+    expect(markConversationRecalled(list, session, '8')).toBe(list);
+    expect(
+      markConversationRecalled(list, { ...session, targetId: '11' }, '10'),
+    ).toBe(list);
+    expect(markConversationRecalled(list, session, '')).toBe(list);
   });
 });

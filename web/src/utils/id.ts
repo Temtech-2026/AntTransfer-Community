@@ -40,7 +40,10 @@ export function compareSnowflakeId(
  * 判断是否为合法的正整数 ID 字符串（替代 `Number.isInteger` 做入参校验，避免丢精度）。
  *
  * <p>拒绝前导零 / 负号 / 科学计数法 / 空白：这些都不是服务端下发的 ID 形态。</p>
+ *
+ * <p>入参取 {@code unknown}：这个函数的典型调用场景就是校验「来自接口或拖拽载荷的
+ * 不可信值」，若签名要求 {@code string}，调用方就得先做一次无意义的断言才能交进来。</p>
  */
-export function isPositiveIdString(value?: string | null): boolean {
+export function isPositiveIdString(value?: unknown): boolean {
   return typeof value === 'string' && /^[1-9]\d*$/.test(value);
 }
