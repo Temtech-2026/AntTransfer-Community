@@ -17,6 +17,7 @@ sql/
 ├── V9__system_admin_permission_points.sql          # 增量：系统管理面 system:* 原子权限点 + 菜单树
 ├── V10__upload_task_parent_id.sql                  # 增量：sys_upload_task 补 parent_id（预检上报的目标目录）
 ├── V11__notify_message_title_nullable.sql          # 增量：sys_notify_message.title 放宽为可空（会话消息无标题）
+├── V12__chat_attachment.sql                        # 增量：会话文件附件授权（用途档位 + 有效期 + 下载次数 三轴限制）
 └── README.md
 ```
 
@@ -36,7 +37,7 @@ sql/
 | 文件传输族 | `sys_file` / `sys_upload_task` / `sys_share_link` | 元数据（SHA-256 + `ref_count` 物理去重）、分片任务（含 `uploaded_indexes` 已传分片索引持久化）、外发链接（提取码散列/有效期/次数） |
 | 协作审计族 | `sys_notify_message` / `sys_operation_log` / `sys_login_log` | 站内/离线消息、操作审计（append-only，留存 ≥ 6 个月）、登录成功/失败日志 |
 
-> 🧩 **增量迁移（V3 ~ V11）**：上表为 **V1 基线**（16 表）；V3 ~ V7 / V9 / V10 只做**纯增量**（新增列 / 新增索引 / 新增表 / 新增行），不改写既有列语义、不删除任何对象；V8 为**纯数据收敛**（仅删授权行，不动表结构）；V11 为**约束放宽**（仅把 `title` 由 `not null` 改为可空，不改类型 / 长度、不动任何数据）。
+> 🧩 **增量迁移（V3 ~ V14）**：上表为 **V1 基线**（16 表）；V3 ~ V7 / V9 / V10 / V12 ~ V14 只做**纯增量**（新增列 / 新增索引 / 新增表 / 新增行），不改写既有列语义、不删除任何对象；V8 为**纯数据收敛**（仅删授权行，不动表结构）；V11 为**约束放宽**（仅把 `title` 由 `not null` 改为可空，不改类型 / 长度、不动任何数据）。
 >
 > - **V3**：`sys_user` 补 `token_epoch` —— 会话吊销纪元，配合 `at:token:access:{userId}` 缓存镜像实现全端登出 / 改密即失效（见 `architecture.md` §4 D-8 与红队 [C-08]）。
 > - **V4**：① `sys_permission` 补菜单路由元数据 `route_path` / `component` / `icon` / `visible`（仅 `type=1` 菜单使用，**不参与权限判定**）；② `sys_user` 补 `user_type`（`1`-内部用户 / `2`-外部协作者；**CE 已裁定维持 PRD、恒为 `1` 不启用**，该列仅作 EE / 受限账号预留，口径见 `architecture.md` §4 **D-12**）；③ 新建 `sys_group_member`（项目 / 群组成员关系，唯一键 `uk_group_user`）与 `sys_space`（协作空间，字段对齐 at-collaboration `CollaborationSpace` 骨架实体，见 §4 **D-11**）。
@@ -47,8 +48,12 @@ sql/
 > - **V9**：**纯数据新增（不改结构）** —— 补一组 `system:*` 原子权限点（用户 CRUD / 重置密码 / 启停 / 分配角色 / 调岗离职，角色 CRUD / 分配权限点）及其系统管理面菜单树，承载 at-permission 的系统管理面（不新建 `at-system` 模块）。
 > - **V10**：`sys_upload_task` 补 `parent_id` —— 预检上报的目标目录须随任务落库并在合片时透传给 at-file，否则从子目录发起的分片上传会把文件落到根目录；同时使「同内容传到不同目录」不再复用同一上传票据（票据按「目标目录 + 内容」收敛，物理文件层仍秒传）。
 > - **V11**：**约束放宽（不改类型 / 不动数据）** —— `sys_notify_message.title` 由 `not null` 改为可空。V5 把该表扩成「系统通知 + 会话消息」双语义时补的 5 列全可空，唯独漏掉 V1 遗留的 `title`；而会话消息本就无标题（`ChatSendDTO` 无 `title` 入参，`ChatService` 落行也不写该列），MyBatis-Plus 默认跳过 null 字段使 `INSERT` 里不出现 `title`，MySQL 严格模式随即报 `Field 'title' doesn't have a default value`，发送单聊 / 群聊恒定 HTTP 500。系统通知侧不受影响（`NotificationDispatcher` 一律显式写入标题）。
-> - ✅ 由此 **sys_ 前缀表由 16 表经 V4（+2）后，再经 V6（+6）增至 24 表**；`sys_file.space_id` 自 V4 起为**已落地**的逻辑关联（其原注释「空间表随 at-collaboration 版本落地」所指即 `sys_space`）。
+> - **V12**：**纯增量（+1 表）** —— 新建 `sys_chat_attachment`（会话文件附件授权：**服务端快照** `file_name` / `size_bytes` + **三轴用途限制** `usage_mode`（1-仅预览 / 2-可下载 / 3-可转发转存）+ `expire_at`（与 `sys_share_link` 同口径，`null`=不限期）+ `download_limit` / `download_count`（0=不限次））。授权行是「发送方设定 + 服务端裁决」的唯一权威源，前端上报的任何用途限制都不被采信；`node_id` 是 `sys_file_node` 条目的**逻辑关联**而非外键（源条目删除 / 改名不影响已发出卡片）。唯一键 `uk_sender_client_msg (sender_user_id, client_msg_key)` 承载发送端幂等（连点 / 网络重试不重复建授权），`client_msg_key` 可空（不同于 V5 的会话消息幂等键：授权创建是**单接收方**语义，不需要含 `recipient_user_id`）；因本表恒不置 `deleted=1`（撤销走 `status=1`、到期按 `expire_at` 判定），无需像 V6 文件域那样为规避「删除后重建撞键」而放弃唯一索引。
+> - ✅ 由此 **sys_ 前缀表由 16 表经 V4（+2）后，再经 V6（+6）、V12（+1）增至 25 表**；`sys_file.space_id` 自 V4 起为**已落地**的逻辑关联（其原注释「空间表随 at-collaboration 版本落地」所指即 `sys_space`）。
+> - **V13**：**纯增量（+1 索引，不动结构 / 数据）** —— `sys_notify_message` 补 `idx_sender_session (sender_user_id, chat_scope, chat_target_id, client_msg_id, read_status)`，支撑会话「已读回执」查询。写扩散下「谁读过我的消息」= 取 **sender 为我**且 `read_status=1` 的镜像行；V5 的 `idx_session` 服务的是反方向（我作为接收人的历史与角标），`uk_sender_recipient_client` 虽以 sender 为前缀，但 `client_msg_id` 排在第三列，按它过滤只能扫「我历史上发过的全部行」——故补一个以**发送人视角的会话定位**为前缀的索引（详见该脚本文件头，EE 若改读扩散 + 已读游标则该索引与回执查询一并废弃）。
+> - **V14**：**纯数据新增（不改结构）** —— 会话域落权限点：新增菜单根节点 `chat` 与操作点 **`chat:group:create`**（建群），授 SUPER_ADMIN / DEPT_ADMIN / USER，**不授 AUDITOR**（建群写 `sys_group` / `sys_group_member` 并决定后续消息可见范围，与审计员「权限锁定只读」冲突）。会话的读 / 发 / 已读 / 在线状态**一律不设权限点**（查询与写入维度写死在登录主体上，见 `ChatController` 类注），故本域仅此一点；建群接口 `POST /api/v1/chat/groups` 挂 `@RequiresPerm("chat:group:create")`，错误码 1031~1033 见 `docs/api/error-codes.md`。
 > - ⚠️ V1 头部「群组成员关系不在 CE 落子表，随 at-collaboration 演进版本（V3+）扩展」的**收敛口径已由 V4 提前落地**；V1 属已发布脚本，按下方「已发布脚本禁止修改」**不回改注释**（Flyway checksum），口径演进说明以 `V4__menu_route_user_type_and_collaboration.sql` 文件头为准。
+> - ⚠️ `sys_user.avatar_url`（V1 基线列）存的是 `AvatarStoragePort` 的**存储 key（不透明标识），不是可直接访问的 URL**：对外地址由 `urlOf` 拼为 `/api/v1/users/{id}/avatar?v={key}`（见 at-file 的 `LocalAvatarStorage` 与其接口注释）。该口径同样**不回改 V1 的列注释**（Flyway checksum 铁律，改了会让既有库启动即 `Migration checksum mismatch`），需要时以本行为准。
 
 ## 📐 命名与执行规则
 
@@ -59,8 +64,12 @@ sql/
 - 📦 **脚本随应用生效方式（已统一）**：`at-bootstrap` 在构建期（process-resources 阶段的
   `copy-flyway-migrations`，见 `server/at-bootstrap/pom.xml`）自动把本目录 `V*.sql`
   打包进其 classpath `db/migration`；应用侧 `spring.flyway.locations=classpath:db/migration`
-  固定不变，dev（spring-boot:run / IDE）与 prod（fat jar / 容器）共用同一批脚本。
+  固定不变，dev（`spring-boot:run` / 重新构建后的 IDE 运行）与 prod（fat jar / 容器）共用同一批脚本。
   新增 `V{n}__*.sql` 无需手工复制；改动脚本后重新构建一次（如 `./mvnw -q process-resources`）即同步生效。
+  ⚠️ **IDE 自带的增量编译不会执行该插件**：只按「Run」而不跑一次 Maven 时，
+  `target/classes/db/migration` 仍停留在旧脚本集，表现是「Java 代码是新的、表却不存在」。
+  此时缺表异常若落到兜底 5001，前端只会显示「系统繁忙，请稍后重试 + traceId」，
+  真实 SQL 异常仅在服务端日志可见，极易被误判为业务逻辑 bug。新增迁移脚本后请先跑一次 Maven 再启动。
 - ▶️ 迁移默认开启（`at-bootstrap/application.yml`）：`spring.flyway.enabled=${FLYWAY_ENABLED:true}`，
   应用启动即自动增量迁移；临时关闭部署时置 `FLYWAY_ENABLED=false`。
 - 🧭 baseline 设定：`baseline-on-migrate=true` + `baseline-version=0`——空库直接建历史表并按序执行；

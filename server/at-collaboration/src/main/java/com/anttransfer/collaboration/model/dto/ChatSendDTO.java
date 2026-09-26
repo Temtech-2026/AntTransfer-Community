@@ -36,11 +36,13 @@ import jakarta.validation.constraints.Size;
  * 与配置无关；{@code notify.content-max-length} 只允许在其之下继续收紧
  * （服务端按配置再校验一次，超出返回 2005）。</p>
  *
- * @param scope       会话范围：1-单聊 2-群聊（见 {@code ChatScope}）
- * @param targetId    会话目标：单聊=对端用户 ID；群聊=群组 ID
- * @param messageType 消息体类型：1-文本 2-文件传输 3-审批结果（见 {@code MessageType}，禁止 0）
- * @param content     消息正文（纯文本；文件传输 / 审批结果类消息此处为展示文案）
- * @param clientMsgId 客户端消息 ID（幂等键，同一消息重发须沿用同一个值）
+ * @param scope           会话范围：1-单聊 2-群聊（见 {@code ChatScope}）
+ * @param targetId        会话目标：单聊=对端用户 ID；群聊=群组 ID
+ * @param messageType     消息体类型：1-文本 2-文件传输 3-审批结果（见 {@code MessageType}，禁止 0）
+ * @param content         消息正文（纯文本；文件传输 / 审批结果类消息此处为展示文案）
+ * @param clientMsgId     客户端消息 ID（幂等键，同一消息重发须沿用同一个值）
+ * @param quoteClientMsgId 被引用消息的幂等键（选填）；非空即为「引用回复」，
+ *                         服务端在写入前校验该消息属于本会话且未被撤回（见 {@code ChatService#send}）
  * @author AntTransfer CE
  */
 public record ChatSendDTO(
@@ -50,5 +52,6 @@ public record ChatSendDTO(
         @NotBlank(message = "消息内容不能为空")
         @Size(max = 1000, message = "消息内容过长") String content,
         @NotBlank(message = "客户端消息 ID 不能为空")
-        @Size(max = 64, message = "客户端消息 ID 过长") String clientMsgId) {
+        @Size(max = 64, message = "客户端消息 ID 过长") String clientMsgId,
+        @Size(max = 64, message = "被引用消息 ID 过长") String quoteClientMsgId) {
 }

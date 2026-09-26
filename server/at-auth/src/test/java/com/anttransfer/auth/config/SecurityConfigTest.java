@@ -46,13 +46,31 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("免登录白名单 · 内置项不可被配置覆盖")
 class SecurityConfigTest {
 
-    /** 产品固有的匿名入口：它们靠「令牌 / 票据」在服务层自证，而不是靠登录态。 */
+    /**
+     * 产品固有的匿名入口。
+     *
+     * <p>绝大多数靠「令牌 / 票据」在服务层自证，而不是靠登录态；
+     * 唯一例外是头像直出端点（{@code /v1/users/{id}/avatar}）——它是<b>按设计公开</b>的读取路径
+     * （内容只有图片字节 + 用户 ID 不可枚举 + 端点自身限流），放行依据写在
+     * {@code SecurityConfig.BUILT_IN_PERMIT_ALL} 的对应注释里。</p>
+     *
+     * <p>（此处刻意不写成带星号通配的路径字面量：{@code *} 紧跟 {@code /} 会提前闭合本段
+     * javadoc，编译器随后把正文当成代码，报一串「非法字符」——同一个坑第一批已在
+     * at-auth 的 {@code UserAvatarController} 上踩过一次。）</p>
+     */
     private static final List<String> PRODUCT_ANONYMOUS_ENTRIES = List.of(
             "/v1/shares/*/verify",
             "/v1/shares/redeem",
             "/v1/shares/*/content",
             "/v1/files/*/content",
             "/v1/files/*/thumbnail",
+            // 会话附件取件：判定全部前移到登录态换票端点，此处凭短时票据读字节。
+            // 漏放行不会报错，只会表现为「卡片点得动但一直转圈 / 直接 401」，
+            // 故与另外两个取件端点一起被这条契约测试钉住。
+            "/v1/chat-attachments/*/content",
+            // 头像直出：漏放行的表现最隐蔽——顶栏与列表里的头像全部静默回落到
+            // 「展示名首字符」兜底图，接口不报错、控制台无异常，看起来就像「这个用户没上传头像」。
+            "/v1/users/*/avatar",
             "/ws/notify");
 
     @Test

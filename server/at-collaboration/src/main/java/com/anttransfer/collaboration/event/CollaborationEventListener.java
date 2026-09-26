@@ -15,9 +15,14 @@
  */
 package com.anttransfer.collaboration.event;
 
+import com.anttransfer.collaboration.model.vo.ChatProfileVO;
+import com.anttransfer.collaboration.ws.WsBroadcaster;
+import com.anttransfer.collaboration.ws.WsFrame;
+import com.anttransfer.collaboration.ws.WsProtocol;
 import com.anttransfer.common.event.PermissionExpiredEvent;
 import com.anttransfer.common.event.PermissionGrantEvent;
 import com.anttransfer.common.event.TransferCompletedEvent;
+import com.anttransfer.common.event.UserProfileChangedEvent;
 import com.anttransfer.common.notify.NotificationCommand;
 import com.anttransfer.common.notify.NotificationPort;
 import com.anttransfer.common.notify.NotifyType;
@@ -78,11 +83,19 @@ public class CollaborationEventListener {
      */
     private final TransactionTemplate requiresNewTx;
 
+    /**
+     * WS 推送通道。用于把「用户资料变更」这类<b>不产生站内通知</b>的事件转成实时帧：
+     * 换个头像不该在待办中心留下任何记录，但本人的其他在线端要立刻换图。
+     */
+    private final WsBroadcaster wsBroadcaster;
+
     public CollaborationEventListener(NotificationPort notificationPort,
-                                      PlatformTransactionManager transactionManager) {
+                                      PlatformTransactionManager transactionManager,
+                                      WsBroadcaster wsBroadcaster) {
         this.notificationPort = notificationPort;
         this.requiresNewTx = new TransactionTemplate(transactionManager);
         this.requiresNewTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.wsBroadcaster = wsBroadcaster;
     }
 
     /**
@@ -172,6 +185,37 @@ public class CollaborationEventListener {
     public void onPermissionExpired(PermissionExpiredEvent event) {
         log.debug("授权到期回收事件不产生站内通知（notify_type 无对应段，属已登记的待定口径）：grantId={}, userId={}",
                 event == null ? null : event.grantId(), event == null ? null : event.userId());
+    }
+
+    /**
+     * 用户资料变更（换头像）→ {@code PROFILE} 实时帧。
+     *
+     * <p><b>为什么是「事件转帧」而不是写侧直接推：</b>见 {@link UserProfileChangedEvent}
+     * 类注——头像写侧在 at-permission，WS 通道在 at-collaboration，两者不得互相编译期依赖。</p>
+     *
+     * <p><b>为什么这一条不走 {@link #requiresNewTx}：</b>本监听器<b>不写任何表</b>。头像
+     * 已经在发布方的事务里落了库，这里只是把既成事实播出去；开新事务只会白占一个连接，
+     * 还把一件已经提交的事重新塞进一个可以失败的事务边界里。需要独立事务的是
+     * {@code notificationPort.send}（要写通知表）那几条路径，不是本条。</p>
+     *
+     * <p><b>推给谁：</b>变更者<b>本人的所有在线端</b>（{@code push} 按 userId 扇出到该账号的
+     * 全部连接）。会话对端刻意不推，理由见 {@link WsProtocol#TYPE_PROFILE}。</p>
+     *
+     * <p>异常必须自吞（与类注同因）：本方法在发布方的 {@code afterCommit} 阶段同步执行，
+     * 抛出会把「已经提交成功的换头像」在调用方看来变成失败。</p>
+     */
+    @EventListener
+    public void onUserProfileChanged(UserProfileChangedEvent event) {
+        if (event == null || event.userId() == null) {
+            return;
+        }
+        try {
+            wsBroadcaster.push(event.userId(), WsFrame.of(WsProtocol.TYPE_PROFILE,
+                    new ChatProfileVO(event.userId(), event.avatarUrl())));
+        } catch (Exception e) {
+            log.error("资料变更帧推送失败（头像已落库，本人各端将退化为下次拉取时才刷新）：userId={}, cause={}",
+                    event.userId(), e.toString());
+        }
     }
 
     private static String expireText(LocalDateTime expireAt) {

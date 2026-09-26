@@ -112,6 +112,27 @@ public class OperationLog extends BaseEntity {
     /** 审计动作：下载打包产物 */
     public static final String ACTION_PACK_DOWNLOAD = "PACK_DOWNLOAD";
 
+    /* ====================== 会话文件附件域（聊天消息携带附件） ====================== */
+
+    /**
+     * 审计动作：会话附件授权创建（发送方设定用途档位 / 有效期 / 次数）。
+     *
+     * <p>与外发分享的 {@link #ACTION_SHARE_CREATE} 分开编码的原因：两者的访问主体不同
+     * （分享面向<b>站外匿名访客</b>，附件面向<b>某一确定的登录同事</b>），
+     * 审计查询必须能一眼分清「东西被发到站外了」与「东西被交给了某个同事」。</p>
+     */
+    public static final String ACTION_CHAT_ATTACH_CREATE = "CHAT_ATTACH_CREATE";
+    /** 审计动作：会话附件授权撤销（发送方的绝对否决，接收方卡片随即失效） */
+    public static final String ACTION_CHAT_ATTACH_REVOKE = "CHAT_ATTACH_REVOKE";
+    /** 审计动作：接收方预览附件（只发内联流，不消耗下载次数） */
+    public static final String ACTION_CHAT_ATTACH_PREVIEW = "CHAT_ATTACH_PREVIEW";
+    /** 审计动作：接收方下载附件（消耗一次下载额度，与 {@link #ACTION_CHAT_ATTACH_PREVIEW} 分开计数） */
+    public static final String ACTION_CHAT_ATTACH_DOWNLOAD = "CHAT_ATTACH_DOWNLOAD";
+    /** 审计动作：接收方把附件转存为自己的文件（仅用途档位为「可转发转存」时可达） */
+    public static final String ACTION_CHAT_ATTACH_SAVE = "CHAT_ATTACH_SAVE";
+    /** 审计动作：会话附件取件被拒（用途档位禁止下载 / 已过期 / 已撤销 / 超过次数） */
+    public static final String ACTION_CHAT_ATTACH_REJECT = "CHAT_ATTACH_REJECT";
+
     /* ====================== 权限 / 系统管理域（管理与审批） ====================== */
 
     /** 审计动作：创建用户 */
@@ -122,6 +143,17 @@ public class OperationLog extends BaseEntity {
     public static final String ACTION_USER_DELETE = "USER_DELETE";
     /** 审计动作：启用 / 停用用户（detail 记 from → to） */
     public static final String ACTION_USER_STATUS = "USER_STATUS";
+    /**
+     * 审计动作：管理员更换他人头像（{@code POST /api/v1/system/users/{id}/avatar}）。
+     *
+     * <p>与 {@link #ACTION_USER_UPDATE} 分开编码，理由同「管理员重置口令」与「本人自助改密」
+     * 的分法：换头像是独立端点、独立入口，若并进 USER_UPDATE，审计查询就无法回答
+     * 「这次到底是改了资料还是换了头像」，只能靠翻 detail 里的字段名去猜。</p>
+     *
+     * <p>{@code detail} 只记「换成功了」，<b>不记头像存储 key / 路径</b>——
+     * 头像地址里含可直出访问的 key，写进审计表等于把一份可访问凭据长期留档。</p>
+     */
+    public static final String ACTION_USER_AVATAR = "USER_AVATAR";
     /** 审计动作：管理员重置他人口令（<b>绝不记录口令明文 / 哈希</b>） */
     public static final String ACTION_USER_PASSWORD_RESET = "USER_PASSWORD_RESET";
     /** 审计动作：变更用户角色（detail 记变更前后角色 ID 集） */
@@ -195,6 +227,15 @@ public class OperationLog extends BaseEntity {
     public static final String TARGET_GRANT = "GRANT";
     /** 操作对象类型：系统任务 / 非特定对象（如到期回收、队列清理） */
     public static final String TARGET_SYSTEM = "SYSTEM";
+    /**
+     * 操作对象类型：会话文件附件授权（sys_chat_attachment）。
+     *
+     * <p>刻意不复用 {@link #TARGET_FILE}：{@code target_id} 在本域是<b>授权 ID</b>而非条目 ID，
+     * 若共用 FILE 会让「查某个条目被外发/授权的全部记录」与「查某条授权本身」两种查询
+     * 在同一 {@code (target_type, target_id)} 索引上互相污染。条目 ID 通过
+     * {@link #DETAIL_NODE_ID} 记录在 detail 中。</p>
+     */
+    public static final String TARGET_CHAT_ATTACHMENT = "CHAT_ATTACHMENT";
 
     /* ============================== 结果 ============================== */
 
@@ -228,6 +269,24 @@ public class OperationLog extends BaseEntity {
      * 传输量取「实际下发」，否则分段下载会被重复计成整份文件。</p>
      */
     public static final String DETAIL_SENT_BYTES = "sentBytes";
+
+    /** {@code detail} 键：会话附件所引用的文件条目 ID（{@code CHAT_ATTACH_*} 系列） */
+    public static final String DETAIL_NODE_ID = "nodeId";
+
+    /** {@code detail} 键：会话附件的接收方用户 ID（单聊对端） */
+    public static final String DETAIL_RECEIVER_USER_ID = "receiverUserId";
+
+    /** {@code detail} 键：会话附件的用途档位（1-仅预览 2-可下载 3-可转发转存） */
+    public static final String DETAIL_USAGE_MODE = "usageMode";
+
+    /**
+     * {@code detail} 键：会话附件授权拒绝原因。
+     *
+     * <p>取值形如 {@code REVOKED} / {@code EXPIRED} / {@code LIMIT_EXHAUSTED} /
+     * {@code USAGE_PREVIEW_ONLY}，用于在「被拒」审计里留下可聚合的判据——
+     * 只记「失败了」而不记「因为什么失败」，事后无法区分用户误操作与权限被收紧。</p>
+     */
+    public static final String DETAIL_REJECT_REASON = "rejectReason";
 
     /** 操作人用户 ID（访客 / 系统任务为 null） */
     @TableField("user_id")

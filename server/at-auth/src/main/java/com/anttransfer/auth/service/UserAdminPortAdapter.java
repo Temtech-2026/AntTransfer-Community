@@ -140,6 +140,18 @@ public class UserAdminPortAdapter implements UserAdminPort {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public void updateAvatar(Long userId, String avatarKey, Long operatorId) {
+        if (avatarKey == null || avatarKey.isBlank()) {
+            throw new IllegalArgumentException("头像存储 key 不能为空");
+        }
+        requireAffected(userMapper.updateAvatar(userId, avatarKey, operatorId), userId, "更新头像");
+        // 刻意不吊销会话：换头像不影响任何授权判定，把操作者自己踢下线是纯伤害。
+        // 也刻意不动头像以外的列：本动作只承诺「avatar_url 现在指向新文件」。
+        log.info("系统管理面更新头像：userId={}, operator={}", userId, operatorId);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public void resetPassword(Long userId, String rawPassword, Long operatorId) {
         String hash = passwordEncoder.encode(rawPassword);
         requireAffected(userMapper.updatePassword(userId, hash, operatorId), userId, "重置密码");
@@ -212,9 +224,9 @@ public class UserAdminPortAdapter implements UserAdminPort {
     }
 
     private static UserRow toRow(SysUser user) {
-        return new UserRow(user.getId(), user.getUsername(), user.getNickname(), user.getEmail(),
-                user.getMobile(), user.getDeptId(), user.getStatus(), user.getLastLoginTime(),
-                user.getCreateTime());
+        return new UserRow(user.getId(), user.getUsername(), user.getNickname(), user.getAvatarUrl(),
+                user.getEmail(), user.getMobile(), user.getDeptId(), user.getStatus(),
+                user.getLastLoginTime(), user.getCreateTime());
     }
 
     private static DeptRow toDeptRow(SysDept dept) {

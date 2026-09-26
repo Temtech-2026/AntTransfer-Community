@@ -58,4 +58,20 @@ public class WsProperties {
 
     /** 单帧文本消息上限（字节）：防超大帧打爆内存，默认 64KB（通知远小于此） */
     private int textMessageSizeLimitBytes = 64 * 1024;
+
+    /**
+     * 在线状态「健康」阈值（秒）：最近活跃时刻距今超过该值即判为
+     * {@code UNSTABLE}（前端红点「网络状态不佳」），默认 45s。
+     *
+     * <p><b>取值逻辑 = 1.5 × 心跳间隔</b>（30s → 45s）：
+     * <ul>
+     *     <li>取到接近心跳超时（90s）→ 红点只在「即将被判死」的一瞬间出现，用户永远看不到，
+     *         等于没有这一态；</li>
+     *     <li>取到小于心跳间隔（&lt; 30s）→ 每次正常心跳间隙都会闪一下红，纯噪声；</li>
+     *     <li>45s 恰好表达「正常心跳不该迟到，迟到一次就是链路出了问题」——丢一帧、卡一次
+     *         会亮红，下一次心跳到达即自动回绿（{@code WsPresenceService#markActive} 会在
+     *         状态由 {@code UNSTABLE} 回到 {@code ONLINE} 时补一次推送）。</li>
+     * </ul></p>
+     */
+    private int presenceHealthySeconds = 45;
 }

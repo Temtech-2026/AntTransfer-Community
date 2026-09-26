@@ -59,6 +59,12 @@ public class NotifyMessage extends BaseEntity {
     /** 阅读状态：已读 */
     public static final int READ_READ = 1;
 
+    /** 撤回状态：正常（未撤回） */
+    public static final int RECALL_NONE = 0;
+
+    /** 撤回状态：已撤回 */
+    public static final int RECALL_DONE = 1;
+
     /** 接收人用户 ID（逻辑关联 sys_user）——未读 / 红点 / 会话分页的<b>唯一</b>查询维度 */
     private Long recipientUserId;
 
@@ -104,6 +110,44 @@ public class NotifyMessage extends BaseEntity {
 
     /** 阅读时间 */
     private LocalDateTime readTime;
+
+    /**
+     * 撤回状态：0-正常 1-已撤回（见 {@link #RECALL_NONE} / {@link #RECALL_DONE}）。
+     *
+     * <p><b>为什么不能只看 {@code content} 是否为空来判定撤回：</b>空正文是合法状态
+     * （文件 / 审批类消息的展示文案可以为空），以空串判定会把正常消息渲染成「已撤回」。
+     * 撤回时两件事一起做：本列置 1，且 {@code content} 清空——
+     * 前者是给渲染用的语义标记，后者是让「撤回」在接口层也真的读不到原文。</p>
+     */
+    private Integer recallStatus;
+
+    /** 撤回时间（未撤回为 null） */
+    private LocalDateTime recallTime;
+
+    /**
+     * 被引用消息的幂等键（{@code clientMsgId}）——引用块定位原消息用。
+     *
+     * <p><b>为什么是幂等键而不是行 id：</b>写扩散下同一条消息在发送人与接收人那里是不同的行
+     * （id 不同，单聊的 {@code chatTargetId} 还互指对端），只有 {@code clientMsgId}
+     * 在所有行、所有端上一致。</p>
+     */
+    private String quoteClientMsgId;
+
+    /** 被引用消息的发送人用户 ID（引用块里显示「谁说的」） */
+    private Long quoteSenderUserId;
+
+    /**
+     * 被引用消息的正文快照（服务端写入前按码点截断到 200）。
+     *
+     * <p>冗余快照的理由：被引用消息随后可能被撤回（{@code content} 被清空），
+     * 若引用块实时回查原消息，用户会看到它「几分钟后自己变成空白」。</p>
+     */
+    private String quoteContent;
+
+    /** 是否已被撤回。 */
+    public boolean isRecalled() {
+        return recallStatus != null && recallStatus == RECALL_DONE;
+    }
 
     /** 是否已被读取。 */
     public boolean isRead() {

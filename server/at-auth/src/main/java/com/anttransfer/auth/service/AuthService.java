@@ -27,6 +27,7 @@ import com.anttransfer.auth.security.SecurityUtils;
 import com.anttransfer.common.audit.OperationLog;
 import com.anttransfer.common.exception.AuthException;
 import com.anttransfer.common.exception.BusinessException;
+import com.anttransfer.common.file.AvatarStoragePort;
 import com.anttransfer.common.result.ErrorCode;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -226,7 +227,7 @@ public class AuthService {
         }
         List<String> roles = userMapper.selectRoleCodes(userId);
         return new UserSummary(user.getId(), user.getUsername(), user.getNickname(),
-                user.getAvatarUrl(), roles);
+                AvatarStoragePort.urlOf(user.getId(), user.getAvatarUrl()), roles);
     }
 
     /* ============================ 私有方法 ============================ */
@@ -246,7 +247,7 @@ public class AuthService {
                 "Bearer",
                 properties.getAccessTokenTtl().toSeconds(),
                 new UserSummary(user.getId(), user.getUsername(), user.getNickname(),
-                        user.getAvatarUrl(), roles));
+                        AvatarStoragePort.urlOf(user.getId(), user.getAvatarUrl()), roles));
     }
 
     private String lockedMessage() {

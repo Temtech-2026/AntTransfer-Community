@@ -62,6 +62,8 @@ public interface UserAdminPort {
      * @param id            用户 ID
      * @param username      登录账号（已按应用口径规范化）
      * @param nickname      昵称 / 姓名
+     * @param avatarUrl     头像<b>存储 key</b>（可空；非 URL。对外地址由
+     *                      {@link com.anttransfer.common.file.AvatarStoragePort#urlOf} 拼出）
      * @param email         邮箱（可空）
      * @param mobile        手机号（可空）
      * @param deptId        所属部门 ID（null=未分配）
@@ -69,7 +71,7 @@ public interface UserAdminPort {
      * @param lastLoginTime 最近登录时间（可空）
      * @param createTime    创建时间
      */
-    record UserRow(Long id, String username, String nickname, String email, String mobile,
+    record UserRow(Long id, String username, String nickname, String avatarUrl, String email, String mobile,
                    Long deptId, Integer status, LocalDateTime lastLoginTime, LocalDateTime createTime) {
     }
 
@@ -149,6 +151,25 @@ public interface UserAdminPort {
 
     /** 更新资料（昵称 / 邮箱 / 手机号 / 备注）。 */
     void updateProfile(Long userId, ProfilePatch patch);
+
+    /**
+     * 换头像：把 {@code sys_user.avatar_url} 置为新的存储 key。
+     *
+     * <p><b>为什么独立成一个动作而不是并进 {@link ProfilePatch}：</b>头像的字节由
+     * {@link com.anttransfer.common.file.AvatarStoragePort} 先落盘、再把 key 写库，
+     * 是「先有文件后有引用」的两步；并进资料编辑会让「改了昵称却没换图」这种
+     * 常见提交也带一个 avatar 字段，不得不在表主侧判断「这次到底换没换」。
+     * 独立动作让「换头像」只有一个入口、一次审计、一次旧文件清理。</p>
+     *
+     * <p><b>旧文件不在这里删：</b>本方法只负责改库（与调用方同一事务）。
+     * 删除上一张图片由调用方在<b>事务提交后</b>执行——提交前删，一旦事务回滚，
+     * 库里指向的仍是旧 key 而文件已被删掉，头像就成了永久碎图。</p>
+     *
+     * @param userId     目标用户 ID
+     * @param avatarKey  新的头像存储 key（非 null）
+     * @param operatorId 操作者用户 ID（写入 {@code update_by}）
+     */
+    void updateAvatar(Long userId, String avatarKey, Long operatorId);
 
     /**
      * 重置口令：散列写入，并<b>吊销该用户全部在途会话</b>

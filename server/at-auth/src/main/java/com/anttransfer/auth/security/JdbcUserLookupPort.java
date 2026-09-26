@@ -17,6 +17,7 @@ package com.anttransfer.auth.security;
 
 import com.anttransfer.auth.model.entity.SysUser;
 import com.anttransfer.auth.repository.UserMapper;
+import com.anttransfer.common.file.AvatarStoragePort;
 import com.anttransfer.common.security.UserLookupPort;
 import org.springframework.stereotype.Component;
 
@@ -25,6 +26,7 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -37,6 +39,12 @@ import java.util.Set;
  * <p><b>可用性口径：</b>{@code status=0（正常）且未逻辑删除} 才算「可用」；
  * 禁用（1005）/ 锁定（1004）的账号不允许被发起新会话——否则消息会投递给一个
  * 已经登不进来的账号，永久沉淀为无人认领的未读。</p>
+ *
+ * <p><b>头像地址的拼装落在这里，而不是留给消费方：</b>库里 {@code sys_user.avatar_url}
+ * 存的是不透明存储 key，对外地址必须经 {@link AvatarStoragePort#urlOf} 拼。若让每个消费方
+ * 自己拼，路径或版本参数一变就会出现「有的地方能显示、有的地方是碎图」。本类是
+ * {@code sys_user} 的唯一对外只读出口，因此这里也是「用户 → 对外头像地址」这一映射的收口点
+ * （与 at-auth 的 {@code AuthService#profile} / at-permission 的用户列表同一真相源）。</p>
  *
  * @author AntTransfer CE
  */
@@ -78,12 +86,32 @@ public class JdbcUserLookupPort implements UserLookupPort {
         }
         List<SysUser> users = userMapper.selectBriefByIds(distinct);
         for (SysUser user : users) {
-            String display = (user.getNickname() == null || user.getNickname().isBlank())
-                    ? user.getUsername()
-                    : user.getNickname();
             contacts.put(user.getId(),
-                    new UserContact(user.getId(), display, user.getEmail()));
+                    new UserContact(user.getId(), displayName(user), user.getEmail(),
+                            AvatarStoragePort.urlOf(user.getId(), user.getAvatarUrl())));
         }
         return contacts;
+    }
+
+    @Override
+    public Optional<UserContact> findActiveByUsername(String username) {
+        if (username == null || username.isBlank()) {
+            return Optional.empty();
+        }
+        // selectByUsername 自带 deleted = 0 过滤；状态判定与 existsActiveUser 同一处口径，
+        // 避免「查得到但不可用」的账号被当成会话目标（禁用账号只会沉淀成无人认领的未读）
+        SysUser user = userMapper.selectByUsername(username.trim());
+        if (user == null || user.getStatus() == null || user.getStatus() != SysUser.STATUS_NORMAL) {
+            return Optional.empty();
+        }
+        return Optional.of(new UserContact(user.getId(), displayName(user), user.getEmail(),
+                AvatarStoragePort.urlOf(user.getId(), user.getAvatarUrl())));
+    }
+
+    /** 展示名回落：昵称为空时用登录账号，保证非空（口径与 {@link #findContacts} 一致）。 */
+    private static String displayName(SysUser user) {
+        return (user.getNickname() == null || user.getNickname().isBlank())
+                ? user.getUsername()
+                : user.getNickname();
     }
 }

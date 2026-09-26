@@ -18,6 +18,7 @@ package com.anttransfer.collaboration.config;
 import com.anttransfer.collaboration.service.NotifyMessageService;
 import com.anttransfer.collaboration.ws.WsHandshakeInterceptor;
 import com.anttransfer.collaboration.ws.WsNotifyHandler;
+import com.anttransfer.collaboration.ws.WsPresenceService;
 import com.anttransfer.collaboration.ws.WsProtocol;
 import com.anttransfer.collaboration.ws.WsSessionRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -78,24 +79,28 @@ public class WebSocketConfig implements WebSocketConfigurer {
     private final WsSessionRegistry wsSessionRegistry;
     private final WsHandshakeInterceptor wsHandshakeInterceptor;
     private final NotifyMessageService notifyMessageService;
+    private final WsPresenceService wsPresenceService;
     private final WsProperties wsProperties;
     private final ObjectMapper objectMapper;
 
     public WebSocketConfig(WsSessionRegistry wsSessionRegistry,
                            WsHandshakeInterceptor wsHandshakeInterceptor,
                            NotifyMessageService notifyMessageService,
+                           WsPresenceService wsPresenceService,
                            WsProperties wsProperties,
                            ObjectMapper objectMapper) {
         this.wsSessionRegistry = wsSessionRegistry;
         this.wsHandshakeInterceptor = wsHandshakeInterceptor;
         this.notifyMessageService = notifyMessageService;
+        this.wsPresenceService = wsPresenceService;
         this.wsProperties = wsProperties;
         this.objectMapper = objectMapper;
     }
 
     @Bean
     public WsNotifyHandler wsNotifyHandler() {
-        return new WsNotifyHandler(wsSessionRegistry, notifyMessageService, wsProperties, objectMapper);
+        return new WsNotifyHandler(wsSessionRegistry, notifyMessageService, wsPresenceService,
+                wsProperties, objectMapper);
     }
 
     /**

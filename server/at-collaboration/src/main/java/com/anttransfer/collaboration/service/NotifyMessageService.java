@@ -17,16 +17,21 @@ package com.anttransfer.collaboration.service;
 
 import com.anttransfer.collaboration.config.NotifyProperties;
 import com.anttransfer.collaboration.model.entity.NotifyMessage;
+import com.anttransfer.collaboration.model.vo.ChatReadReceiptVO;
+import com.anttransfer.collaboration.model.vo.ChatReaderVO;
 import com.anttransfer.collaboration.model.vo.NotifyMessageVO;
 import com.anttransfer.collaboration.model.vo.TodoItemVO;
 import com.anttransfer.collaboration.model.vo.UnreadCountVO;
+import com.anttransfer.collaboration.repository.ChatReadRow;
 import com.anttransfer.collaboration.repository.NotifyMessageMapper;
 import com.anttransfer.collaboration.support.AfterCommitExecutor;
 import com.anttransfer.collaboration.ws.WsBroadcaster;
 import com.anttransfer.collaboration.ws.WsFrame;
 import com.anttransfer.collaboration.ws.WsProtocol;
+import com.anttransfer.common.notify.ChatScope;
 import com.anttransfer.common.notify.NotifyType;
 import com.anttransfer.common.result.PageResult;
+import com.anttransfer.common.security.UserLookupPort;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
@@ -35,7 +40,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 通知 / 待办查询与已读服务。
@@ -74,15 +82,18 @@ public class NotifyMessageService {
     private final WsBroadcaster wsBroadcaster;
     private final AfterCommitExecutor afterCommitExecutor;
     private final NotifyProperties properties;
+    private final UserLookupPort userLookupPort;
 
     public NotifyMessageService(NotifyMessageMapper notifyMessageMapper,
-                                WsBroadcaster wsBroadcaster,
-                                AfterCommitExecutor afterCommitExecutor,
-                                NotifyProperties properties) {
+                               WsBroadcaster wsBroadcaster,
+                               AfterCommitExecutor afterCommitExecutor,
+                               NotifyProperties properties,
+                               UserLookupPort userLookupPort) {
         this.notifyMessageMapper = notifyMessageMapper;
         this.wsBroadcaster = wsBroadcaster;
         this.afterCommitExecutor = afterCommitExecutor;
         this.properties = properties;
+        this.userLookupPort = userLookupPort;
     }
 
     /**
@@ -189,15 +200,27 @@ public class NotifyMessageService {
     }
 
     /**
-     * 会话已读（进入会话即清该会话角标）。
+     * 会话已读（进入会话即清该会话角标），并把「刚被读了哪些条」回推给各发送人。
+     *
+     * <p><b>为何先查后改：</b>{@code UPDATE} 只回受影响行数，而回执必须给出<b>具体哪几条</b>
+     * 被读了（前端要按 {@code clientMsgId} 把头像补到对应气泡下）。故先用与 UPDATE
+     * <b>完全相同的谓词</b>取一次快照，再执行翻转。两步之间的并发（同一用户多端同时进入会话）
+     * 不影响结论：快照里的行在本次返回时确实处于已读态。</p>
+     *
+     * <p><b>快照只要一页的量：</b>回执帧是加速通道（真值在会话历史里），而读者刚进会话看的就是
+     * 最新一屏，故按 {@code chat-history-limit} 截断——否则上千条未读会把推送体放大到几百 KB，
+     * 而多出来的部分前端当前视口根本看不见。</p>
      *
      * @return 受影响条数
      */
     @Transactional
     public int markSessionRead(Long userId, int scope, Long targetId) {
+        List<ChatReadRow> unreadRows = notifyMessageMapper.selectSessionUnreadRows(
+                userId, scope, targetId, properties.getChatHistoryLimit());
         int affected = notifyMessageMapper.markSessionRead(userId, scope, targetId, LocalDateTime.now());
         if (affected > 0) {
             scheduleUnreadPush(userId);
+            scheduleReadReceipts(userId, scope, targetId, unreadRows);
         }
         return affected;
     }
@@ -208,6 +231,53 @@ public class NotifyMessageService {
     public void scheduleUnreadPush(Long userId) {
         afterCommitExecutor.run(() -> wsBroadcaster.push(userId,
                 WsFrame.of(WsProtocol.TYPE_UNREAD, unreadCount(userId))));
+    }
+
+    /**
+     * 提交后把已读回执按<b>发送人</b>归并推送。
+     *
+     * <p>归并维度是发送人而不是消息：一次置读通常跨多条消息，而每个发送人各有自己的会话窗口，
+     * 「一位发送人一帧、帧内带他发的那几条」既省帧数，也让前端只需按 {@code clientMsgId} 就地打标。</p>
+     *
+     * <p><b>会话目标必须换算成发送人视角</b>：快照行的 {@code chat_target_id} 是接收人（读者）视角——单聊的
+     * 镜像行 target 指向发送人自己（V5 注释 c）。单聊下发送人窗口的 target 是<b>读者本人</b>，
+     * 群聊下两侧都是群 ID；照抄行里的 target 会让发送人用它对不上任何会话窗口，头像就永远不出现。</p>
+     *
+     * <p>读者与发送人同一个人时跳过：自己的行落库即已读，本不会进入未读快照，
+     * 这里再挡一次——免得将来置读口径改动后，给自己推「你读了你自己的消息」。</p>
+     */
+    private void scheduleReadReceipts(Long readerId, int scope, Long targetId, List<ChatReadRow> unreadRows) {
+        Map<Long, List<String>> clientMsgIdsBySender = new LinkedHashMap<>();
+        for (ChatReadRow row : unreadRows) {
+            Long senderId = row.getSenderUserId();
+            if (senderId == null || row.getClientMsgId() == null || senderId.equals(readerId)) {
+                continue;
+            }
+            clientMsgIdsBySender.computeIfAbsent(senderId, key -> new ArrayList<>())
+                    .add(row.getClientMsgId());
+        }
+        if (clientMsgIdsBySender.isEmpty()) {
+            return;
+        }
+        ChatReaderVO reader = loadReader(readerId);
+        if (reader == null) {
+            // 读者已不在用户目录：气泡下画不出可辨识的头像，推过去也只是个无名头像，不如不推（事实仍留在库里）
+            return;
+        }
+        Long senderViewTargetId = ChatScope.isGroup(scope) ? targetId : readerId;
+        clientMsgIdsBySender.forEach((senderId, clientMsgIds) -> afterCommitExecutor.run(
+                () -> wsBroadcaster.push(senderId, WsFrame.of(WsProtocol.TYPE_CHAT_READ,
+                        new ChatReadReceiptVO(scope, senderViewTargetId, reader, List.copyOf(clientMsgIds))))));
+    }
+
+    /**
+     * 取读者展示名（反查不到说明账号已不在用户目录）。
+     */
+    private ChatReaderVO loadReader(Long userId) {
+        UserLookupPort.UserContact contact = userLookupPort.findContacts(List.of(userId)).get(userId);
+        return contact == null
+                ? null
+                : new ChatReaderVO(contact.userId(), contact.displayName(), contact.avatarUrl());
     }
 
     private int normalizeLimit(Integer limit) {

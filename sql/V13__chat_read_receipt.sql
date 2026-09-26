@@ -1,0 +1,48 @@
+-- =====================================================================
+-- V13__chat_read_receipt.sql — 会话「已读回执」索引（Flyway 版本化脚本 V13）
+--
+-- 目标：让「我发的消息，被谁读过了」这一问法走索引，而不是扫发送人全部历史。
+--
+-- 背景：写扩散（一条消息按参与人各落一行）下，一条已读事实天然存在于**收件人那一行**
+--   ——recipient 的 read_status 由 0 翻 1，就是「recipient 读了 sender 的这条消息」。
+--   于是「谁读过我的消息」= 取 sender 为我、且 read_status=1 的**镜像行**。
+--   V5 建了 idx_session (recipient, chat_scope, chat_target_id, id) 与
+--   uk_sender_recipient_client (sender_user_id, recipient_user_id, client_msg_id)：
+--     1. idx_session 服务于「我作为接收人」的会话历史与角标，方向相反，用不上；
+--     2. uk_sender_recipient_client 以 sender 为前缀，理论上能定位我的全部发送行，
+--        但要按 client_msg_id 过滤时它排在第三列——只能把「我历史上发过的所有行」
+--        全扫一遍（跨会话、跨年份）再逐行判 client_msg_id，页均扫描量与发送总量同阶。
+--   → 故补一个以**发送人视角的会话定位**为前缀的索引。
+--
+-- 查询形态（见 NotifyMessageMapper#selectReadReceipts）：
+--   where sender_user_id = ?            -- 等值
+--     and chat_scope = ?                -- 等值
+--     and chat_target_id = ?            -- 等值（发送人视角：单聊=我自己的 ID，群聊=群 ID）
+--     and client_msg_id in (?, ...)     -- 当前页 ≤ 50 条消息，逐值点查
+--     and recipient_user_id <> ?        -- 排除我自己的那一行（自己不算「读过」）
+--     and read_status = 1 and deleted = 0
+--   ① 前三列等值 + 第四列 IN：命中数 = 页内消息数 × 参与人数，与「历史总量」无关；
+--   ② read_status 放进索引：未读行在索引内即被过滤，不必逐行回表（已读是少数派）。
+--
+-- 列序为何是 (sender, scope, target, client_msg_id, read_status)：
+--   a) 前两列 sender + scope 基数低，第三列 target 把范围收敛到「一个会话」；
+--   b) client_msg_id 必须在**过滤性最强的 read_status 之前**——若把 read_status 提前，
+--      IN 列表退化为范围后的后置过滤，就又回到扫整个会话镜像行；
+--   c) 单聊的 chat_target_id 是**发送人自己的 ID**（见 V5 注释 c：镜像行互指对端，
+--      故「我发给 B」的镜像行 target=我），所以单聊与群聊共用同一索引、无需分支。
+--
+-- 代价与取舍（记录在案，便于日后复核）：
+--   1. 写扩散表每插一行多维护一个 5 列二级索引，群聊写放大再上一层。
+--      CE 群规模有限（群成员上限见 GroupMemberMapper 侧校验），实测可忽略；
+--   2. 刻意**不落冗余的「已读人」列或已读计数**：read_status 是唯一事实源，
+--      回执由镜像行派生。冗余一份就要在置读、撤回、成员退群等处同步维护，
+--      而本表的已读只有「置读」一个写入点，派生的边际成本可控、且永不失真；
+--   3. EE 若改「读扩散 + 会话已读游标」（见 V5 注释 c），本索引与回执查询一并废弃，
+--      届时按游标直接取「谁读到哪条」即可。
+--
+-- PostgreSQL 差异：本文件仅一条 ALTER TABLE ... ADD KEY，PG 需改写为
+--   建表后的独立语句 CREATE INDEX idx_sender_session ON sys_notify_message (...)。
+-- =====================================================================
+
+alter table sys_notify_message
+    add key idx_sender_session (sender_user_id, chat_scope, chat_target_id, client_msg_id, read_status);

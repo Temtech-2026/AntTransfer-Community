@@ -56,6 +56,73 @@ public final class WsProtocol {
     /** 会话消息实时推送（单条） */
     public static final String TYPE_CHAT = "CHAT";
 
+    /**
+     * 会话消息已读回执：某位读者把「我发的这一批消息」读了。
+     *
+     * <p>推给<b>发送人</b>（读者是触发方），载荷见 {@code ChatReadReceiptVO}。
+     * 与 {@link #TYPE_UNREAD} 的分工：未读快照解决「还剩几条没读」，回执解决
+     * 「我发的那条对方读了没」——后者无法从快照反推（快照里我自己的行恒为已读）。</p>
+     *
+     * <p>本帧是<b>加速通道</b>：丢了只表现为「下次拉会话历史才看到头像」，
+     * 客户端不需要（也不应）为它做补偿逻辑。</p>
+     */
+    public static final String TYPE_CHAT_READ = "CHAT_READ";
+
+    /**
+     * 会话消息撤回：某条已发出的消息被其发送人撤回，载荷见 {@code ChatRecallVO}。
+     *
+     * <p>推给<b>该消息的所有参与人</b>（含撤回者自己的其他端）——撤回必须同步到每一端，
+     * 否则「我这端撤了、那端还留着原文」。推的不是「新消息」，故不复用 {@link #TYPE_CHAT}：
+     * 后者会被客户端按新消息插流，把未读数与会话摘要各多加一次。</p>
+     *
+     * <p>与 {@link #TYPE_CHAT_READ} 同样的定位：<b>加速通道</b>。真值在库里
+     * （{@code recall_status = 1}），丢了只表现为「重新拉历史后才看到已撤回」。</p>
+     */
+    public static final String TYPE_CHAT_RECALL = "CHAT_RECALL";
+
+    /**
+     * 用户资料变更（头像更换）：某位用户的头像已被更换，载荷见 {@code ChatProfileVO}。
+     *
+     * <p>推给<b>变更者本人的所有在线端</b>——在 A 端换了头像，B 端（另一个标签页 / 另一台设备）
+     * 的顶栏与聊天头像要立刻跟上。<b>刻意不推给会话对端：</b>他们的头像来自会话列表与消息载荷，
+     * 下次拉取自然就是新值；为此维护一张「谁在关注谁」的订阅表，收益远小于它与群成员关系变更
+     * 之间的同步成本（与 {@link #TYPE_PRESENCE} 的订阅集合是两回事，不要复用后者）。</p>
+     *
+     * <p><b>它也不是「新消息」：</b>不复用 {@link #TYPE_CHAT}——后者会被客户端按新消息插入
+     * 消息流，把未读数与会话摘要各多算一次。载荷因此另设 {@code ChatProfileVO}，
+     * 而不是套用 {@code NotifyMessageVO}。</p>
+     *
+     * <p>与 {@link #TYPE_CHAT_READ} 同样的定位：<b>加速通道</b>。真值在库里
+     * （{@code sys_user.avatar_url}），丢了只表现为「本端要等下次拉会话列表才看到新头像」，
+     * 客户端不需要（也不应）为它写补偿逻辑。</p>
+     */
+    public static final String TYPE_PROFILE = "PROFILE";
+
+    /**
+     * 对端在线状态变更：某位用户的在线三态发生了变化，载荷见 {@code ChatPresenceVO}。
+     *
+     * <p>推给<b>正在看这位用户会话</b>的人（订阅集合见 {@code at:ws:presence:watch:*}），
+     * 不推给状态变化者本人（他自己的多端各自持有本端连接事实）。只在状态<b>发生迁移</b>时推：
+     * 上线、弱网恢复、正常断开——心跳续期不推，否则每 30s 给每个观察者发一帧纯噪声。</p>
+     *
+     * <p>与 {@link #TYPE_CHAT_READ} 同样的定位：<b>加速通道</b>。丢了不影响正确性，
+     * 客户端另有「打开会话时拉一次 + 打开期间每 30s 续订一次」的权威回正，
+     * 因此不需要（也不应）为它写补偿逻辑。</p>
+     */
+    public static final String TYPE_PRESENCE = "PRESENCE";
+
+    /**
+     * 对端输入状态（正在输入…）：载荷见 {@code ChatTypingVO}。
+     *
+     * <p>推给<b>对端</b>（单聊即会话目标本人），不推给输入者自己的其他连接——否则同一账号的
+     * 其他标签页会把「我自己在输入」渲染成「对方正在输入」。</p>
+     *
+     * <p><b>纯瞬时信号</b>：不落库、不进未读、不补推、不参与已读口径。丢了只表现为
+     * 「少显示一次输入提示」，客户端的下一次续订帧（每 3s 一次）会补上，
+     * 接收端另有空闲兜底（约 6s）自动收起。</p>
+     */
+    public static final String TYPE_TYPING = "TYPING";
+
     /** 未读快照（红点 / 待办 / 会话角标三口径） */
     public static final String TYPE_UNREAD = "UNREAD";
 

@@ -78,7 +78,7 @@ public class SecurityConfig {
      * 而 Spring Boot 的 profile 配置文档（{@code application-dev.yml} 等）优先级高于主文档，
      * 且 <b>List 属性是整体替换而非逐项合并</b>：只要任一 profile 写了一次
      * {@code permit-all}，主配置里的整份清单就被静默丢弃。曾经 dev profile 为放行 Swagger
-     * 写了 4 条，本清单里的 5 条便随之在 dev 下全部失效——表现为 WebSocket 握手直接
+     * 写了 4 条，本清单里的条目便随之在 dev 下全部失效——表现为 WebSocket 握手直接
      * 401(1001) 使前端永远停在「正在建立实时连接」、文件取件与分享核销一律 401，
      * 而 prod 却正常（prod 未写该键）。放进代码即从结构上消除「加配置反而删白名单」。</p>
      *
@@ -91,7 +91,7 @@ public class SecurityConfig {
             "/v1/auth/token/refresh", // 刷新令牌
             "/error",                 // 容器错误转发（否则错误页本身也要登录）
 
-            // —— 产品固有的匿名入口：三处「浏览器无法携带 Authorization 头」的场景 ——
+            // —— 产品固有的匿名入口：四处「浏览器无法携带 Authorization 头」的场景 ——
             // 外发分享访客侧：访客无登录态，凭「高熵令牌 + 提取码」自证身份；
             // 服务层逐项校验令牌 / 有效期 / 提取码 / 次数，另有 @RateLimit 抗爆破。
             "/v1/shares/*/verify",
@@ -103,10 +103,28 @@ public class SecurityConfig {
             // 凭证只能走查询串里的短时票据；权限判定前移到换票阶段（/v1/files/*/ticket）。
             "/v1/files/*/content",
             "/v1/files/*/thumbnail",
+            // 会话附件取件：同一「浏览器带不了头」约束。判定（归属 / 撤销 / 有效期 / 用途档位 /
+            // 次数原子扣减 / 审计）全部前移到登录态换票端点 /v1/chat-attachments/*/ticket，
+            // 此处凭短时票据读字节，并回源复核「票据绑定 + 当前状态」（撤销即时生效）。
+            "/v1/chat-attachments/*/content",
             // WebSocket 握手：浏览器 WebSocket 构造器不允许自定义请求头，令牌只能走查询串，
             // 在 Security 眼里是匿名请求；放行后由握手拦截器在 Upgrade 阶段完成 JWT 校验，
             // 未通过不升级为长连接——安全性不降级。
-            "/ws/notify");
+            "/ws/notify",
+            // 用户头像直出：同样是「浏览器带不了头」的 <img src> 场景。
+            //
+            // ⚠️ 与上面几条的关键区别：本路径**没有服务层凭证复核**（查询串里的 v 只做缓存
+            // 击穿，服务端不据此校验任何东西，取的始终是该用户的当前头像）。它是一条
+            // **按设计公开**的读取路径，放行依据是三条同时成立：
+            //   ① 内容低敏感——只回图片字节，不含账号 / 角色 / 部门等任何字段，
+            //      响应头固定为图片类型 + nosniff，无法当作同源页面或脚本加载；
+            //   ② ID 不可枚举——用户 ID 是雪花 ID（有序但跨度极大且带机器 / 序列位），
+            //      无法按区间遍历；但**已知 ID 即可取到图像**，这一点必须承认；
+            //   ③ 入口加 @RateLimit——把「拿已知 ID 批量拉取」的成本抬到可发现。
+            // 因此**不得**在这条路径上追加任何返回体字段，也不得把头像换成含身份信息的
+            // 内容（如工牌照片、带水印的证件图）；一旦内容升级，本放行必须改为「换票 + 票据」
+            // 模式（照 /v1/files/*/content 的做法）。
+            "/v1/users/*/avatar");
 
     @Bean
     public PasswordEncoder passwordEncoder() {

@@ -54,15 +54,18 @@ public class WsNotifyHandler extends TextWebSocketHandler {
 
     private final WsSessionRegistry registry;
     private final NotifyMessageService notifyMessageService;
+    private final WsPresenceService presenceService;
     private final WsProperties properties;
     private final ObjectMapper objectMapper;
 
     public WsNotifyHandler(WsSessionRegistry registry,
                            NotifyMessageService notifyMessageService,
+                           WsPresenceService presenceService,
                            WsProperties properties,
                            ObjectMapper objectMapper) {
         this.registry = registry;
         this.notifyMessageService = notifyMessageService;
+        this.presenceService = presenceService;
         this.properties = properties;
         this.objectMapper = objectMapper;
     }
@@ -84,6 +87,10 @@ public class WsNotifyHandler extends TextWebSocketHandler {
         WebSocketSession concurrent = new ConcurrentWebSocketSessionDecorator(
                 session, properties.getSendTimeLimitMillis(), properties.getBufferSizeLimitBytes());
         registry.register(userId, concurrent);
+        // 上线：写在线记录并在状态迁移时推给正在看他会话的人。放在下发 CONNECTED 之前——
+        // 对观察者而言「他上线了」这件事早于「他自己收到未读快照」发生，顺序更自然；
+        // 且本调用内部已吞掉 Redis 异常，不会阻断建连
+        presenceService.markActive(userId);
         log.debug("WS 连接建立：userId={}, sessionId={}, 本机连接数={}",
                 userId, session.getId(), registry.localSessionCount());
         sendConnected(concurrent, userId);
@@ -95,6 +102,14 @@ public class WsNotifyHandler extends TextWebSocketHandler {
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) {
         registry.touch(session);
+        // 每个上行帧都续期在线状态——包括客户端对服务端心跳探测的 PONG 应答。
+        // 这一点很关键：浏览器会把后台标签页的定时器降频到 1 次/分钟，若只靠客户端自己的
+        // 定时心跳续期，后台用户会被对端看成「网络不佳」甚至「离线」；而「服务端探测 → 客户端
+        // 应答」这条链路不受定时器降频影响，活跃时刻因此始终新鲜
+        Long userId = userIdOf(session);
+        if (userId != null) {
+            presenceService.markActive(userId);
+        }
         String payload = message.getPayload();
         if (payload == null || payload.isBlank()) {
             return;
@@ -118,7 +133,9 @@ public class WsNotifyHandler extends TextWebSocketHandler {
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) {
         log.warn("WS 传输异常：sessionId={}, cause={}", session.getId(), exception.getMessage());
-        registry.unregister(session);
+        // 这里必须自己清在线状态：本方法会先注销，随后的 afterConnectionClosed 再注销一次
+        // 拿到的是 null（幂等设计），那条路径无法再判断「该用户还有没有别的连接」
+        clearPresenceIfLastSession(registry.unregister(session));
         closeQuietly(session, CloseStatus.SERVER_ERROR);
     }
 
@@ -128,8 +145,23 @@ public class WsNotifyHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         Long userId = registry.unregister(session);
+        clearPresenceIfLastSession(userId);
         log.debug("WS 连接关闭：userId={}, sessionId={}, status={}, 本机连接数={}",
                 userId, session.getId(), status, registry.localSessionCount());
+    }
+
+    /**
+     * 连接注销后的在线状态清理：<b>仅当本机已无该用户的其他连接</b>时才清除。
+     *
+     * <p>多标签页 / 多设备场景下关掉其中一个不能判离线；跨实例的另一种情况（该用户还连在
+     * 别的实例上）会由那边的心跳在 ≤30s 内写回，见 {@link WsPresenceService} 类注「已知边界」。</p>
+     *
+     * @param userId 刚注销的连接归属用户（会话本就不存在时为 null，无需处理）
+     */
+    private void clearPresenceIfLastSession(Long userId) {
+        if (userId != null && !registry.isOnlineLocally(userId)) {
+            presenceService.markOffline(userId);
+        }
     }
 
     /** 下发连接帧；快照查询失败不阻断连接（客户端退化为拉取未读接口）。 */

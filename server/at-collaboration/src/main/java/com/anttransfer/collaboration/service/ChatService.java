@@ -18,14 +18,23 @@ package com.anttransfer.collaboration.service;
 import com.anttransfer.collaboration.config.NotifyProperties;
 import com.anttransfer.collaboration.model.dto.ChatSendDTO;
 import com.anttransfer.collaboration.model.entity.NotifyMessage;
+import com.anttransfer.collaboration.model.entity.SysGroup;
+import com.anttransfer.collaboration.model.vo.ChatPresenceVO;
+import com.anttransfer.collaboration.model.vo.ChatReaderVO;
+import com.anttransfer.collaboration.model.vo.ChatRecallVO;
+import com.anttransfer.collaboration.model.vo.ChatTargetVO;
+import com.anttransfer.collaboration.model.vo.ChatTypingVO;
 import com.anttransfer.collaboration.model.vo.ConversationVO;
 import com.anttransfer.collaboration.model.vo.NotifyMessageVO;
+import com.anttransfer.collaboration.repository.ChatReadRow;
 import com.anttransfer.collaboration.repository.ConversationSummary;
 import com.anttransfer.collaboration.repository.GroupMemberMapper;
 import com.anttransfer.collaboration.repository.NotifyMessageMapper;
+import com.anttransfer.collaboration.repository.SysGroupMapper;
 import com.anttransfer.collaboration.support.AfterCommitExecutor;
 import com.anttransfer.collaboration.ws.WsBroadcaster;
 import com.anttransfer.collaboration.ws.WsFrame;
+import com.anttransfer.collaboration.ws.WsPresenceService;
 import com.anttransfer.collaboration.ws.WsProtocol;
 import com.anttransfer.common.exception.BusinessException;
 import com.anttransfer.common.notify.ChatScope;
@@ -41,11 +50,15 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -61,6 +74,11 @@ import java.util.stream.Collectors;
  * 会话角标 +1，且多端同步时会看到「自己发的未读」。置读后，发送人的其他标签页仍会通过
  * WebSocket 收到该帧（推送按「用户」广播到其全部连接），既同步了消息、又不制造假未读。</p>
  *
+ * <p><b>已读回执同样是「派生态」，不新增存储：</b>「谁读过我发的这条」= 同一消息<b>其他人的镜像行</b>
+ * 里 {@code read_status = 1} 的那些行。换言之 V5 的写扩散已经把回执所需的事实全记下来了，
+ * 只是查询方向与「我的会话历史」相反（历史按 recipient 查，回执按 sender + 镜像 target 查），
+ * 故这里只补查询与派生，不引入回执表、也不加冗余计数（见 {@code V13__chat_read_receipt.sql}）。</p>
+ *
  * <p><b>先落库再推送：</b>推送注册在 {@code afterCommit}，因此不存在「收到帧但库里查不到」
  * 的幻影消息；推送失败只会让在线端退化为「下次拉取才看到」，不丢消息。</p>
  *
@@ -75,35 +93,72 @@ public class ChatService {
 
     private static final Logger log = LoggerFactory.getLogger(ChatService.class);
 
-    /** 单聊 / 群聊「会话双方各一行」的最大接收人规模（群聊为成员数；仅用于日志与防御性判断） */
-    private static final int MAX_FANOUT_RECIPIENTS = 500;
+    /**
+     * 单聊 / 群聊「会话双方各一行」的最大接收人规模（群聊为成员数；仅用于日志与防御性判断）。
+     *
+     * <p><b>为 {@code public}：</b>建群时的成员上限（{@code SysGroup#MAX_MEMBERS}）必须不高于
+     * 本值，否则能建出「进得去、发不出」的群——而故障发生在发送而非建群时，
+     * 排查会先怀疑消息服务。两者关系由 {@code ChatGroupMemberLimitTest} 断言，
+     * 暴露常量只是为了让那条断言能写出来。</p>
+     */
+    public static final int MAX_FANOUT_RECIPIENTS = 500;
+
+    /**
+     * 撤回时间窗：消息发出后多久内允许发送人撤回。
+     *
+     * <p><b>为什么是常量而不是配置项：</b>窗口是产品口径（给「手滑发错」留改正时间，
+     * 不是给「翻旧账」留通道），改它必须同时改前端入口的显隐逻辑与错误码 1034 的文案——
+     * 做成配置只会让三处在不同环境漂移。前端不再自己算窗口，撤回入口是否可用由本值决定
+     * （前端按 {@code createTime + 窗口} 判定，只影响体验，强制校验在这里）。</p>
+     *
+     * <p>判定始终以<b>服务端时钟</b>为准：客户端时间可被随意修改，
+     * 若信任客户端传来的「是否超时」，撤回窗口就形同虚设。</p>
+     */
+    public static final Duration RECALL_WINDOW = Duration.ofMinutes(2);
+
+    /** 引用快照正文的最大长度（与 {@code quote_content varchar(200)} 列宽对齐）。 */
+    private static final int QUOTE_SNAPSHOT_MAX = 200;
 
     private final NotifyMessageMapper notifyMessageMapper;
     private final GroupMemberMapper groupMemberMapper;
+    private final SysGroupMapper sysGroupMapper;
     private final UserLookupPort userLookupPort;
     private final WsBroadcaster wsBroadcaster;
+    private final WsPresenceService wsPresenceService;
     private final AfterCommitExecutor afterCommitExecutor;
     private final NotifyProperties properties;
     private final NotifyMessageService notifyMessageService;
 
     public ChatService(NotifyMessageMapper notifyMessageMapper,
                        GroupMemberMapper groupMemberMapper,
+                       SysGroupMapper sysGroupMapper,
                        UserLookupPort userLookupPort,
                        WsBroadcaster wsBroadcaster,
+                       WsPresenceService wsPresenceService,
                        AfterCommitExecutor afterCommitExecutor,
                        NotifyProperties properties,
                        NotifyMessageService notifyMessageService) {
         this.notifyMessageMapper = notifyMessageMapper;
         this.groupMemberMapper = groupMemberMapper;
+        this.sysGroupMapper = sysGroupMapper;
         this.userLookupPort = userLookupPort;
         this.wsBroadcaster = wsBroadcaster;
+        this.wsPresenceService = wsPresenceService;
         this.afterCommitExecutor = afterCommitExecutor;
         this.properties = properties;
         this.notifyMessageService = notifyMessageService;
     }
 
     /**
-     * 发送一条会话消息。
+     * 发送一条会话消息（文本 / 文件传输通知 / 审批结果通知），可选带引用。
+     *
+     * <p><b>引用（{@code quoteClientMsgId} 非空）在写入前完成校验与快照</b>：
+     * 被引用消息必须<b>在本会话内</b>且<b>未被撤回</b>，随后把「谁说的 + 正文」抄进
+     * 本次发送的每一行（见 {@link #resolveQuote}）。抄快照而不是存外键，
+     * 是为了让引用块在原消息被撤回后仍然是可读的。</p>
+     *
+     * <p>引用的校验发生在<b>幂等回查之后</b>：重放同一条已落库的消息不该因为
+     * 原消息后来被撤回而失败，幂等语义优先。</p>
      *
      * @param senderId 发送人（取自登录态，不从入参取——否则可伪造他人发消息）
      * @param dto      发送参数
@@ -125,7 +180,10 @@ public class ChatService {
             return NotifyMessageVO.from(existed);
         }
 
-        List<NotifyMessage> rows = buildRows(senderId, scope, dto, recipients);
+        // 引用快照：非引用消息返回 null；引用不合法时在此抛 1036（不落任何行）
+        NotifyMessage quoted = resolveQuote(senderId, scope, dto.targetId(), dto.quoteClientMsgId());
+
+        List<NotifyMessage> rows = buildRows(senderId, scope, dto, recipients, quoted);
         try {
             for (NotifyMessage row : rows) {
                 notifyMessageMapper.insert(row);
@@ -147,6 +205,109 @@ public class ChatService {
     }
 
     /**
+     * 撤回一条会话消息（仅发送人本人、仅 {@link #RECALL_WINDOW} 之内）。
+     *
+     * <p><b>为什么按 {@code clientMsgId} 而不是消息 id 撤回：</b>写扩散下一条消息在每个参与人
+     * 那里是不同的行，客户端手里能跨端唯一指认一条消息的只有幂等键（见 {@code ChatRecallVO}）。
+     * 服务端由此一次定位<b>全部行</b>并一起翻转——只撤自己那一行等于「我撤了、对方还看得到」。</p>
+     *
+     * <p><b>时间窗以服务端时钟与库里的 {@code create_time} 比对</b>：入参里没有任何时间字段，
+     * 客户端改本地时间不影响判定。</p>
+     *
+     * <p><b>幂等：</b>已经是撤回态时直接返回（不报错、不重复推送）——多端同时点撤回、
+     * 或弱网重试都会走到这条分支；报「消息不存在」会让用户以为操作失败，
+     * 而实际上目标状态已经达成。</p>
+     *
+     * @param userId      当前登录人（撤回人）
+     * @param clientMsgId 被撤回消息的幂等键
+     * @throws BusinessException 入参为空（PARAM_MISSING）/ 消息不存在或非本人发送（{@code 1035}）
+     *                           / 超出时间窗（{@code 1034}）
+     */
+    @Transactional
+    public void recall(Long userId, String clientMsgId) {
+        String key = clientMsgId == null ? "" : clientMsgId.trim();
+        if (key.isEmpty()) {
+            throw new BusinessException(ErrorCode.PARAM_MISSING, "客户端消息 ID 不能为空");
+        }
+
+        List<NotifyMessage> rows = notifyMessageMapper.selectOwnMessageRows(userId, key);
+        if (rows.isEmpty()) {
+            // 不存在 / 不是会话消息 / 不是本人发的，三者同一个码：分开报会给出一份「哪些消息存在」的探测面
+            throw new BusinessException(ErrorCode.CHAT_RECALL_NOT_FOUND);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        if (rows.stream().allMatch(NotifyMessage::isRecalled)) {
+            // 已经是撤回态：目标状态已达成，按幂等成功返回。
+            // 这一步必须排在时间窗校验**之前**——否则「多端并发撤回」时，
+            // 后到的那一端会因为时间窗已过而收到 1034，用户看到的是「撤回失败」，
+            // 而实际上消息早已撤回。
+            log.debug("会话消息已是撤回态，跳过重复操作：sender={}, clientMsgId={}", userId, key);
+            return;
+        }
+        if (isRecallExpired(rows.get(0).getCreateTime(), now)) {
+            throw new BusinessException(ErrorCode.CHAT_RECALL_EXPIRED);
+        }
+
+        int affected = notifyMessageMapper.recallOwnMessageRows(userId, key, now);
+        if (affected <= 0) {
+            // 并发下已被另一端撤回：目标状态已达成，同样按幂等处理
+            log.debug("会话消息已被撤回，跳过重复操作：sender={}, clientMsgId={}", userId, key);
+            return;
+        }
+
+        log.info("会话消息已撤回：sender={}, clientMsgId={}, rows={}", userId, key, affected);
+        afterCommitExecutor.run(() -> pushRecall(rows, now));
+    }
+
+    /**
+     * 解析单聊目标：把「登录账号」翻译成可发起会话的对端用户。
+     *
+     * <p><b>为什么这件事必须在服务端做：</b>会话的落库形态是 19 位雪花 ID，而普通用户
+     * 拿不到别人的 ID（用户目录端点挂 {@code system:user:list}，属管理面）。前端若自行
+     * 「按账号找人」，就必须先拥有用户目录——那正是本缺陷的成因。把解析收在这一步，
+     * 发起会话就不再依赖管理面权限。</p>
+     *
+     * <p><b>两步解析，账号优先：</b>
+     * <ol>
+     *   <li>先按登录账号精确匹配（人记得住的标识，见 {@code UserLookupPort#findActiveByUsername}）；</li>
+     *   <li>再退化为用户 ID——管理面、待办 / 消息中心等渠道手里可能只有雪花 ID，
+     *       保留这条路径可避免「以前能用的填法现在不能用」。</li>
+     * </ol>
+     * 两步都不命中即 {@code 1013}：与发送时的目标校验同一错误码，前端不必区分
+     * 「解析失败」与「发送失败」两种提示。</p>
+     *
+     * <p><b>不返回、也不校验「是不是自己」：</b>登录态里没有可信的用户主键可比
+     * （见 {@code isSelfSent} 类注），自聊由 {@link #resolveRecipients} 在发送时拒绝。</p>
+     *
+     * @param query 登录账号，或用户 ID（调用方不区分，服务端按上述顺序解析）
+     * @return 可发起会话的对端（目标 ID + 展示名）
+     * @throws BusinessException 入参为空（PARAM_MISSING）或解析不到可用用户（CHAT_TARGET_INVALID）
+     */
+    public ChatTargetVO resolvePrivateTarget(String query) {
+        String keyword = query == null ? "" : query.trim();
+        if (keyword.isEmpty()) {
+            throw new BusinessException(ErrorCode.PARAM_MISSING, "账号不能为空");
+        }
+
+        Optional<UserLookupPort.UserContact> byUsername = userLookupPort.findActiveByUsername(keyword);
+        if (byUsername.isPresent()) {
+            return toTarget(byUsername.get());
+        }
+
+        Long asUserId = parseUserId(keyword);
+        if (asUserId != null && userLookupPort.existsActiveUser(asUserId)) {
+            UserLookupPort.UserContact contact = userLookupPort.findContacts(List.of(asUserId)).get(asUserId);
+            if (contact != null) {
+                return toTarget(contact);
+            }
+        }
+        // 账号不存在、账号不可用、ID 查无此人统一一个码：解析不出「能收消息的人」是同一件事，
+        // 分开报只会给出一份「哪些账号存在」的探测清单
+        throw new BusinessException(ErrorCode.CHAT_TARGET_INVALID, "账号不存在或该账号不可用");
+    }
+
+    /**
      * 会话历史（倒序，向上翻页）。
      *
      * <p>查询维度是 {@code (recipientUserId, chatScope, chatTargetId)}：这就是写扩散换来的
@@ -155,6 +316,12 @@ public class ChatService {
      *
      * <p>群聊拉取同样校验成员关系：非成员不仅不能发，也不能读
      * （{@code 1012}），否则「退群后仍能读历史」会成为越权读通道。</p>
+     *
+     * <p><b>已读人（{@code readers}）随历史一起回</b>：写完扩散后，「谁读过我发的这条」只能从
+     * <b>同一消息其他人的镜像行</b>派生（那一行的 {@code read_status} 就是这位读者的阅读事实），
+     * 故本方法在取完本页消息后再补一次批量查询（见 {@link #loadReaders}）。
+     * 只对「我发的」消息查询与填充，别人发的消息不查——那种情况下我的 {@code read_status}
+     * 只代表我自己读没读，与「谁读了我的消息」无关。</p>
      */
     public List<NotifyMessageVO> history(Long userId, Integer scope, Long targetId,
                                          Long beforeId, Integer limit) {
@@ -175,7 +342,12 @@ public class ChatService {
         }
         wrapper.orderByDesc(NotifyMessage::getId).last("limit " + normalizeHistoryLimit(limit));
 
-        return notifyMessageMapper.selectList(wrapper).stream().map(NotifyMessageVO::from).toList();
+        List<NotifyMessage> rows = notifyMessageMapper.selectList(wrapper);
+        Map<String, List<ChatReaderVO>> readers = loadReaders(userId, effectiveScope, targetId, rows);
+        Map<Long, UserLookupPort.UserContact> senders = loadSenders(rows);
+        return rows.stream()
+                .map(row -> toIncomingVO(row, readers.get(row.getClientMsgId()), senders))
+                .toList();
     }
 
     /**
@@ -204,17 +376,23 @@ public class ChatService {
      * 若不在这里聚合，前端只能记住「用户点过谁」，刷新即残缺，
      * 且永远列不出「别人发过但我没回过」的会话。</p>
      *
-     * <p><b>三次查询，全程无 N+1</b>：
+     * <p><b>四次查询，全程无 N+1</b>：
      * <ol>
      *   <li>聚合：按 {@code (scope, target)} 分组取最后一条 ID 与未读数（走 {@code idx_session}）；</li>
      *   <li>明细：按上一步的 ID 集合批量取最后一条消息（走主键）；</li>
-     *   <li>昵称：只对<b>单聊</b>的 targetId 批量反查 {@code UserLookupPort}（群聊不查，见下）。</li>
+     *   <li>昵称：只对<b>单聊</b>的 targetId 批量反查 {@code UserLookupPort}；</li>
+     *   <li>群名：只对<b>群聊</b>的 targetId 批量反查 {@code sys_group}（走主键）。</li>
      * </ol></p>
      *
-     * <p><b>群聊不解析群名</b>：群名属 {@code sys_group}，而本模块接管该表族的收口动作仍挂在
-     * architecture.md D-11。为多显示一个名字而越过表族边界取数不划算，故群聊的
-     * {@code targetName} 返回 {@code null}，由前端回落为「群聊 #id」；
-     * 待群组管理面落地后，只需在此补一次批量查名，对外契约与前端都无需改动。</p>
+     * <p><b>群聊现在会解析群名</b>：此前该字段恒为 {@code null}（群名属 {@code sys_group}，
+     * 而接管该表族的收口动作挂在 architecture.md D-11），前端只能回落成「群聊 #id」。
+     * 建群闭环落地后本模块已持有 {@code SysGroupMapper}，遂按原注释预告的方式
+     * 补一次批量查名——<b>对外契约与前端都无需改动</b>：前端本就优先取 {@code targetName}、
+     * 取不到才回落，因此这次改动只是让回落分支少走几次。</p>
+     *
+     * <p><b>两次反查按 scope 分流，不合并成一次「按 ID 查名字」</b>：单聊 ID 与群组 ID
+     * 属不同值域（用户表 / 群组表），合并查询无法共用一条 SQL；分流还能保证
+     * 「某个群 ID 恰好等于某个用户 ID」时不会取错名字。</p>
      *
      * @param userId 会话归属者（取自登录态，不从入参取）
      * @param limit  条数（按 {@code notify.chat-conversation-limit} 收敛上限）
@@ -239,6 +417,18 @@ public class ChatService {
                 ? Map.of()
                 : userLookupPort.findContacts(peerIds);
 
+        Set<Long> groupIds = summaries.stream()
+                .filter(summary -> !isPrivateChat(summary.getChatScope()))
+                .map(ConversationSummary::getChatTargetId)
+                .collect(Collectors.toSet());
+        // 群名可能查不到（群被解散 / 已逻辑删除）：只把查到的放进 Map，缺失即回落「群聊 #id」。
+        // 这里不因查不到而跳过整条会话——消息还在，会话就该在列表里。
+        Map<Long, String> groupNames = groupIds.isEmpty()
+                ? Map.of()
+                : sysGroupMapper.selectByIds(groupIds).stream()
+                        .filter(group -> group.getName() != null)
+                        .collect(Collectors.toMap(SysGroup::getId, SysGroup::getName));
+
         List<ConversationVO> conversations = new ArrayList<>(summaries.size());
         for (ConversationSummary summary : summaries) {
             NotifyMessage last = lastById.get(summary.getLastMessageId());
@@ -252,7 +442,8 @@ public class ChatService {
             conversations.add(new ConversationVO(
                     summary.getChatScope(),
                     summary.getChatTargetId(),
-                    resolveTargetName(summary, contacts),
+                    resolveTargetName(summary, contacts, groupNames),
+                    resolveTargetAvatar(summary, contacts),
                     summary.getLastMessageId(),
                     last.getContent(),
                     last.getMessageType(),
@@ -265,6 +456,182 @@ public class ChatService {
     }
 
     /* ------------------------------------------------------------------ 内部实现 */
+
+    /**
+     * 取本页「我发的消息」各自的已读人（客户端消息 ID → 读者列表）。
+     *
+     * <p><b>只查本页的 clientMsgId</b>：命中量与「本页条数 × 参与人数」同阶，
+     * 与「该会话历史总量」无关（取舍见 {@code NotifyMessageMapper#selectReadReceipts}）。</p>
+     *
+     * <p><b>读者姓名一次批量反查</b>：读者展示名不在消息表里（那张表只有用户 ID），
+     * 而群聊里读者是任意群成员、前端又没有用户目录可查，故按读者 ID 去重后只调一次
+     * {@link UserLookupPort#findContacts}，不给前端留下 N+1。</p>
+     *
+     * <p><b>反查不到展示名的读者直接丢弃</b>：账号已注销 / 已删除时反查为空，
+     * 而气泡下那枚小头像只能由展示名首字符画出来——留一个查不到名的条目，
+     * 前端只能渲染问号或为「无名读者」补一套分支，都不如不画。
+     * 已读事实本身仍在库里（镜像行的 {@code read_status}），不因这一处渲染取舍而失真。</p>
+     *
+     * @param userId   当前登录人（发送人视角）
+     * @param scope    会话范围
+     * @param targetId 会话目标（发送人视角：单聊=对端，群聊=群 ID）
+     * @param rows     本页消息（发送人视角的行）
+     * @return 客户端消息 ID → 读者；无回执的消息不出现在 Map 中
+     */
+    private Map<String, List<ChatReaderVO>> loadReaders(Long userId, int scope, Long targetId,
+                                                        List<NotifyMessage> rows) {
+        List<String> clientMsgIds = rows.stream()
+                .filter(row -> userId.equals(row.getSenderUserId()))
+                .map(NotifyMessage::getClientMsgId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (clientMsgIds.isEmpty()) {
+            return Map.of();
+        }
+        // 镜像行侧的 target：单聊指向发送人自己（V5 注释 c：两侧 target 互指对端），群聊就是群 ID
+        Long mirrorTargetId = ChatScope.isGroup(scope) ? targetId : userId;
+        List<ChatReadRow> readRows =
+                notifyMessageMapper.selectReadReceipts(userId, scope, mirrorTargetId, clientMsgIds);
+        if (readRows.isEmpty()) {
+            return Map.of();
+        }
+        Set<Long> readerIds = readRows.stream()
+                .map(ChatReadRow::getReaderUserId)
+                .collect(Collectors.toSet());
+        Map<Long, UserLookupPort.UserContact> contacts = userLookupPort.findContacts(readerIds);
+
+        Map<String, List<ChatReaderVO>> readersByClientMsgId = new HashMap<>();
+        for (ChatReadRow readRow : readRows) {
+            UserLookupPort.UserContact contact = contacts.get(readRow.getReaderUserId());
+            if (contact == null) {
+                log.debug("读者已不在用户目录，跳过该条回执：reader={}, clientMsgId={}",
+                        readRow.getReaderUserId(), readRow.getClientMsgId());
+                continue;
+            }
+            readersByClientMsgId
+                    .computeIfAbsent(readRow.getClientMsgId(), key -> new ArrayList<>())
+                    .add(new ChatReaderVO(contact.userId(), contact.displayName(),
+                            contact.avatarUrl()));
+        }
+        return readersByClientMsgId;
+    }
+
+    /**
+     * 一次批量反查本页消息的<b>发送人</b>（展示名 + 头像），供下发给别人的气泡渲染。
+     *
+     * <p>与 {@link #loadReaders} 同一取舍：按 ID 去重后只调一次
+     * {@link UserLookupPort#findContacts}——群聊一页最多几十个不同发送人，查询次数恒为 1。</p>
+     *
+     * <p><b>不排除「我发的那些行」：</b>前端对它们是 mine 分支、用不上这两个字段，
+     * 但同一次批量查询带上它们不增加任何往返，反而省掉「先分拣再决定查谁」这道绕路。
+     * 反查不到的发送人（账号已注销）不进 Map，由 {@link #toIncomingVO} 回落 {@code null}。</p>
+     *
+     * @param rows 本页消息（发送人视角的行）
+     * @return 发送人用户 ID → 联系信息；无发送人（系统通知）时为空 Map
+     */
+    private Map<Long, UserLookupPort.UserContact> loadSenders(List<NotifyMessage> rows) {
+        Set<Long> senderIds = rows.stream()
+                .map(NotifyMessage::getSenderUserId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        return senderIds.isEmpty() ? Map.of() : userLookupPort.findContacts(senderIds);
+    }
+
+    /**
+     * 组装<b>下发给别人</b>的消息视图：补上发送人展示名与头像。
+     *
+     * <p>收口在这里而不是散落在两个调用点，是为了让「历史查询」与「实时下行」两条路径
+     * <b>必然</b>给出同一份字段——但凡有一处忘了补，对方看到的就是一条头像退化成兜底首字符的
+     * 消息，而这类「只在群聊、只在某些入端出现」的不一致极难被人工发现。</p>
+     *
+     * @param row     消息行
+     * @param readers 已读人（可为 {@code null}，由 {@code NotifyMessageVO} 归一成空列表）
+     * @param senders {@link #loadSenders} 的结果
+     */
+    private static NotifyMessageVO toIncomingVO(NotifyMessage row, List<ChatReaderVO> readers,
+                                                Map<Long, UserLookupPort.UserContact> senders) {
+        UserLookupPort.UserContact sender = senders.get(row.getSenderUserId());
+        return NotifyMessageVO.from(row, readers,
+                sender == null ? null : sender.displayName(),
+                sender == null ? null : sender.avatarUrl());
+    }
+
+    /**
+     * 订阅某会话对端的在线状态，并返回其当前值（一次往返完成「拉取 + 订阅」）。
+     *
+     * <p><b>只支持单聊：</b>在线状态是「一个人」的属性，群聊没有单一对端（「群里有几人在线」
+     * 是另一个产品命题，需要成员聚合与展示口径，属独立设计）。群聊请求以参数错误明确拒绝，
+     * 而不是返回一个含糊的空状态——含糊的返回值会让前端误以为「拿到了，只是对方离线」。</p>
+     *
+     * <p><b>不校验目标是否存在 / 可用：</b>与 {@link #send} 不同，本方法不产生任何持久事实，
+     * 也不向目标投递任何东西（只读 Redis 里的活跃记录）。已注销、已禁用、从未登录的用户
+     * 自然没有活跃记录，返回 {@code OFFLINE} 恰好就是事实本身。反过来若在这里做一次
+     * {@link UserLookupPort#existsActiveUser} 查询，就等于把「会话打开期间每 30s 一次」的
+     * 热路径压到 DB 上——而这条路径本来完全不碰 DB（见 P-8：Redis 是加速面）。</p>
+     *
+     * @param userId   订阅者（当前登录用户，取登录态）
+     * @param scope    会话范围：仅 1-单聊
+     * @param targetId 被观察的用户 ID（不能是自己）
+     * @return 对端当前三态（{@code lastActiveAt} 为最近活跃时刻，离线为 null）
+     */
+    public ChatPresenceVO watchPresence(Long userId, Integer scope, Long targetId) {
+        int effectiveScope = validateScope(scope);
+        if (targetId == null) {
+            throw new BusinessException(ErrorCode.PARAM_MISSING, "会话目标不能为空");
+        }
+        if (ChatScope.isGroup(effectiveScope)) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "群聊暂不支持在线状态");
+        }
+        if (targetId.equals(userId)) {
+            // 自聊在单聊入口即被拒（见 resolveRecipients），状态订阅同样不该存在这种会话
+            throw new BusinessException(ErrorCode.CHAT_TARGET_INVALID, "不能订阅自己的在线状态");
+        }
+        return wsPresenceService.watch(userId, targetId);
+    }
+
+    /**
+     * 把「我正在输入」这一瞬时信号转发给对端（单聊）。
+     *
+     * <p><b>为什么走 HTTP 而不是新增一个上行 WebSocket 帧：</b>本项目的通道分工是刻意的不对称
+     * ——<b>上行一律 HTTP（幂等键、业务错误码、限流、重试语义都在 HTTP 上），下行一律 WebSocket</b>。
+     * 输入状态虽然不落库，但它同样是「客户端发起的一次业务请求」（需要限流、需要明确的参数错误、
+     * 需要与消息投递同一把目标校验尺子），放进上行帧反而要在 WS 里重建一套错误回执，
+     * 因此这里沿用它：上行 HTTP、下行帧（{@code TYPING}）。</p>
+     *
+     * <p><b>不做「是否已有会话关系」的校验：</b>那需要查消息表，而这是每 3s 一次的按键热路径
+     * （客户端节流后仍是最频繁的请求）。代价是理论上可以给任意<b>存在的</b>用户发提示——
+     * 接收端只在「正看着与该用户的会话」时才会渲染，且这条信号不产生任何持久痕迹；
+     * 与之相对，给不存在 / 已禁用账号发信号毫无意义，故只保留「目标可用」这一道校验
+     * （与 {@link #resolveRecipients} 同一把尺子）。</p>
+     *
+     * @param userId   输入者（当前登录用户，取登录态）
+     * @param scope    会话范围：仅 1-单聊
+     * @param targetId 对端用户 ID（消息接收人视角）
+     * @param typing   {@code true} 开始 / 继续输入；{@code false} 停止输入
+     */
+    public void notifyTyping(Long userId, Integer scope, Long targetId, boolean typing) {
+        int effectiveScope = validateScope(scope);
+        if (targetId == null) {
+            throw new BusinessException(ErrorCode.PARAM_MISSING, "会话目标不能为空");
+        }
+        if (ChatScope.isGroup(effectiveScope)) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "群聊暂不支持输入状态");
+        }
+        if (targetId.equals(userId)) {
+            throw new BusinessException(ErrorCode.CHAT_TARGET_INVALID, "不能给自己发送单聊消息");
+        }
+        if (!userLookupPort.existsActiveUser(targetId)) {
+            throw new BusinessException(ErrorCode.CHAT_TARGET_INVALID, "目标用户不存在或不可用");
+        }
+        // 载荷的 chatTargetId 是「接收人视角」的会话目标（＝输入者本人），
+        // 与已读回执同一口径：对端拿它与自己当前打开的会话比对（见 ChatTypingVO 类注）。
+        // 只推给对端、不推给输入者自己的其他连接——否则同账号的其他标签页会把
+        // 「我自己在输入」渲染成「对方正在输入」
+        wsBroadcaster.push(targetId,
+                WsFrame.of(WsProtocol.TYPE_TYPING, new ChatTypingVO(effectiveScope, userId, typing)));
+        log.debug("输入状态已转发：from={}, to={}, typing={}", userId, targetId, typing);
+    }
 
     /** 入参形状校验：范围 / 消息体类型 / 正文字数（对齐列宽与配置上限）。 */
     private void validateShape(int scope, int messageType, String content) {
@@ -285,6 +652,31 @@ public class ChatService {
             throw new BusinessException(ErrorCode.CHAT_TARGET_INVALID, "会话范围非法：" + scope);
         }
         return scope;
+    }
+
+    /** 联系信息 → 会话目标视图（只见目标 ID、展示名与头像，见 {@code ChatTargetVO} 类注）。 */
+    private static ChatTargetVO toTarget(UserLookupPort.UserContact contact) {
+        return new ChatTargetVO(contact.userId(), contact.displayName(), contact.avatarUrl());
+    }
+
+    /**
+     * 解析「看起来像用户 ID」的入参：纯数字且在 {@code Long} 范围内才认，其余返回 {@code null}。
+     *
+     * <p>这一步只在账号匹配落空后兜底，因此不需要区分「数字账号」与「用户 ID」的歧义——
+     * 数字账号会先在账号那一步命中；而真实雪花 ID 有 19 位，
+     * 与一个恰好纯数字的账号撞号的概率可忽略。</p>
+     */
+    private static Long parseUserId(String keyword) {
+        if (!keyword.chars().allMatch(Character::isDigit)) {
+            return null;
+        }
+        try {
+            long value = Long.parseLong(keyword);
+            return value > 0 ? value : null;
+        } catch (NumberFormatException e) {
+            // 超出 Long 上限的数字串：不是合法用户 ID，按「查无此人」处理
+            return null;
+        }
     }
 
     /**
@@ -329,7 +721,8 @@ public class ChatService {
      * （A 那行记 B、B 那行记 A），这样各自按 {@code (scope, target)} 查会话历史时
      * 都能得到完整双向记录；群聊时所有人统一记 groupId。</p>
      */
-    private List<NotifyMessage> buildRows(Long senderId, int scope, ChatSendDTO dto, List<Long> recipients) {
+    private List<NotifyMessage> buildRows(Long senderId, int scope, ChatSendDTO dto,
+                                          List<Long> recipients, NotifyMessage quoted) {
         boolean group = ChatScope.isGroup(scope);
         List<NotifyMessage> rows = new ArrayList<>(recipients.size());
         for (Long recipient : recipients) {
@@ -342,6 +735,9 @@ public class ChatService {
             row.setChatTargetId(group ? dto.targetId() : otherSide(senderId, recipient, dto.targetId()));
             row.setClientMsgId(dto.clientMsgId());
             row.setContent(dto.content());
+            // 引用快照抄进每一行：接收人各自的视角里都要能渲染出「这是回复谁的哪句话」，
+            // 而他们的那一行与发送人那一行是彼此独立的记录，无法事后互相回查
+            applyQuote(row, quoted);
             // 自己那一行直接置读：不给发送人制造「自己发的消息未读」
             boolean self = recipient.equals(senderId);
             row.setReadStatus(self ? NotifyMessage.READ_READ : NotifyMessage.READ_UNREAD);
@@ -360,16 +756,108 @@ public class ChatService {
 
     /** 提交后推送：逐行推给各自的接收人（跨实例由 Redis 扇出）。 */
     private void pushAll(List<NotifyMessage> rows) {
+        // 发送人身份（展示名 + 头像）先一次批量查好再逐行推：实时帧与历史查询必须给出同一份字段，
+        // 否则会出现「刚收到的消息头像是首字符、重拉一次历史才变成图片」这种只在时序上暴露的不一致
+        Map<Long, UserLookupPort.UserContact> senders = loadSenders(rows);
         for (NotifyMessage row : rows) {
             try {
                 wsBroadcaster.push(row.getRecipientUserId(),
-                        WsFrame.of(WsProtocol.TYPE_CHAT, NotifyMessageVO.from(row)));
+                        WsFrame.of(WsProtocol.TYPE_CHAT, toIncomingVO(row, List.of(), senders)));
             } catch (Exception e) {
                 // 单行推送失败不应影响同一条消息的其他接收人（群聊下尤其重要）
                 log.warn("会话消息推送失败（消息已落库，接收端将退化为补拉）：recipient={}, id={}, cause={}",
                         row.getRecipientUserId(), row.getId(), e.getMessage());
             }
         }
+    }
+
+    /**
+     * 提交后推送撤回：逐行推给「该行视角下的接收人」（含撤回者自己的其他端）。
+     *
+     * <p>载荷里的 {@code chatTargetId} 取<b>该行</b>的值而不是入参：单聊下发送人那行的
+     * {@code chatTargetId} 是对端、对端那行才是发送人，逐行下发才能让每一端都直接与
+     * 当前打开的会话比对。</p>
+     *
+     * <p>与消息推送同样的容错口径：单行失败只记日志。撤回已是库里的既成事实，
+     * 接收端最坏表现为「重拉历史后才看到已撤回」。</p>
+     */
+    private void pushRecall(List<NotifyMessage> rows, LocalDateTime recallTime) {
+        for (NotifyMessage row : rows) {
+            try {
+                wsBroadcaster.push(row.getRecipientUserId(),
+                        WsFrame.of(WsProtocol.TYPE_CHAT_RECALL, new ChatRecallVO(
+                                row.getClientMsgId(), row.getSenderUserId(),
+                                row.getChatScope(), row.getChatTargetId(), recallTime)));
+            } catch (Exception e) {
+                log.warn("会话消息撤回推送失败（撤回已落库，接收端将退化为补拉）：recipient={}, clientMsgId={}, cause={}",
+                        row.getRecipientUserId(), row.getClientMsgId(), e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 引用校验并取快照来源（非引用发送返回 {@code null}）。
+     *
+     * <p>三重校验，任一不成立即拒绝（{@code 1036}）：</p>
+     * <ol>
+     *   <li><b>在本会话内</b>——否则引用块里会出现一句与本会话无关的话，
+     *       读者既不知道上下文、也无法在原会话里找到它（跨会话引用在群聊里还等于
+     *       把另一个会话的内容搬了过来，是一条隐性的越权读取路径）；</li>
+     *   <li><b>未被撤回</b>——撤回时正文已清空，引用它只会渲染出一个空白引用块；</li>
+     *   <li><b>我能看到</b>——查询按 {@code recipient_user_id = 我} 取，天然只命中我视角下的消息，
+     *       别人会话里的消息在这里查不到。</li>
+     * </ol>
+     *
+     * @return 被引用消息（仅用到 {@code clientMsgId / senderUserId / content} 三项）
+     */
+    private NotifyMessage resolveQuote(Long senderId, int scope, Long targetId, String quoteClientMsgId) {
+        if (quoteClientMsgId == null || quoteClientMsgId.isBlank()) {
+            return null;
+        }
+        NotifyMessage quoted = notifyMessageMapper.selectQuotableMessage(senderId, quoteClientMsgId.trim());
+        if (quoted == null || quoted.isRecalled()
+                || !Objects.equals(quoted.getChatScope(), scope)
+                || !Objects.equals(quoted.getChatTargetId(), targetId)) {
+            throw new BusinessException(ErrorCode.CHAT_QUOTE_TARGET_INVALID);
+        }
+        return quoted;
+    }
+
+    /** 把引用快照写入待落库的行（{@code quoted} 为空时是普通消息，原样不变）。 */
+    private static void applyQuote(NotifyMessage row, NotifyMessage quoted) {
+        if (quoted == null) {
+            return;
+        }
+        row.setQuoteClientMsgId(quoted.getClientMsgId());
+        row.setQuoteSenderUserId(quoted.getSenderUserId());
+        row.setQuoteContent(snapshot(quoted.getContent()));
+    }
+
+    /**
+     * 截取引用正文快照（按<b>码点</b>而不是 {@code char}）。
+     *
+     * <p>直接 {@code substring(0, 200)} 会把 emoji 之类的代理对从中间切开，留下一个孤立代理——
+     * 存入 utf8mb4 列时可能变成乱码或直接写入失败；本系统消息正文允许表情，故按码点截。</p>
+     */
+    private static String snapshot(String content) {
+        if (content == null) {
+            return "";
+        }
+        if (content.codePointCount(0, content.length()) <= QUOTE_SNAPSHOT_MAX) {
+            return content;
+        }
+        return content.substring(0, content.offsetByCodePoints(0, QUOTE_SNAPSHOT_MAX));
+    }
+
+    /**
+     * 是否已超出撤回时间窗（{@link #RECALL_WINDOW}）。
+     *
+     * <p>{@code createTime} 为空（异常数据）时<b>放行</b>：撤回只能作用于本人消息，
+     * 误放行的最坏结果是「用户撤掉了一条自己的老消息」，而误拦截会让用户
+     * 对着一条刚发出的消息反复点撤回却无从理解。</p>
+     */
+    private static boolean isRecallExpired(LocalDateTime createTime, LocalDateTime now) {
+        return createTime != null && createTime.plus(RECALL_WINDOW).isBefore(now);
     }
 
     /**
@@ -405,22 +893,56 @@ public class ChatService {
         return Math.min(limit, max);
     }
 
-    /** 是否单聊——决定「要不要反查用户展示名」（群名不在本模块取数范围，见 conversations 注释）。 */
+    /** 是否单聊——决定「反查用户展示名还是群名」（见 conversations 注释）。 */
     private static boolean isPrivateChat(Integer scope) {
         return scope != null && !ChatScope.isGroup(scope);
     }
 
     /**
-     * 会话名解析：单聊取对端展示名（查不到返回 {@code null}，前端回落「用户 #id」）；
-     * 群聊恒为 {@code null}（群名属 {@code sys_group}，D-11 未收口，本模块不越界取数）。
+     * 会话名解析：单聊取对端展示名、群聊取群名；两者都可能在批量查询里缺失
+     * （用户已注销 / 群已解散或已逻辑删除），此时返回 {@code null}，
+     * 由前端回落为「用户 #id」「群聊 #id」。
+     *
+     * <p><b>不因为名字查不到就丢掉这条会话</b>：名字只是展示层信息，
+     * 消息本身仍可见。为展示信息牺牲可用性不划算。</p>
+     *
+     * <p><b>{@code scope} 为 {@code null} 时走群聊分支</b>：{@link #isPrivateChat} 对
+     * {@code null} 返回 {@code false}，即「不是单聊就按群聊处理」。这与发送侧的
+     * scope 校验（{@code null} 直接拒绝）不同——这里是读历史数据，
+     * 遇到脏 scope 应尽量显示而不是整条报错。</p>
      */
     private static String resolveTargetName(ConversationSummary summary,
-                                            Map<Long, UserLookupPort.UserContact> contacts) {
+                                            Map<Long, UserLookupPort.UserContact> contacts,
+                                            Map<Long, String> groupNames) {
+        if (!isPrivateChat(summary.getChatScope())) {
+            return groupNames.get(summary.getChatTargetId());
+        }
+        UserLookupPort.UserContact contact = contacts.get(summary.getChatTargetId());
+        return contact == null ? null : contact.displayName();
+    }
+
+    /**
+     * 会话头像：单聊=对端头像对外地址，群聊恒 {@code null}。
+     *
+     * <p>与 {@link #resolveTargetName} <b>逐字同口径</b>，连「查不到就回落 {@code null}」都一样。
+     * 之所以拆成两个方法而不是合成一个「取名字与头像」的方法：两者只依赖各自需要的入参——
+     * 群头像将来若要落库（群有了头像概念），只改这一处即可，而群名的回落链
+     * （{@code sys_group} 查不到就回落「群聊 #id」）不受牵连。</p>
+     *
+     * <p><b>复用同一份 {@code contacts}，不额外查询：</b>{@link #conversations} 已为单聊对端
+     * 批量反查过一次，这里只是取字段。</p>
+     *
+     * @param summary  会话聚合行
+     * @param contacts 单聊对端联系信息
+     * @return 头像对外地址；群聊、对端没设过头像、对端已不在用户目录时均为 {@code null}
+     */
+    private static String resolveTargetAvatar(ConversationSummary summary,
+                                              Map<Long, UserLookupPort.UserContact> contacts) {
         if (!isPrivateChat(summary.getChatScope())) {
             return null;
         }
         UserLookupPort.UserContact contact = contacts.get(summary.getChatTargetId());
-        return contact == null ? null : contact.displayName();
+        return contact == null ? null : contact.avatarUrl();
     }
 
     /**

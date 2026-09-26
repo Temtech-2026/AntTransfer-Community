@@ -63,15 +63,18 @@ public interface UserMapper extends BaseMapper<SysUser> {
     int bumpTokenEpoch(@Param("userId") Long userId);
 
     /**
-     * 批量查询用户摘要（id / nickname / username / email），供 at-common {@code UserLookupPort}
-     * 实现会话列表展示名与 P1 邮件通知收件——只取所需最小列，不外泄密码散列与账号状态。
+     * 批量查询用户摘要（id / nickname / username / email / avatar_url），供 at-common {@code UserLookupPort}
+     * 实现会话列表展示名、头像与 P1 邮件通知收件——只取所需最小列，不外泄密码散列与账号状态。
+     *
+     * <p>{@code avatar_url} 取的是<b>存储 key</b>，由 {@code JdbcUserLookupPort} 经
+     * {@code AvatarStoragePort#urlOf} 拼成对外地址后再交给消费方；SQL 这层不做拼接。</p>
      *
      * @param ids 用户 ID 集合（调用方保证非空）
      * @return 命中的用户摘要列表
      */
     @Select("""
             <script>
-            select id, nickname, username, email
+            select id, nickname, username, email, avatar_url
             from sys_user
             where deleted = 0
               and id in
@@ -169,6 +172,25 @@ public interface UserMapper extends BaseMapper<SysUser> {
             """)
     int updateDept(@Param("userId") Long userId, @Param("deptId") Long deptId,
                    @Param("operatorId") Long operatorId);
+
+    /**
+     * 换头像：把 {@code avatar_url} 置为新的存储 key（见 {@code AvatarStoragePort}）。
+     *
+     * <p>不用 {@code updateById} 走实体更新：{@code avatar_url} 存的是<b>不透明 key</b>，
+     * 不是可被清空的「用户资料」——这里只做「指向新文件」这一个语义明确的动作，
+     * 顺带避免 {@code null} 字段在 MyBatis-Plus 里「不更新」与「想清空」的歧义。
+     * 旧文件由调用方在事务提交后清理。</p>
+     */
+    @Update("""
+            update sys_user set avatar_url = #{avatarKey}, update_by = #{operatorId}
+            where id = #{userId} and deleted = 0
+            """)
+    int updateAvatar(@Param("userId") Long userId, @Param("avatarKey") String avatarKey,
+                     @Param("operatorId") Long operatorId);
+
+    /** 只读头像存储 key（供头像直出端点使用；不取整行，避免把散列等敏感列读进内存）。 */
+    @Select("select avatar_url from sys_user where id = #{userId} and deleted = 0")
+    String selectAvatarKey(@Param("userId") Long userId);
 
     /** 重置口令：同时递增 token_epoch 吊销该用户全部在途会话。 */
     @Update("""

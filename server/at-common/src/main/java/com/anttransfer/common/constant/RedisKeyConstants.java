@@ -40,11 +40,15 @@ package com.anttransfer.common.constant;
  *   at:share:lock:{token}      分享提取码错误锁定，TTL 30min（错 5 次锁 30min，PRD US-03 / D-8）
  *   at:share:ticket:{ticket}   访客一次性下载/预览票据，TTL 5min，GETDEL 原子取用（一次即焚）
  *   at:file:ticket:{ticket}    登录用户下载票据，TTL 5min，绑定 userId+nodeId+fileId，可重试至过期
+ *   at:chatatt:ticket:{ticket} 会话附件取件票据，TTL 5min，绑定 attachmentId+consumerUserId+nodeId，可重试至过期
+ *   at:share:pick:{ticket}     分享核销后取件票据，TTL 5min，绑定 shareId+fileId+accessType，可重复读至过期
  *   at:perm:{userId}           用户权限标识缓存，TTL 30min，授权变更主动失效
  *   at:perm:escalate:{appId}   超时未审批升级提醒幂等键，默认 TTL 24h
  *   at:perm:emergency:{appId}  紧急通道强提醒幂等键（P1 开关），默认 TTL 30min
  *   at:rl:{类}#{方法}[:biz]:{维度}  固定窗口限流计数，TTL = 注解 windowSeconds（Lua INCR+EXPIRE）
  *   at:ws:channel              集群 WebSocket 广播频道（Pub/Sub），常驻
+ *   at:ws:presence:{userId}    在线状态活跃记录，值=最近活跃时刻(ms)，TTL 随心跳超时（动态档）
+ *   at:ws:presence:watch:{targetId}  在线状态订阅集合（ZSET：成员=订阅者 userId，分值=续订时刻），TTL 2min
  * </pre>
  *
  * @author AntTransfer CE
@@ -149,6 +153,29 @@ public final class RedisKeyConstants {
     /** 下载票据默认 TTL：5min（可由 {@code anttransfer.file.download-ticket-ttl} 覆盖） */
     public static final long FILE_TICKET_TTL_SECONDS = 5 * 60L;
 
+    /* ===================== 文件管理：会话附件取件票据 ===================== */
+
+    /**
+     * 会话附件取件票据键前缀：at:chatatt:ticket:{ticket}。
+     *
+     * <p>用途与 {@link #FILE_TICKET_PREFIX} 完全同构，差别只在「谁有权取件」的判定来源：
+     * 本票据的授权来自 {@code sys_chat_attachment}（<b>他人授权给我</b>），
+     * 而 file 票据来自条目归属（<b>我自己的文件</b>）。因此换票阶段不校验 {@code file:download}
+     * 权限点——接收方通常对发送方的文件没有任何权限，要求权限点等于把「免申请取件」判成 1003。
+     * 权限判定被完整前移到换票瞬间的附件行判定（生效 / 未过期 / 未超次 / 用途档位 / 我是指定接收方）。</p>
+     *
+     * <p>载荷 JSON 固定绑定 {@code attachmentId + consumerUserId + nodeId + usageMode}，取件时逐项比对，
+     * 任一不匹配即 4028——防止 A 拿自己的附件票去取 B 的附件。</p>
+     *
+     * <p><b>为什么可重复读而不是 GETDEL：</b>同 {@link #FILE_TICKET_PREFIX}——浏览器重试、
+     * {@code Range} 断点续传、多线程分段拉取都会重复请求同一取件地址，若按一次即焚实现，
+     * 这些正常行为会被判成凭证失效。次数闸门不受影响：下载次数在 DB 侧原子扣减，
+     * TTL 内重复读不会凭空多出下载额度（P-8：DB 为权威，Redis 仅短期可丢失态）。</p>
+     */
+    public static final String CHAT_ATTACHMENT_TICKET_PREFIX = PREFIX + "chatatt:ticket:";
+    /** 会话附件取件票据默认 TTL：5min（仅需覆盖「换票 → 取件」间隔） */
+    public static final long CHAT_ATTACHMENT_TICKET_TTL_SECONDS = 5 * 60L;
+
     /* ============================ 权限缓存 ============================ */
 
     /** 用户权限标识缓存键前缀：at:perm:{userId}（该用户可达权限点聚合，授权变更后主动删除） */
@@ -192,6 +219,47 @@ public final class RedisKeyConstants {
 
     /** 集群 WebSocket 广播频道（Redis Pub/Sub 频道名，常驻，无 TTL） */
     public static final String WS_CHANNEL = PREFIX + "ws:channel";
+
+    /* ====================== WebSocket：在线状态（三态） ====================== */
+
+    /**
+     * 在线状态活跃记录键前缀：at:ws:presence:{userId}，值 = 最近活跃时刻（epoch millis 字符串）。
+     *
+     * <p>写入时机：握手成功、以及<b>每一个上行帧</b>（含 {@code PING}／{@code PONG}——服务端每 30s
+     * 反向探测一次，客户端的 {@code PONG} 应答就是这里的续期来源，因此浏览器把后台标签页的定时器
+     * 降频也不会误判离线）。</p>
+     *
+     * <p><b>TTL（动态档，不设固定常量）：</b>= {@code anttransfer.collaboration.ws.heartbeat-timeout-seconds}
+     * （默认 90s）。它必须与「连接判死」窗口严格同源：键还在 ⟺ 服务端仍认为该连接可能活着，
+     * 键过期 ⟺ 连接已判死。两者若各写一个数字，一定会漂移出「界面显示在线、实际已被清理」的窗口。</p>
+     *
+     * <p>键存在但活跃时刻已旧（超出健康阈值）＝ {@code UNSTABLE}（前端红点），
+     * 这正是「网络状态不佳」：连接未判死，但心跳已迟到。属短期可丢失态（P-8）：
+     * 丢失只表现为状态点显示不准，消息投递与未读口径均不受影响。</p>
+     */
+    public static final String WS_PRESENCE_PREFIX = PREFIX + "ws:presence:";
+
+    /**
+     * 在线状态订阅集合键前缀：at:ws:presence:watch:{targetId}。
+     *
+     * <p>成员 = 订阅者 userId，分值 = 最近一次续订时刻（epoch millis）。状态变更时按分值取
+     * 「续订窗口内」的成员推送，<b>因此不需要成员级过期</b>——过期的成员只是不再被选中，
+     * 键级 TTL 只负责兜底回收。</p>
+     *
+     * <p><b>为什么不复用消息投递的「按 userId 广播」：</b>状态变化的推送目标是「正在看这个人的人」，
+     * 而这份关系只存在于客户端的当前界面里（服务端既不知道谁打开了会话，也不该为此查一遍消息表）。
+     * 订阅关系由客户端在打开会话时显式声明，是「谁在看」的唯一来源。</p>
+     */
+    public static final String WS_PRESENCE_WATCH_PREFIX = PREFIX + "ws:presence:watch:";
+
+    /**
+     * 在线状态订阅 TTL：2min。
+     *
+     * <p>客户端在会话打开期间每 30s 续订一次（见前端 {@code presence} 轮询），故该窗口容忍连续 3 次
+     * 丢失仍保持订阅有效；反过来，客户端崩溃/关页面后最多 2min 停止收到状态推送（多推给已离开的
+     * 订阅者无害：前端一律按当前会话比对后才会改 UI）。</p>
+     */
+    public static final long WS_PRESENCE_WATCH_TTL_SECONDS = 2 * 60L;
 
     /* ============================ 键生成方法 ============================ */
 
@@ -238,6 +306,21 @@ public final class RedisKeyConstants {
     /** 生成登录用户下载票据键：at:file:ticket:{ticket} */
     public static String fileTicketKey(String ticket) {
         return FILE_TICKET_PREFIX + ticket;
+    }
+
+    /** 生成会话附件取件票据键：at:chatatt:ticket:{ticket} */
+    public static String chatAttachmentTicketKey(String ticket) {
+        return CHAT_ATTACHMENT_TICKET_PREFIX + ticket;
+    }
+
+    /** 生成在线状态活跃记录键：at:ws:presence:{userId} */
+    public static String wsPresenceKey(long userId) {
+        return WS_PRESENCE_PREFIX + userId;
+    }
+
+    /** 生成在线状态订阅集合键：at:ws:presence:watch:{targetId} */
+    public static String wsPresenceWatchKey(long targetId) {
+        return WS_PRESENCE_WATCH_PREFIX + targetId;
     }
 
     /** 生成用户权限缓存键：at:perm:{userId} */

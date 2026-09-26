@@ -27,6 +27,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.core.MethodParameter;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
@@ -60,14 +62,16 @@ import static org.mockito.Mockito.mock;
 /**
  * 全局异常处理器单测：<b>异常 → 业务错误码 → HTTP 状态 → 响应体文案</b> 的映射契约。
  *
- * <p>该测试锁住三条红线：</p>
+ * <p>该测试锁住四条红线：</p>
  * <ol>
  *     <li><b>参数校验一律 2xxx</b>：{@code @Valid} / 绑定 / 类型 / 缺参 / JSON 不可读全部落 2xxx + HTTP 400，
  *         不得因处理器缺分支而漏到兜底 5001；</li>
  *     <li><b>越权一律 1003 + 403（策略 D）</b>：{@code AccessDeniedException} 归一到 {@code NO_AUTH}，
  *         且不回显原始拒绝原因（避免靠错误文案探测资源归属）；</li>
  *     <li><b>未预期异常一律 5001 且零泄漏</b>：响应体只含固定文案，异常自带 message
- *         （可能含连接串 / SQL / 类名）绝不外泄，完整堆栈只进服务端日志。</li>
+ *         （可能含连接串 / SQL / 类名）绝不外泄，完整堆栈只进服务端日志；</li>
+ *     <li><b>库侧故障单独归 5002</b>：{@code DataAccessException} 落 {@code DB_ERROR} 而不得落到兜底 5001，
+ *         否则「表不存在 / SQL 报错」会被「系统繁忙」掩盖，把排查方向引向应用逻辑或前端。</li>
  * </ol>
  *
  * <p>本测试为纯单元测试：直接调用处理器方法并按 {@code @ExceptionHandler} 的静态类型分派，
@@ -142,6 +146,27 @@ class GlobalExceptionHandlerTest {
             assertThat(response.getBody().getCode()).isEqualTo(1003);
             assertThat(response.getBody().getMessage()).isEqualTo("无操作权限：file:destroy");
             assertNoLeak(response.getBody().getMessage(), "AuthException 自定义文案");
+        }
+
+        @Test
+        @DisplayName("库侧故障：DataAccessException 归 5002/500，不得落兜底 5001，且不回显 SQL / 表名 / 连接串")
+        void dataAccessExceptionMappedToDbErrorInsteadOfFallback() {
+            DataAccessResourceFailureException dbError = new DataAccessResourceFailureException(
+                    "Table 'anttransfer.sys_chat_attachment' doesn't exist; "
+                            + "SQL [select id from sys_chat_attachment where client_msg_key = ?]; "
+                            + "jdbc:mysql://localhost:3307/anttransfer");
+
+            ResponseEntity<Result<Void>> response = handler.handleDataAccessException(dbError);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(500);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().getCode())
+                    .as("表不存在 / SQL 报错若落到兜底 5001，真实故障会被「系统繁忙」掩盖")
+                    .isEqualTo(ErrorCode.DB_ERROR.getCode())
+                    .isNotEqualTo(ErrorCode.SYSTEM_ERROR.getCode());
+            assertThat(response.getBody().getData()).isNull();
+            assertThat(response.getBody().getMessage()).isEqualTo(ErrorCode.DB_ERROR.getMessage());
+            assertNoLeak(response.getBody().getMessage(), "DataAccessException");
         }
     }
 
@@ -255,6 +280,14 @@ class GlobalExceptionHandlerTest {
                         (h, e) -> h.handleNotFoundException(e)),
                 caseOf("NoHandlerFoundException(无处理器)", noHandlerFound(), ErrorCode.RESOURCE_NOT_FOUND,
                         (h, e) -> h.handleNotFoundException(e)),
+
+                /* ---------- 库侧故障：必须与兜底 5001 区分 ---------- */
+                caseOf("DataAccessException(表不存在 / SQL 报错)",
+                        new DataAccessResourceFailureException(
+                                "Table 'anttransfer.sys_chat_attachment' doesn't exist; "
+                                        + "jdbc:mysql://localhost:3307/anttransfer"),
+                        ErrorCode.DB_ERROR,
+                        (h, e) -> h.handleDataAccessException((DataAccessException) e)),
 
                 /* ---------- 兜底 ---------- */
                 caseOf("未预期 IllegalStateException（兜底 5001）",

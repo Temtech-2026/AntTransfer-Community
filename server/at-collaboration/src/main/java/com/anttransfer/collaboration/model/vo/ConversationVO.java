@@ -41,6 +41,9 @@ import java.time.LocalDateTime;
  * @param chatScope        会话范围：1-单聊 2-群聊
  * @param targetId         会话目标（接收人视角）：单聊=对端用户 ID；群聊=群组 ID
  * @param targetName       会话名：单聊=对端展示名（可能为 null）；群聊恒为 null
+ * @param targetAvatarUrl  会话头像：单聊=对端头像<b>对外地址</b>（可能为 null=对端没设过头像）；
+ *                         群聊<b>恒为 null</b>——口径与 {@code targetName} 逐字一致：群名都还没取，
+ *                         更谈不上群头像，前端一律用会话名首字符画兜底圆
  * @param lastMessageId    最后一条消息 ID（前端据此去重实时帧 / 作翻页游标）
  * @param lastContent      最后一条消息正文（列表摘要，前端自行截断）
  * @param lastMessageType  最后一条消息体类型（见 {@code MessageType}，前端据此渲染「[文件]」等摘要）
@@ -57,6 +60,7 @@ public record ConversationVO(
         @JsonSerialize(using = ToStringSerializer.class)
         Long targetId,
         String targetName,
+        String targetAvatarUrl,
         @JsonSerialize(using = ToStringSerializer.class)
         Long lastMessageId,
         String lastContent,

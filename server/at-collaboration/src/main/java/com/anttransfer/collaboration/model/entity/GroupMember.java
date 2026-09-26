@@ -26,13 +26,22 @@ import java.time.LocalDateTime;
 /**
  * 项目 / 群组成员关系实体（表 {@code sys_group_member}，V4 迁入）。
  *
- * <p>本实体在通知与 IM 域的<b>唯一</b>用途：群聊发送 / 拉取前的成员资格校验
- * （见 {@code ChatService#assertGroupMember}）——非成员直接以
- * {@code ErrorCode.CHAT_NOT_GROUP_MEMBER(1012)} 拒收，不落库、不推送，
- * 避免「非成员把消息写进别人的群会话」。</p>
+ * <p><b>本实体承载两类用途：</b>
+ * <ol>
+ *   <li><b>授权依据</b>：群聊发送 / 拉取前的成员资格校验（{@code ChatService#assertGroupMember}）
+ *       ——非成员直接以 {@code ErrorCode.CHAT_NOT_GROUP_MEMBER(1012)} 拒收，不落库、不推送，
+ *       避免「非成员把消息写进别人的群会话」。
+ *       <b>发送与历史拉取都只认本表</b>，故成员行的增删即「谁能读这个群」的最终定义；</li>
+ *   <li><b>群管理面</b>：{@code ChatGroupService} 的邀请 / 移除 / 退群 / 解散都作用在本表
+ *       （插入、复活、置删），群配置面板的成员名单也读本表。</li>
+ * </ol></p>
  *
  * <p>唯一键 {@code uk_group_user(group_id, user_id)} 是并发下的最终防线：应用层先查后写，
  * 极端并发下重复入群由数据库唯一键兜底抛错，不会产生重复成员行。</p>
+ *
+ * <p><b>注意该唯一键不含 {@code deleted}：</b>逻辑删除行仍占位，因此「移除后重新邀请」
+ * 绝不能直接 {@code insert}（必撞唯一键），只能原地复活
+ * （见 {@code GroupMemberMapper#markRestored}）。</p>
  *
  * <p>成员角色（{@code memberRole}）CE 阶段不参与发言判定——只读成员（3）在 CE 仍可发言，
  * 若 EE 需要「只读成员禁言」，应在此处追加判定（属需求变更，须先过 D-6 范围评审）。</p>

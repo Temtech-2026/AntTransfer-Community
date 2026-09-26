@@ -22,6 +22,7 @@ import com.anttransfer.common.result.Result;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.http.ResponseEntity;
@@ -266,6 +267,22 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Result<Void>> handleNotFoundException(Exception e) {
         log.warn("资源不存在: {}", e.getMessage());
         return build(ErrorCode.RESOURCE_NOT_FOUND, null);
+    }
+
+    /**
+     * 数据访问异常（SQL 语法 / 表不存在 / 约束冲突 / 连接不可用等库侧故障）→ 5002 + HTTP 500。
+     *
+     * <p>必须与兜底 5001 区分：若缺此分支，任何库侧故障都会被 {@link #handleException}
+     * 伪装成「系统繁忙，请稍后重试」，把排查方向引向应用逻辑或前端
+     * （例如迁移脚本未执行导致表不存在时，只能看到 5001 与 traceId）。</p>
+     *
+     * <p>此处按 {@link ErrorCode#DB_ERROR} 的既有契约归一为「数据库访问异常」；
+     * 异常自带的 SQL / 表名 / 连接串等细节只进服务端日志，不外泄。</p>
+     */
+    @ExceptionHandler(DataAccessException.class)
+    public ResponseEntity<Result<Void>> handleDataAccessException(DataAccessException e) {
+        log.error("数据访问异常", e);
+        return build(ErrorCode.DB_ERROR, null);
     }
 
     /* ============================ 兜底 ============================ */
