@@ -37,6 +37,15 @@
 | 分享管理 `/shares` | 行复选框 + 失效所选（带条数；未勾选则禁用） | `file:share` | 全部业务角色（`POST /v1/shares/batch/revoke`，单次上限 200；复选框只对「生效中」的行开放） |
 | 分享管理 `/shares` | 失效全部（**不接受任何范围参数**） | `file:share` | 全部业务角色（`POST /v1/shares/all/revoke`，作用域由服务端按登录主体决定；回**实际失效条数**，`0` 条不等于成功） |
 | 审计日志 `/audit` | 页面可见 + 查询 / 导出 | `audit:log:read` | 仅 SUPER_ADMIN / AUDITOR |
+| 会话 `/chat` | 页面可见 + 历史 / 发送 / 已读 / 在线状态 / 「我加入的群」 | —（**不设权限点**：查询与写入维度都写死在登录主体上，见 `ChatController` 类注） | 全部业务角色（有登录态即可见） |
+| 会话 `/chat` | 新建会话弹窗 → 「群聊」类型（建群：群名 + 受邀成员） | `chat:group:create` | SUPER_ADMIN / DEPT_ADMIN / USER（`sql/V14__chat_group_permission_points.sql`；**不授 AUDITOR**——建群写 `sys_group` / `sys_group_member` 并决定后续消息可见范围，与审计员「权限锁定只读」冲突） |
+| 会话 `/chat` + 即时通讯抽屉 | 群设置面板：群资料 + 成员名单（打开即可看） | —（**只看自己加入的群**：非成员回 `1012`，越权面由成员资格堵住，不设权限点） | 全部业务角色（是该群成员即可见） |
+| 会话 `/chat` + 即时通讯抽屉 | 群设置面板：改群名 | `chat:group:update` | SUPER_ADMIN / DEPT_ADMIN / USER（`sql/V16__chat_group_manage_permission_points.sql`；**不授 AUDITOR**，同建群理由）**且**群内身份为群主或管理员（身份不足回 `1038`） |
+| 会话 `/chat` + 即时通讯抽屉 | 群设置面板：邀请成员 | `chat:group:invite` | 同上（群主或管理员；**已在群者幂等跳过**，曾被移除者复活原成员行） |
+| 会话 `/chat` + 即时通讯抽屉 | 群设置面板：移除成员 | `chat:group:remove` | SUPER_ADMIN / DEPT_ADMIN / USER **且仅群主**（管理员也不满足，回 `1041`；群主本身不可被移除，回 `1039`） |
+| 会话 `/chat` + 即时通讯抽屉 | 群设置面板：解散群聊 | `chat:group:dissolve` | 同上（**仅群主**；先清全体成员关系、再停群行） |
+| 会话 `/chat` + 即时通讯抽屉 | 群设置面板：退出群聊 | —（**不设权限点**：作用对象恒为登录人本人，身份维度说了算） | 全部业务角色（群内非群主；**群主退群回 `1039`**，想离开只能先解散） |
+| 会话 `/chat` + 即时通讯抽屉 | 群设置入口按钮（页头 / 抽屉头部） | —（入口本身不判权限点） | 仅**群**会话渲染（单聊不出现；能不能改由面板自己判定） |
 | 工作台 `/workbench`（web 首页） | 页面可见（待办 / 待审批 / 传输统计） | —（后端按当前登录用户收敛，无原子权限点） | 全部业务角色 |
 | （不存在）日志清除 | 任何入口都**不渲染** | 后端从不签发 `audit:log:clear` | 任何角色（含 SUPER_ADMIN）都无 |
 | 权限地图 `/permission-map` | 页面可见（我的权限点 / 角色 / 审批授权） | —（后端 `GET /v1/permission/map` 只返回当前登录用户的权限，无原子权限点） | 全部业务角色 |
@@ -69,6 +78,28 @@
 > 属不可逆副作用，前端须二次确认并明示后果（不要只写「确定保存吗」）。
 >
 > ❗ `1020` / `1021` / `1023` / `1024` / `1027` 均为**策略 D**：就地提示，**禁止引导重新登录**。
+>
+> 💬 **群聊入口的显隐口径**（`web/src/services/chat/perm.ts`）：无 `chat:group:create` 时
+> **整个「群聊」类型都不出现在新建会话弹窗里**（隐藏，不是置灰）。原因有两条：
+> ① 该分支下每个动作都以建群为前提，留下一个必然失败的入口只会重演「群聊不可用」；
+> ② 置灰需要解释「为什么我不能建群」，而这对多数用户是无关信息。
+> 「我加入的群」（`GET /v1/chat/groups`）与建群权限无关——它只返回登录人自己加入的群，
+> 属登录即用；无建群权限时不展示群聊类型，该入口也随之一并不可见。
+> 前端显隐不构成安全边界，强制校验在后端 `ChatController#createGroup` 的 `@RequiresPerm`。
+>
+> ⚙️ **群设置面板的显隐是「权限点 ∧ 群内身份」的合取**（`web/src/components/ChatGroupPanel`，
+> 两个入口共用同一实现）：权限点（`CHAT_PERM.GROUP_UPDATE / INVITE / REMOVE / DISSOLVE`）论
+> 「这个账号有没有群管理这项功能」，服务端随详情下发的 `ChatGroupDetailVO.ability`
+> （`canRename / canInvite / canRemoveMember / canDissolve / canQuit`）论「我在**这个群**里是什么身份」，
+> **两者都成立才渲染按钮**。只看其一都会做出「按钮在、点了必失败」的界面——分别回 `1003` 与
+> `1038` / `1041`（见 [error-codes.md](../api/error-codes.md)）。
+> 两条附带红线：① **前端不自行推断「我是不是群主」**——登录态里没有可信的用户主键，
+> 身份判定只在服务端（`ability` 由 `sys_group.owner_user_id` + `member_role` 实时算出，
+> **不落第二份「谁是群主」的副本**），前端因此也自然做不出「移除自己」这种必然被 `1039` 拒绝的按钮；
+> ② **群设置入口（页头 / 抽屉头部）本身不判权限点**，只在群会话渲染——能不能改、能改什么由面板自己判定，
+> 入口再判一道就是两处口径，迟早分叉。
+> 危险动作（移除 / 退群 / 解散）**一律走 `useDangerConfirm` 弹窗**而不是行内气泡（误触代价不可逆），
+> 其中解散标 `critical`：它先清全体成员关系、再停群行，历史消息此后在服务端不再可读。
 
 ## 前端使用示例（伪代码，Phase 5 实现时按实际脚手架落位）
 
@@ -86,7 +117,9 @@ if (!hasPerm(route.perm)) redirect('/403');
 ## 后端对照
 
 - 权限点全量枚举：`sql/V2__init_data.sql`（sys_permission，type=2 为操作点）
-  + `sql/V9__system_admin_permission_points.sql`（系统管理面 `system:user:*` / `system:role:*`，**仅授 SUPER_ADMIN**）；
+  + `sql/V9__system_admin_permission_points.sql`（系统管理面 `system:user:*` / `system:role:*`，**仅授 SUPER_ADMIN**）
+  + `sql/V14__chat_group_permission_points.sql`（会话菜单根节点 `chat` + `chat:group:create`，
+  授 SUPER_ADMIN / DEPT_ADMIN / USER，**不授 AUDITOR**）；
 - 判定注解：`server/at-permission` 的 `@RequiresPerm`（服务端强制，前端显隐仅是体验层）；
 - 数据范围收敛（能管到哪些部门）由 `AccessControlService` 在服务端按 `dataScope` 落地，
   前端**不要自己拼部门查询条件**；

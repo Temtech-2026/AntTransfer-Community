@@ -604,13 +604,266 @@ pm.environment.set('nodeId', String(hit.id));
 
 - 地址：`ws://localhost:8080/api/ws/notify?token={{accessToken}}`
 - 期望帧序：`CONNECTED`（含用户 ID 与未读快照）→ admin 触发 S16-a → `CHAT` 帧
-- 帧信封统一 `{"type":"...","data":{...},"ts":1789000000000}`；下行 `type`：`CONNECTED / NOTIFY / CHAT / UNREAD / PONG`
+- 帧信封统一 `{"type":"...","data":{...},"ts":1789000000000}`；下行 `type`：`CONNECTED / NOTIFY / CHAT / CHAT_READ / CHAT_RECALL / PRESENCE / TYPING / UNREAD / PONG`
 - 心跳：服务端每 30s 下行 `PING`，客户端**必须回 `PING`**；90s 无任何上行帧即判定掉线并清理（关闭码 `4002`）
 - 鉴权只在握手做一次：**登出 / 令牌过期不会断开已建连接**，客户端应在登出时主动关闭
 - Apifox 的 WebSocket 断言能力弱，建议手工核对或用浏览器控制台执行
 
 **S16-e 离线补拉**：关闭 WS → admin 再发一条 → `GET {{baseUrl}}/v1/notifications/offline?limit=50`（`Bearer {{accessToken}}`）→ 断言能补到该条。
 **S16-f 未读快照**：`GET {{baseUrl}}/v1/notifications/unread` → 断言返回三口径未读结构（导航栏红点 / 待办角标 / 会话角标）。
+
+**S16-g 已读回执（`CHAT_READ` 帧 + 历史 `readers`）**
+
+前置：`{{accessToken}}`（发送人，即 admin）与 `{{userToken}}`（对端，即 `{{userId}}`）各开一条 WebSocket，
+发送人侧先收到 admin 发消息产生的 `CHAT` 帧。
+
+1. 对端置读：`POST {{baseUrl}}/v1/chat/read`（`Bearer {{userToken}}`），体 `{"scope":1,"targetId":"{{adminUserId}}"}`，
+   断言回 `data` = 本次置读条数（`> 0`）。
+2. **发送人**那条 WS 上应收到一帧：
+
+```json
+{"type":"CHAT_READ","data":{"chatScope":1,"chatTargetId":"{{userId}}","reader":{"userId":"{{userId}}","displayName":"……"},"clientMsgIds":["smoke-0001"]},"ts":1789000000000}
+```
+
+   > 三个易错点：① 该帧**只推给发送人**，对端自己的连接上不会有；② `chatTargetId` 是**发送人视角**
+   > 的会话目标（单聊回读者本人），照抄库里 `chat_target_id` 会匹配不上窗口；③ 按 `clientMsgIds`
+   > （幂等键）对应消息，不是消息 ID。
+3. 历史回正（回执是加速通道，不是真值）：`GET {{baseUrl}}/v1/chat/messages?scope=1&targetId={{userId}}`
+   （`Bearer {{adminToken}}`）→ 断言 S16-a 那条消息的 `readers` 含 `{{userId}}`；且**对端视角**拉同一会话时，
+   自己那条消息的 `readers` 为空数组（`readers` 只表达「谁读了我发的」）。
+4. 反例：`readStatus` 不能当回执用——admin 拉自己的消息列表时该字段恒为 `1`（自己那行落库即已读）。
+5. 历史优先级：**关闭**发送人 WS → 对端再置读若干条 → 重开发送人 WS 并重拉会话历史 → 断言这些条的
+   `readers` 已补齐（回执帧没补推，也不需要补推）。
+
+**S16-h 对端在线状态与「正在输入…」（`PRESENCE` / `TYPING` 帧 + 两个端点）**
+
+前置：`{{accessToken}}`（观察方，即 admin）与 `{{userToken}}`（对端，即 `{{userId}}`）各开一条 WebSocket。
+
+1. 订阅并同时取回当前值：`POST {{baseUrl}}/v1/chat/presence/watch`（`Bearer {{accessToken}}`），
+   体 `{"scope":1,"targetId":"{{userId}}"}` → 断言 `code == 0` 且 `data.status` ∈ `ONLINE / OFFLINE / UNSTABLE`，
+   `data.userId == "{{userId}}"`（对端此刻在线时应为 `ONLINE`）。
+2. **观察方**那条 WS 上，当对端状态**发生迁移**时应收到一帧：
+
+```json
+{"type":"PRESENCE","data":{"userId":"{{userId}}","status":"UNSTABLE","lastActiveAt":1789000000000},"ts":1789000000000}
+```
+
+   > 三个易错点：① `UNSTABLE`（红点「网络状态不佳」）**不是断线**，而是「连接还在、心跳已超出
+   > **1.5 ×** 心跳间隔（30s 心跳 → **45s** 判据）」；真断线直接是 `OFFLINE`，两者含义不同，不要合并；
+   > ② `userId` 是**状态发生变化的那个用户**（不是接收人视角的目标），客户端必须与当前会话对端比对后再改点；
+   > ③ **只推迁移、平迁不推**——否则每个心跳都会放大成全量推送。
+3. 输入信号：`POST {{baseUrl}}/v1/chat/typing`（`Bearer {{userToken}}`），
+   体 `{"scope":1,"targetId":"{{adminUserId}}","typing":true}` → 断言 `code == 0`；
+   **观察方**（admin）那条 WS 上应收到：
+
+```json
+{"type":"TYPING","data":{"chatScope":1,"chatTargetId":"{{userId}}","typing":true},"ts":1789000000000}
+```
+
+   再发一次 `"typing":false` → 断言收到停止帧（`typing=false` 照常下发，客户端应立即收起提示）。
+   > 两个易错点：① `chatTargetId` 是**接收人视角**的会话目标（单聊 = 输入者本人 `{{userId}}`），
+   > 与 `CHAT_READ` 同一换算口径；② 该帧**不落库、不计未读、离线不补推**，客户端必须有 **6s 空闲兜底**，
+   > 否则丢帧 / 对端崩溃会让「对方正在输入…」永久挂住（比不显示更糟）。
+4. 反例（单聊之外一律拒绝）：`scope=2`（群聊）调 `presence/watch` 或 `typing` → 断言 `code == 2001`；
+   `typing` 的 `targetId` 填自己 → 断言 `code == 1013`；`targetId` 指向不可用用户 → 断言 `code == 1013`。
+5. 反例（订阅窗口）：`presence/watch` 后**不再续订**并静置 > **2min** → 断言观察方**不再**收到该对端的
+   `PRESENCE` 帧（服务端订阅窗口 2min；前端每 30s 续订一次，允许连续丢 3 次才过期）。
+6. 反例（辅助信息不弹错）：把 Redis 停掉后调 `presence/watch` → 断言接口仍 `code == 0`，
+   但 `data.status == "OFFLINE"`（服务端降级；状态点属辅助信息，宁缺不弹错）。
+
+**S16-i 建群闭环（`POST /v1/chat/groups` + 「我加入的群」）**
+
+> 这一条修的是「群聊有入口、无能力」：此前 `sys_group` / `sys_group_member` 只被**读**（发送前校验成员、
+> 投递时按成员写扩散），全系统没有任何创建群组的入口，于是弹窗只能让人手填一个永远不存在的群组 ID。
+
+前置：`{{accessToken}}`（建群人，admin）与 `{{userId}}`（受邀成员，S02 建号所得）。
+
+1. 建群：`POST {{baseUrl}}/v1/chat/groups`（`Bearer {{accessToken}}`）
+
+```json
+{
+  "name": "联调验证群",
+  "memberIds": ["{{userId}}"]
+}
+```
+
+→ 断言 `code == 0`；`data.id` 是**字符串**（19 位雪花 ID，前端禁止再经 `Number()`）；
+`data.ownerUserId` == admin 的用户 ID；`data.memberCount == 2` —— **含群主自己**（上限口径是「群的总人数」，
+不是「受邀人数」，与投递侧 `MAX_FANOUT_RECIPIENTS`(500) 同源）。产出 `groupId = data.id`。
+
+2. **DB 断言**（群行与全体成员行**必须同事务**落地，否则会得到「没有成员的群」——它的会话任何人都发不进去）：
+
+```sql
+SELECT g.name, g.owner_user_id, m.user_id, m.member_role
+FROM sys_group g JOIN sys_group_member m ON m.group_id = g.id
+WHERE g.id = <groupId>;
+-- 期望：2 行，owner_user_id 非空；创建者那行的 member_role 为群主角色值
+```
+
+3. 发群消息：`POST {{baseUrl}}/v1/chat/messages`（`Bearer {{accessToken}}`），
+   体 `{"scope":2,"targetId":"{{groupId}}","messageType":1,"content":"群已建好","clientMsgId":"<新幂等键>"}`
+   → 断言 `code == 0`；换 `{{userToken}}` 拉 `GET {{baseUrl}}/v1/chat/messages?scope=2&targetId={{groupId}}`
+   → 断言能读到该条（写扩散到**成员各自的行**）。
+4. 会话列表的群名（D-11 在会话列表侧的残留已收口）：`GET {{baseUrl}}/v1/chat/conversations`（`Bearer {{userToken}}`）
+   → 断言该群会话的 `targetName == "联调验证群"`（**不再是 `null`**）。再手工删掉第 2 步那个群行后重拉 →
+   断言该会话**仍在列表里**、仅 `targetName` 回 `null`（宁少一个名字，不少一个会话）。
+5. 「我加入的群」：`GET {{baseUrl}}/v1/chat/groups`（`Bearer {{userToken}}`）→ 断言 `data` 含 `{{groupId}}`；
+   换一个**未加入该群**的账号调同一端点 → 断言**不含** `{{groupId}}`（查询维度写死为登录人本人，故无越权入参面）。
+6. 反例（错误码）：
+   - `memberIds: []` → `code == 1031`；`memberIds` **只填 admin 自己** → 同样 `code == 1031`（剔除创建者后为空）；
+   - `memberIds` 含一个已停用 / 已注销用户 → `code == 1033`（**不逐位回报是哪一个**，否则该端点就是账号存在性枚举器），
+     且**整体回滚**：`SELECT COUNT(*) FROM sys_group WHERE name = '联调验证群'` 不新增行（不留半个群）；
+   - `name: "   "` → `code == 2002`（去首尾空白后判空）；`name` 65 个字符 → `code == 2001`（`sys_group.name` 列宽 64）；
+   - 用 **AUDITOR** 账号调建群 → `code == 1003`（V14 **不授** AUDITOR：建群是写操作且决定后续消息可见范围，
+     与审计员「权限锁定只读」冲突）。
+7. 前端（弹窗口径，与后端注解互为两层）：
+   - 以 **SUPER_ADMIN / DEPT_ADMIN / USER** 打开「发起会话」→ 断言可见**群聊**类型，且该分支是
+     **群名输入 + 成员选择**（不是群组 ID 输入框）；建完**直接进入会话**（URL / 会话头标题即群名，左栏可能稍后才出现该会话）；
+   - 以 **AUDITOR** 打开 → 断言**整个群聊类型都不渲染**（隐藏而非置灰）；
+   - 群聊分支**首条消息留空**提交 → 就地提示 `chat.new.content.required`（会话由消息写扩散而来，
+     不发首条消息则服务端不留任何会话记录，而**被拉进群的人正是靠这条消息第一次看到这个群**）；
+   - 建群成功后**不填首条消息直接改条件重试**属已知坑：首条消息失败时群已落库，前端只提示、弹窗关闭，
+     用户应在聊天框里重发——若停留在弹窗内再点一次「发起」，会建出**第二个同名群**。
+
+**S16-j 消息撤回与引用回复（`POST /v1/chat/messages/recall` + `CHAT_RECALL` 帧 + `quoteClientMsgId`）**
+
+> 这一条修的是「发出去就改不了、也没法针对某条说话」：撤回是**整条逻辑消息**的动作（写扩散下客户端
+> 只有 `clientMsgId` 能跨端指认它），引用则**抄快照**而不是存外键。
+
+前置：`{{accessToken}}`（发送人 admin）与 `{{userToken}}`（对端 `{{userId}}`）各开一条 WebSocket；
+S16-a 那条消息（`clientMsgId = smoke-0001`）仍在 2 分钟窗口内、且**未被撤回**。
+
+1. 撤回：`POST {{baseUrl}}/v1/chat/messages/recall?clientMsgId=smoke-0001`（`Bearer {{accessToken}}`）
+   → 断言 `code == 0`（无 `data`）。**对端**那条 WS 上应收到一帧：
+
+```json
+{"type":"CHAT_RECALL","data":{"clientMsgId":"smoke-0001","senderUserId":"{{adminUserId}}","chatScope":1,"chatTargetId":"{{adminUserId}}","recallTime":"2026-09-26T15:00:00"},"ts":1789000000000}
+```
+
+   > 三个易错点：① `chatTargetId` 是**接收人视角**的会话目标（单聊回**撤回者**本人 `{{adminUserId}}`，
+   > 对端看自己的会话窗口才匹配得上），与 `CHAT_READ` / `TYPING` 同一换算口径；
+   > ② 匹配只能用 `clientMsgId`，**不能用消息 ID**（写扩散下同一条消息在双方各有一行、ID 不同）；
+   > ③ 撤回**不重推 `CHAT` 帧**——`CHAT` 的语义是「来了一条新消息」，重推会让未读数与会话摘要各多算一次。
+
+2. DB 断言（**整条逻辑消息的全部行一起翻**，只翻自己那行会表现为「我撤了，他还能看到」）：
+
+```sql
+SELECT recipient_user_id, recall_status, recall_time, content
+FROM sys_notify_message WHERE sender_user_id = <adminUserId> AND client_msg_id = 'smoke-0001';
+-- 期望：单聊 2 行 recall_status 均为 1、recall_time 非空；content 已置空串 ''
+-- （置状态与清正文一起做，但**判定撤回只看 recall_status**——空正文本身是合法状态）
+```
+
+3. 历史回正（帧是加速通道、不是真值）：`GET {{baseUrl}}/v1/chat/messages?scope=1&targetId={{userId}}`
+   （`Bearer {{adminToken}}`）→ 断言该条 `recallStatus == 1`、`content` 为空、`recallTime` 非空。
+   **再拉一次对端视角**（`Bearer {{userToken}}`，`targetId={{adminUserId}}`）→ 对端那份也应看到撤回态
+   （撤回是双方共同的终态，不是「只看得到自己撤回」）。
+4. 幂等（多端并发撤回同一端先到）：**同一 `clientMsgId` 再调一次撤回** → 断言仍 `code == 0`，
+   且这一步**不再产生第二帧** `CHAT_RECALL`（目标状态已达成，服务端直接返回；这条判定刻意排在时间窗校验之前，
+   否则并发时后到的那一端会因窗口已过而收到 1034，用户看到的是「撤回失败」而消息其实早已撤回）。
+5. 引用回复：`POST {{baseUrl}}/v1/chat/messages`（`Bearer {{accessToken}}`）
+
+```json
+{
+  "scope": 1,
+  "targetId": "{{userId}}",
+  "messageType": 1,
+  "content": "刚那条作废，看这条",
+  "clientMsgId": "smoke-0002",
+  "quoteClientMsgId": "smoke-0001"
+}
+```
+
+→ 断言 `code == 0`；再拉历史 → 断言 `smoke-0002` 的 `quoteClientMsgId == "smoke-0001"`、
+`quoteSenderUserId == "{{adminUserId}}"`、`quoteContent` 为**被引用那条当时的正文快照**。产出 `chatMsgId2 = data.id`。
+6. 撤回不影响既有引用（**抄快照的价值就在这一步**）：撤回 `smoke-0002` 自己？——不，撤回 `smoke-0002` 前先确认：
+   把第 5 步引用的那条（若还在窗口内可另发一条被引用消息再撤回）撤回 → 重拉历史 → 断言 `smoke-0002` 的
+   `quoteContent` **仍然有文字**（引用块不会因为原消息被撤回而变空白）。这一步是「引用存快照而不是存外键」的验收点。
+7. 反例（错误码）：
+   - 撤回超窗消息 → `code == 1034`（**终态错误**，重试不会有不同结果）。复现办法：`UPDATE sys_notify_message
+     SET create_time = DATE_SUB(NOW(), INTERVAL 3 MINUTE) WHERE client_msg_id = '<新幂等键>'` 后再撤（窗口看 `create_time`，不落库）；
+   - 用 `{{userToken}}` 撤 admin 发的 `smoke-0001` → `code == 1035`；撤一个不存在的 `clientMsgId` → 同样 `code == 1035`
+     （**四种情况同一个码**，分开报会给出「这条幂等键是否存在」的探测面）；`clientMsgId` 传空 / 只传空白 → `code == 2002`（`PARAM_MISSING`）；
+   - 引用**已撤回**的消息（第 1 步那条）→ `code == 1036`；引用**另一会话**里的消息 → 同样 `code == 1036`；
+     引用不存在的幂等键 → 同样 `code == 1036`。三者都必须**不落任何行**：
+     `SELECT COUNT(*) FROM sys_notify_message WHERE client_msg_id = '<被拒的幂等键>'` 为 0；
+   - 引用超长正文（> 200 字符）→ 不报错，断言 `quoteContent` 按**码点**截断到 200（emoji 不被截成半个）；
+   - 撤回限流：连续调用 31 次（60s 窗口）→ 断言第 31 次被 `@RateLimit` 拦下（与发送同一套限流口径）。
+8. 前端（右键菜单只有两条，且**撤回先发请求、成功后才改本地**）：
+   - **自己发的**、2 分钟内的消息右键 → 断言菜单含「引用」「撤回」两项；**别人发的**消息右键 → 断言**没有「撤回」项**；
+     超过 2 分钟的消息右键 → 仍无「撤回」项（前端 `isRecallable` 含 **30s 钟差容忍**，只控制显隐，**不替服务端裁决**）；
+   - 点「引用」→ 断言输入框上方出现引用条（含被引用人 + 正文摘要）；点「取消」→ 引用条消失、发送时不带 `quoteClientMsgId`；
+   - 引用状态下发出去的**下一条消息**带引用；发送成功后引用条自动清空；**发送失败时保留**（用户改完正文可直接重试同一句引用）；
+   - 切换会话 → 断言引用草稿被清空（否则下一条会挂到另一个会话的引用上，服务端会以 1036 拒绝，但那是发出去之后的事）；
+   - 撤回成功后本地应立即切成「已撤回」占位（正文清空但**显示「已撤回」而不是空白**）；用超窗的消息强行撤回（可手改
+     `create_time` 后由前端触发）→ 断言**只弹提示、不把本地消息改成已撤回**（失败不能污染本地状态）。
+
+**S16-k 群设置闭环（群详情 / 改名 / 邀请 / 移除 / 退群 / 解散）**
+
+> 这一条修的是「群建完即冻结」：V14 只给了建群，改不了名、拉不进人、移不掉人、也解散不了，
+> 而 `sys_group_member` 是发送与历史拉取的**唯一**授权依据——成员关系一旦建错就只能重建一个群。
+> 六个端点、四个权限点见 `sql/V16__chat_group_manage_permission_points.sql`。
+
+前置：S16-i 建的群 `{{groupId}}`（admin 为群主）、`{{userToken}}`（受邀成员 `{{userId}}`）、
+另一个**未入群**账号 `{{outsiderToken}}`（S02 另建号），以及一个 **AUDITOR** 账号。
+
+1. 群详情（成员限定、**不挂权限点**）：`GET {{baseUrl}}/v1/chat/groups/{{groupId}}`（`Bearer {{accessToken}}`）
+   → 断言 `code == 0`，`data` 含 `id / name / ownerUserId / memberCount / memberLimit / members / ability`。
+   **以群主看**：`canRename / canInvite / canRemoveMember / canDissolve == true`、`canQuit == false`；
+   **换 `{{userToken}}`（普通成员）看**：前四项为 `false`、`canQuit == true`。
+   > 这就是「前端不自行推断我是不是群主」的依据：`ability` 由服务端按 `sys_group.owner_user_id` + `member_role`
+   > 实时算出，`/chat` 页与即时通讯抽屉只照它显隐（登录态里没有可信的用户主键，推断必然是错的）。
+2. 反例（详情）：`{{outsiderToken}}` 看该群 → `code == 1012`（**非群成员**，成员资格就是这里的越权边界）；
+   `GET .../groups/999999999999999999` → `code == 1037`（**「不存在」与「已解散」合并成一个码**——
+   分开报会给出「这个群 ID 曾经存在吗」的探测面，而对调用方可做的动作完全相同）。
+3. 改群名：`PATCH {{baseUrl}}/v1/chat/groups/{{groupId}}`（`Bearer {{accessToken}}`）`{"name":"联调验证群-改"}`
+   → `code == 0`，`data.name` 为新名且 `data.ability` 一并返回；DB 断言 `SELECT name FROM sys_group WHERE id = <groupId>`。
+   - **同名不多写库**：原样再提交一次 → `code == 0`，`update_time` **不变**；
+   - `{"name":"  "}` → `code == 2002`（去首尾空白后判空）；65 个字符 → `code == 2001`（列宽 64）；
+   - `{{userToken}}`（群内普通成员）→ `code == 1038`（**群内身份不足**）；**AUDITOR** → `code == 1003`
+     （**权限点不足**）。两者必须能分开观测——这是「权限点与群内身份是**两条正交授权线**」的验收点：
+     功能给了、身份不够照样拒绝，反之亦然；两条线都不满足时以权限点为准（先拦住功能面）。
+4. 邀请成员：`POST {{baseUrl}}/v1/chat/groups/{{groupId}}/members`（`Bearer {{accessToken}}`）
+   `{"memberIds":["<outsiderUserId>"]}` → `code == 0`，`data.memberCount` +1。
+   - **幂等**：把**已在群的人**（含群主自己）再邀请一次 → `code == 0`、`memberCount` 不变
+     （全员已在群仍回 200：报「重复邀请」会让批量邀请里的其他人白等）；
+   - **复活**：先按第 5 步移除某人，再用同一 ID 邀请 → 断言 `sys_group_member` 里该行 `deleted` 由 1 回到 0，
+     且**不产生第二行**（唯一键 `uk_group_user(group_id, user_id)` **不含 `deleted`**，直接 insert 必撞键）；
+   - 反例：把成员灌到 500 后再邀请 → `code == 1032`；邀请不存在的用户 ID → `code == 1033`
+     （**不逐位回报是哪一个**，否则端点就成了账号存在性枚举器）。
+5. 移除成员：`DELETE {{baseUrl}}/v1/chat/groups/{{groupId}}/members/{{userId}}`（`Bearer {{accessToken}}`）→ `code == 0`；
+   随后该成员**发送与拉历史均** `code == 1012`（移出群就是**失去授权**，不是「还能看旧消息」）。
+   - 反例：`userId` 换成**群主自己**（含群主移除自己）→ `code == 1039`——那会造出一个**没有所有者的群**，
+     此后无人能改名 / 邀请 / 移除 / 解散，群变成只能发消息的死结构；
+   - 移除**从未入群 / 已被移除**的 ID → `code == 1040`（对象已不在，刷新详情即可收敛）；
+   - 若把管理员身份授给了他人，用**管理员**移除第三人 → `code == 1041`（**仅群主**这档比 `1038` 更严，
+     合并两者会让界面上「管理员能改名却不能移除人」无从解释）。
+6. 退群：`POST {{baseUrl}}/v1/chat/groups/{{groupId}}/quit`（`Bearer {{userToken}}`）→ `code == 0`；
+   随后该账号拉会话列表**不再出现该群**、拉该群历史 `code == 1012`。
+   - 反例：群主调 `quit` → `code == 1039`（想离开只能先解散）；非成员调 `quit` → `code == 1012`。
+7. 解散：`DELETE {{baseUrl}}/v1/chat/groups/{{groupId}}`（`Bearer {{accessToken}}`）→ `code == 0`。
+   DB 断言**两步的顺序**（先清成员、再停群行，先落安全态）：
+
+```sql
+-- 期望 0：成员关系先被清空（否则并发下发送侧仍认成员行，能往已解散的群写进消息）
+SELECT COUNT(*) FROM sys_group_member WHERE group_id = <groupId> AND deleted = 0;
+-- 期望已停用
+SELECT status FROM sys_group WHERE id = <groupId>;
+```
+
+   - 反例：非群主解散 → `code == 1041`；AUDITOR → `code == 1003`。
+8. 前端（`/chat` 页与即时通讯抽屉**同一口径、同一个组件** `ChatGroupPanel`）：
+   - `/chat` 选中群会话 → 页头出现「群设置」；抽屉选中同一群 → 抽屉头部出现同一入口（抽屉只留图标，
+     无障碍名 `chat.group.title`）。**单聊**两处都不渲染；
+   - 按钮显隐 = **权限点 ∧ `ability`**：AUDITOR 打开 → 无改名输入框 / 无邀请 / 无危险操作；普通成员打开 →
+     同样没有（**但入口仍在**，他仍要能看群资料）；群主打开 → 改名 / 邀请 / 移除 / 解散齐全且**没有「退出群聊」**
+     （`ability.canQuit=false`，不给注定失败的按钮）；
+   - 改名成功 → 页头标题与左栏列表项**同时**变成新名（两处同源渲染，只改一处会出现一名两写）；
+   - 危险动作一律**弹窗二次确认**（行内气泡易误触；解散为 `critical` 不可逆提示），确认后才发请求；
+   - 退群 / 解散成功后**立即关闭该会话**并刷新列表（不能留在详情里对着一个已失效的群继续发消息）；
+   - 邀请 / 移除成功后成员名单与人数**用响应即时刷新**（不补一次 GET，也避免「写完之后读到的还是旧值」）；
+   - 成员行**群主那条没有「移除」按钮**（`ability.canRemoveMember` 为真时，群主正是「我自己」那一行）；
+   - 错误码提示就地弹出、**不清令牌不跳登录**（1037~1041 均为**请求被拒**，会话仍然有效）。
 
 ### S17 授权到期回收
 
@@ -656,7 +909,8 @@ pm.environment.set('nodeId', String(hit.id));
 | --- | --- | --- |
 | `adminToken` | S01 登录后置脚本 | S02 建号、S11 审批、S16-a 发消息 |
 | `adminUserId` | S01 `data.user.id` | S16-a/C 会话历史 `targetId` |
-| `userId` | S02 列表反查 | S10 `applicantId` 校验、S16-a `targetId`、S17 DB 断言 |
+| `userId` | S02 列表反查 | S10 `applicantId` 校验、S16-a `targetId`、S16-i 受邀成员、S17 DB 断言 |
+| `groupId` | S16-i 建群 `data.id` | S16-i 群消息 `targetId`、DB 断言、`/chat/groups` 核对 |
 | `accessToken` / `refreshToken` | S03 登录后置脚本 | S04–S06、S10、S12-a、S16-c/e/f、S17 全部用户态请求 |
 | `uploadId` | S04 `data.uploadId`（4001 分支） | S05 `GET /parts`、S06 `PUT /parts/{index}`、S08 `merge` |
 | `chunkSize` / `chunkCount` | S04（或 S05 复核） | S06 切片循环、S08 `merge` 请求体 |

@@ -453,6 +453,27 @@
   - 🧪 新增 `composer.test.ts`（按键口径含输入法 3 例 / 光标插入边界 5 例 / 最近使用与坏数据兜底 8 例）
     与 `index.test.tsx`（发送按钮可点性、Enter 与 Shift + Enter、光标处插入、分类切换、最近使用落盘）；
     两处输入框的旧样式（`composer` / `composerRow`）随之删除。
+- 📎 **聊天输入框新增文件传输入口（回形针 → 「发送文件」），一次动作覆盖两种来源**（`/chat` 页与即时通讯抽屉共用）：
+  - 🧩 新增共享组件 `web/src/components/ChatAttachmentPicker/`：`ChatComposer` 工具栏左侧开一个 `tools` 插槽
+    （在框内、发送按钮之前），入口挂在这里；弹窗上半部是「上传本机文件」，下半部是「我的文件」候选列表
+    （复用文件工作台的节点分页查询，带文件名搜索，改关键词即回到第一页）。
+  - 🔗 **两条来源产出的载荷与「从文件区拖进来」完全同形**（`FileDragPayload`）：下游待发附件条与用途限制
+    （有效期 / 下载次数）不必区分来源；规则收在纯函数 `picker.ts`（`nodeToPayload` / `uploadedFileToPayload` /
+    `normalizeSizeBytes` / `isUploadBusy`）并配 9 例单测。
+  - 🚫 **本机文件走分片上传而非小文件直传**：at-file 的直传受容器 `spring.servlet.multipart.max-file-size`（64 MB）限制，
+    超限会在进 Controller 之前就被裸 400 拦掉、业务侧连日志都没有，故复用文件工作台同一条流水线（秒传 / 断点续传 / 并发分片），
+    且 `persist: false` 不落断点缓存——这里是一次性动作，不留界面永远不会认领的续传记录。为此上传层补 `nodeId` 透传
+    （秒传与普通合并都回条目 ID），聊天侧只认条目 ID，不拿 `fileId` 凑合。
+  - 🧯 **拿不到条目就不产出草稿**：上传完成却没回条目 ID 时提示去「我的文件」确认后再选一次，不让空 ID 一路走到
+    「点发送」才失败；候选列表查询失败时**先清空上一页数据**再提示，避免用户从过期列表里挑一个发出去。
+  - 🔁 **入口不会被挂住**：禁用与否看任务自身状态而不是「我发起过」——顶栏传输中心取消上传不会回调 `onTaskError`，
+    只记「发起过」会让入口永久停在禁用态。
+  - 📏 **弹窗与投放提示都写明单文件大小上限**（默认 10 GiB）：数字取自 `services/upload/constants` 的 `MAX_FILE_SIZE`
+    （与 `anttransfer.file.max-file-size` 默认值对齐——分片侧另有一道 `max-chunk-size × max-chunk-count` 的 64 GiB 上限，
+    但合并落库仍要过更严的这道校验）。**只提示、不拦截**：上限可配置，真正拒收的是服务端 4006，
+    前端提前改判会在运维调大上限后变成「服务端让传、前端不让选」。
+  - 🧪 新增 24 例（`picker.test.ts` 9 + `index.test.tsx` 15：两条来源的载荷、空 ID、查询失败、上传失败与重试、
+    上传中禁用入口、取消后恢复、入口禁用态、大小提示）；全量前端单测 **604 例**（53 个文件）全绿。
 - 📊 **权限地图页补可视化**（`web/src/pages/permission-map/`），全部由已有字段推导，未新增任何后端契约：
   新增「授权状态分布」卡片——四态占比条 + 图例（条数 / 占比），条宽按**条数**现算而不是拿四舍五入后的
   百分比拼（否则会出现缝隙或溢出）；权限概览卡里按权限点 `:` 前缀画「权限域分布」条（后端没有「域」字段，
@@ -460,6 +481,263 @@
   三处刻度都收在纯函数里（`summarizeGrantStates` / `validityBarPercent` / `groupPermCodesByDomain`）并配单测：
   其中剩余天数条是 **30 天封顶的视觉刻度**、不是「授权已用比例」——后端不下发生效时间，长有效期一律满格，
   长期有效与已过期不画条；占比条整条 `aria-hidden`，四态信息由图例文字完整给出。
+- 💬 **新增 `GET /api/v1/chat/targets/resolve`（会话目标解析，登录即用、不挂权限点）**：
+  入参 `query`（**登录账号优先**，回落按用户 ID），经 at-auth 新增的 SPI
+  `UserLookupPort#findActiveByUsername`（精确匹配，非模糊检索）解析为会话目标，
+  回 `{ targetId, displayName }`（展示名回落登录账号）。端点带 `@RateLimit`（60s / 30 次）防刷；
+  **「查无此人」与「目标不可用」统一回 `CHAT_TARGET_INVALID`(1013)**，不区分「不存在」与「已注销」，
+  避免把本端点变成账号存在性枚举器。前端非管理员「发起会话」由此从「手输 19 位雪花 ID」
+  （实际不可用）改为「输对方登录账号 → 解析 → 发起」；管理员路径仍走用户选择器，口径不变。
+  测试：新增后端 `ChatServiceTargetResolveTest`（6 项）与前端「聊天页 · 发起会话」4 项。
+- ✅ **会话消息支持已读回执：消息气泡下展示读者头像**（对齐 Telegram / 抖音的「已读」形态，群聊同样生效）：
+  - 🧭 **口径先行——回执是派生态，不加表、不加列**：写扩散（V5）下一条已读事实天然存在于**收件人那一行**
+    （`recipient` 的 `read_status` 由 0 翻 1 就是「recipient 读了 sender 的这条消息」），
+    故「谁读了我发的这条」= 同一 `client_msg_id` 下别人的镜像行中 `read_status=1` 的那些行。
+    刻意**不落冗余「已读人」列或已读计数**：本表的已读只有「置读」一个写入点，派生成本可控且永不失真。
+  - ⚠️ **纠偏：`NotifyMessageVO.readStatus` 不能当回执用**——写扩散下「我发的」那一行接收人就是我自己，
+    该字段恒为已读（`1`）。前端「谁读了」只认历史里的 `readers` 与 `CHAT_READ` 帧；
+    该字段的语义已写进 VO 的 `@implNote` 与 `docs/api/README.md`，避免后来者再踩。
+  - 🗄️ **`sql/V13__chat_read_receipt.sql`（纯增量）**：`sys_notify_message` 补
+    `idx_sender_session (sender_user_id, chat_scope, chat_target_id, client_msg_id, read_status)`。
+    V5 的 `idx_session` 服务于「我作为接收人」的方向相反；`uk_sender_recipient_client` 虽以 sender 为前缀，
+    但 `client_msg_id` 排在第三列，按它过滤只能把「我历史上发过的所有行」全扫一遍（跨会话、跨年份）。
+    新索引前三列等值 + 第四列 IN，命中数 = 页内消息数 × 参与人数，与历史总量无关；
+    `read_status` 放进索引让未读行在索引内即被过滤（已读是少数派）。单聊的 `chat_target_id` 是发送人自己的
+    ID（见 V5 注释 c 的镜像行互指），故单聊 / 群聊共用同一索引、无需分支。PG 需改写为独立 `CREATE INDEX`。
+  - 🔍 `NotifyMessageMapper` 新增两条查询（`@Select` 注解脚本 + 新增行模型 `ChatReadRow`）：
+    `selectReadReceipts(senderId, scope, mirrorTargetId, clientMsgIds)` 取回执事实（`recipient_user_id <> senderId`
+    排除自己，`order by id` 让头像顺序稳定）；`selectSessionUnreadRows(userId, scope, targetId, limit)`
+    在置读**之前**取未读快照（最新 `limit` 条），供推送归并用。
+  - 📜 **会话历史每条消息返回「谁读过」**：`ChatService#history` 取完本页后批量 `loadReaders()`
+    （只筛「我发的」消息、单聊按 `mirrorTargetId = 本人 ID` 换算、批量反查读者展示名、查不到名的读者整条丢弃），
+    挂到新增的 `NotifyMessageVO.readers`（新增 `ChatReaderVO`：`userId` 字符串过线 + `displayName`）。
+    **为什么要回展示名**：群聊里的读者是任意群成员，而群成员名单没有对外的只读端点
+    （`/api/v1/system/users` 挂在系统管理面权限上，普通用户取不到），服务端带名是「非管理员也能看到谁读了」的唯一可行路径。
+  - 📡 **实时通道 `CHAT_READ` 帧**（`WsProtocol.TYPE_CHAT_READ` + `ChatReadReceiptVO`）：
+    `NotifyMessageService#markSessionRead` 改为「先取未读快照 → 翻转 → 推未读 + 推回执」，
+    按发送人归并后给每位发送人推一帧。三个必须记牢的设计点：
+    ① **只推给发送人**（方向是「读者 → 发送人」）；② `chatTargetId` 是**发送人视角**的会话目标
+    （单聊回读者本人，群聊回群 ID），**不能照抄库里的 `chat_target_id`**——那是读者视角的定位，
+    直接下发会让前端匹配不到自己的会话窗口；③ 按 `clientMsgIds`（幂等键）而非消息 ID 匹配，
+    因为乐观发送下前端在服务端 ID 落地前就已经把气泡画出来了。
+    推送经 `AfterCommitExecutor` 在事务提交后下发，条数按 `notify.chat-history-limit` 裁剪。
+  - 🖥️ **前端**：新增纯函数模块 `web/src/services/chat/readReceipt.ts`
+    （`isReceiptOfSession` 会话匹配 / `mergeReaders` 按 `userId` 去重 / `applyReadReceipt` 合并 /
+    `summarizeReaders` 头像封顶后折「+N」）；WS 侧把回执做成**独立事件**（`WsFrameType.CHAT_READ` +
+    `parseChatReadPayload` 防御式解析 + `wsStore.subscribeReadReceipt` + `useWebSocket({ onReadReceipt })`），
+    不混进消息流、不动未读；聊天页与 `ChatDrawer` 共用同一套合并与渲染规则，
+    气泡下按「读者首字头像 + 叠放 + `+N`」渲染（`role="img"` + `aria-label="已读：…"` 给全文字等价物，
+    新增 i18n `chat.read.by` / `chat.read.more`，中英双语）。
+    `applyReadReceipt` 在无变化时**返回原数组引用**（它跑在 `setState` 的 updater 里，返回新数组会让整屏重渲染）。
+    另给 `mergeMessage` 加了保底：`readers` 是唯一「缺省不代表事实」的字段（消息通道的帧永远不带读者，
+    回执走 `CHAT_READ`），故重复到达的消息帧不会擦掉已画出的头像——擦了就再也补不回来（回执不重放）。
+  - 🔁 **回执是加速通道而非真值**：推送丢失 / 裁剪不会造成状态错乱——发送人下次拉会话历史时回执照样由
+    `read_status` 派生。故发送人离线期间发生的阅读**不补推，也不必补推**（已写入 `docs/api/README.md` §7 与
+    `ChatReadReceiptVO` / `ChatReaderVO` 的类型注释）。
+  - 🧪 测试：后端新增 `ChatServiceReadReceiptTest`（6 例：单聊镜像 target 换算、只查我发的、群聊多读者顺序、
+    丢弃查不到名的读者、无我发消息不查、`userId` 序列化为字符串）与 `NotifyMessageServiceReadReceiptTest`
+    （5 例：单聊 target = 读者、群聊按发送人归并、读者未知不推、无未读不推、自己发给自己不推）；
+    前端新增 32 例（`readReceipt.test.ts` 18 + WS 契约 6（`protocol` 4 / `ws-client` 2）+ 聊天页 5 +
+    抽屉 1 + 消息合并保底 2），相关 6 个测试文件 78 例全绿。
+  - 📚 文档同步：[`docs/api/README.md`](docs/api/README.md) §7 补 `CHAT_READ` 帧格式与四个口径要点、
+    §1 的 `GET /api/v1/chat/messages` 行补 `readers` 字段说明；
+    [`docs/development/joint-debug-prep.md`](docs/development/joint-debug-prep.md) 补 **S16-g** 联调步骤
+    （含「关掉发送人 WS 后靠历史回正」这条反例，以及 `readStatus` 不能当回执用的反例）。
+- 🟢 **会话对端在线状态（三态）与「对方正在输入…」**（`at-collaboration` + 前端聊天页 / 即时通讯抽屉）：
+  - 🔢 **三态口径**（`ChatPresenceStatus` / `ChatPresenceVO`）：`ONLINE` 绿点 / `OFFLINE` 灰点 /
+    `UNSTABLE` 红点 =「网络状态不佳」。关键是**红 ≠ 断线**：`UNSTABLE` 表示连接还在、心跳却已超出
+    **1.5 × 心跳间隔**（30s 心跳 → **45s** 判据，`WsProperties#presenceHealthySeconds`）；
+    真断线直接是 `OFFLINE`（连接关闭即清活跃记录）。两条语义不同，合并会让「网络抖动」与「人不在」不分。
+  - 🗄️ **状态存储**（`WsPresenceService` + `RedisKeyConstants`）：活跃时刻写 `at:ws:presence:{userId}`
+    （TTL = 心跳超时 90s，**动态续期**）；订阅关系写 `at:ws:presence:watch:{userId}`（TTL **120s**、成员为被观察者）。
+    「订阅」与「读取当前值」合并成一次往返（`POST /v1/chat/presence/watch`）——要不要显示状态点与要不要订阅
+    永远是同一个决定。**Redis 异常降级为 `OFFLINE` 且不影响接口成功**：状态点属辅助信息，宁缺不弹错。
+  - 📡 **`PRESENCE` 帧**（`WsProtocol.TYPE_PRESENCE`）：活跃时刻在「健康 / 迟滞 / 消失」之间**发生迁移**时才推，
+    平迁（如 ONLINE→ONLINE）不推——否则每个心跳都会放大成全量推送。`userId` 是**状态发生变化的那个用户**
+    （非接收人视角），订阅者必须与当前会话的对端比对后再改点。
+  - ✍️ **`TYPING` 帧 + `POST /v1/chat/typing`**（`WsProtocol.TYPE_TYPING` / `ChatTypingVO`）：
+    **上行 HTTP、下行 WS 帧**——上行要限流（60s / 120 次）、要能明确回参数错误（群聊 2001 / 填自己 1013）、
+    要与消息投递共用同一把目标校验尺子；下行是瞬时信号，不落库、不计未读、不补推。
+    服务端换算为**接收人视角**的 `chatTargetId`（单聊 = 输入者本人），与 `CHAT_READ` 同一口径。
+  - 🖥️ **前端**：新增纯规则模块 `web/src/services/chat/presence.ts`
+    （`isPresenceOfSession` / `isTypingOfSession` 会话过滤——**只认单聊**，群聊没有单一对端；
+    `createTypingEmitter` 把连续按键折算成「开始 + 每 3s 续订 + 结束」三段流量）；WS 侧做成**独立事件**
+    （`WsFrameType.PRESENCE` / `TYPING` + `parsePresencePayload` / `parseTypingPayload` 防御式解析 +
+    `wsStore.subscribePresence` / `subscribeTyping` + `useWebSocket({ onPresence, onTyping })`），
+    不混进消息流、不动未读。新增 `hooks/useChatPresence` 统一接线（打开会话即订阅、每 30s 续订、
+    切换 / 关闭会话即停并补发停止信号）与 `components/ChatPeerStatus` 共用展示组件，
+    聊天页与 `ChatDrawer` 同一份实现（抽屉会话头两行堆叠，`/chat` 页同版式）。
+  - ♿ **颜色不单独表意**：三态圆点始终配文字（在线 / 离线 / 网络状态不佳），色盲用户与高对比度模式下
+    仍有信息；圆点 `aria-hidden`、语义由同一行文字承担，容器 `role="status" + aria-live="polite"`
+    让异步出现的「正在输入…」能被读屏感知。状态未知（加载中 / 非单聊 / 取不到）时**整个组件不渲染**——
+    宁可什么都不显示，也不要一个含义不明的灰点让人猜（离线是「确定不在」，加载中是「还不知道」）。
+  - ⏱️ **接收端必须有空闲兜底（6s）**：`TYPING` 是瞬时信号，丢帧 / 对端崩溃都不会有任何通知，
+    只靠 `typing=false` 收起会让「对方正在输入…」永久挂住——比不显示更糟。发送端则在节流窗口
+    （3s）内不重复发（连续按键一次输入就是几十个 onChange，每次都发会顶到限流）。
+    另：**发送 / 清空后立刻补一帧 `false`**（清空走 `setState` 而非 `onChange`），
+    好让提示在对方点「发送」的瞬间收起，而不是等空闲兜底的那几秒。
+  - 🧪 测试：后端新增 `WsPresenceServiceTest`（10 例：三态判定、仅迁移推送、无变化不推、Redis 降级、
+    订阅登记、跳过自己）与 `ChatServiceTypingTest`（9 例：接收人视角载荷、停止信号、群聊拒绝、目标不可用、
+    填自己拒绝、缺目标拒绝、watch 委托、watch 不查库、群聊 / 自己拒绝），**19 例全绿**；
+    前端新增 **47 例**（`presence.test.ts` 21 = 会话过滤 + 节流上报器 + 时间常量口径、
+    协议契约 11（`protocol` 8 = 三态净化与两个载荷解析 / `ws-client` 3 = 事件路由、停止信号、脏帧丢弃）、
+    `ChatPeerStatus` 5、聊天页 7、抽屉 3），相关 6 个测试文件 **104 例**全绿。
+    另把聊天页与抽屉的 `useWebSocket` 替身由「单槽覆盖」改为**合并**——页面上现在有两处订阅
+    （消息 / 回执 + 在线状态 / 输入态），后注册的那次会把前一次的回调挤掉。
+  - 📚 文档同步：[`docs/api/README.md`](docs/api/README.md) §7 补 `PRESENCE` / `TYPING` 帧格式与口径要点、
+    §1 的 `at-collaboration` 行补 `presence/watch` 与 `typing` 两个端点（含三态语义、限流额度与错误码）；
+    [`docs/development/joint-debug-prep.md`](docs/development/joint-debug-prep.md) 新增 **S16-h** 联调步骤
+    （含「红点 ≠ 断线」「订阅 2min 不续订即失效」「Redis 停掉仍回成功并降级 `OFFLINE`」三条反例），
+    并把 S16-d 的帧清单补上 `PRESENCE` / `TYPING`。
+
+- 👥 **群聊从「有入口、无能力」变为可用：补齐建群闭环**（`sql/V14` + `ChatGroupService` + 聊天弹窗）。
+  在此之前 `sys_group` / `sys_group_member` 只被**读**——发送前校验「是不是成员」、投递时按成员写扩散，
+  **全系统没有任何创建群组的入口**；于是新建会话弹窗的群聊分支只能让用户手填一个群组 ID，
+  而这样的群组永远不存在。群聊的故障不是「某个操作失败」，而是**入口成死路**：对任何人都走不通。
+  - 🗄️ `sql/V14__chat_group_permission_points.sql`：会话菜单根节点 `chat` + 新增权限点
+    **`chat:group:create`**，授 SUPER_ADMIN / DEPT_ADMIN / USER，**不授 AUDITOR**
+    （建群写 `sys_group` / `sys_group_member` 并决定后续消息可见范围，与审计员「权限锁定只读」冲突）；
+  - 🔐 `POST /api/v1/chat/groups`（`ChatController#createGroup`，挂 `@RequiresPerm("chat:group:create")`）：
+    入参 `{name, memberIds}`，`memberIds` 按**受邀者**理解、不含创建者——服务端把登录人写为群主并自动入群
+    （先剔除自己再去重），使「我建的群我居然不在里面」在数据层不可能发生；逐个校验受邀成员为**可用用户**
+    （与单聊发送前同一把尺子，否则会造出「名字挂在群里、却永远读不到消息」的僵尸成员）；
+    **建群 + 群主入群 + 受邀者入群在同一事务**，失败整体回滚——若只落群行会得到「没有成员的群」，
+    它的会话任何人都发不进去（含群主自己），前端表现为「建群成功但一发消息就 1012」，比建群失败更难排查；
+    成功回 `ChatGroupVO`，**返回的 `id` 就是群聊会话的 `targetId`**，前端据此直接进会话、不必等会话列表刷新；
+  - 📋 `GET /api/v1/chat/groups`（**我加入的群**，登录即用、不挂权限点）：只返回登录人 `sys_group_member`
+    里的生效群并聚合成员数；若加权限点，默认角色拿不到就会表现为「建完群却看不到群」，
+    把可用性事故伪装成权限配置问题；
+  - 🔢 新增错误码 **1031**（无有效受邀成员，含「只填了自己」）/ **1032**（总人数含群主超
+    `SysGroup.MAX_MEMBERS`(500)）/ **1033**（受邀成员不存在或已停用，**不逐位回报是哪一个**——
+    那会把建群端点变成账号存在性枚举器）。三者均属**提交被拒**（HTTP 400、会话仍然有效）：
+    前端不得清令牌 / 跳登录，建群弹窗须留在原地改条件重试；
+  - 🖥️ 前端 `web/src/pages/chat/index.tsx`：弹窗「群聊」分支由**手填群组 ID** 改为**群名 + 选成员建群**，
+    建完直接进入会话；成员选择走两条路径并归一到同一形状（`ChatTarget`）——管理员用用户检索
+    （`system:user:list`），非管理员用「填登录账号 → 服务端解析」（与单聊同一条 `/targets/resolve` 路径，
+    账号打错当场提示，不必等点了「发起」才被拒）；另补「我加入的群」入口（**选中即进入该群会话、不发消息**
+    ——群聊的会话标识由 `sys_group` 独立存在、不依赖消息推导），补回手填 ID 被去掉后丢掉的能力；
+    首条消息对**建群**仍必填：被拉进群的人正是靠这条消息第一次看到这个群；
+  - 🚫 无 `chat:group:create` 时**整个「群聊」类型都不渲染**（隐藏，不是置灰）——该分支下每个动作都以建群
+    为前提，留下一个必然失败的入口只会重演本次要修的这个问题。前端显隐不构成安全边界，
+    强制校验在后端注解（见 [frontend-permission-map.md](docs/development/frontend-permission-map.md)）；
+  - 🔧 `ChatService` 会话列表**解析群聊群名**：原先群聊恒 `targetName=null`、前端回落「群聊 #id」
+    （D-11 在会话列表侧的残留）；查不到群记录时仍**不丢会话**——宁少一个名字，不少一个会话；
+  - 🧪 测试：后端新增 `ChatGroupServiceTest` / `ChatGroupMemberLimitTest`（断言建群成员上限与投递侧
+    `MAX_FANOUT_RECIPIENTS` 同源），三个既有 `ChatService*Test` 补 `SysGroupMapper` 替身，**45 例**全绿；
+    前端新增 `chat/endpoints.test.ts`（端点与权限点的镜像契约——路径前缀写错只会表现为 404 或入口消失，
+    没有任何编译期提示）与 `chat/api.test.ts`（建群**不静默**、我加入的群**静默**且把 `null` 归一成空数组、
+    19 位雪花 ID 全程保持字符串），前端全量 **634 例**全绿；
+  - 📚 文档同步：[`docs/api/README.md`](docs/api/README.md) §1 `at-collaboration` 行补两个端点并收口
+    D-11 残留、[`docs/api/error-codes.md`](docs/api/error-codes.md) 补 1031~1033 三行与 HTTP 400 归类、
+    [`docs/development/frontend-permission-map.md`](docs/development/frontend-permission-map.md) 补会话域权限点行
+    与「隐藏而非置灰」的显隐口径、`web/src/utils/result.ts` 显式登记 1031~1033 为**策略 E**
+    （不登记会按首段数字降级成策略 D——同样不跳登录，但语义从「请修正后重试」变成「拒绝」）。
+
+- ↩️ **会话消息支持「2 分钟内撤回」与「引用回复」**（`sql/V15` + `ChatService` + 前端聊天页 / 即时通讯抽屉）。
+  此前消息发出去就改不了、也没法针对某条说话：发错人 / 发错内容只能补一句「上面那条作废」，
+  别人问「你是说哪句」也无从指认。本次为消息表补两组列（撤回状态 + 引用快照），并新增撤回端点与撤回帧：
+  - 🗄️ `sql/V15__chat_message_recall_quote.sql`（**纯增量**）：`sys_notify_message` 补 `recall_status` / `recall_time`
+    与引用快照三项 `quote_client_msg_id` / `quote_sender_user_id` / `quote_content`，并新增索引
+    `idx_sender_client (sender_user_id, client_msg_id)`。**撤回是「整条逻辑消息」的动作，不是「某一行」的动作**：
+    写扩散下一条消息落 N 行、各行 id 不同（单聊的 `chat_target_id` 还互指对端），只有
+    `(sender_user_id, client_msg_id)` 全局一致——按 id 撤只会撤掉自己那一行，表现为「我撤了，他还能看到」；
+  - 🧱 **`recall_status` 必须独立成列，不能靠「content 清空」表达撤回**：空正文是合法状态
+    （文件 / 审批类消息的展示文案可为空），以空串判定会把正常消息渲染成「已撤回」；撤回时置位与清正文
+    一起做，但**判定只看标记**（前端 `isRecalled` 同理）；
+  - 🔐 `POST /api/v1/chat/messages/recall`（`ChatController#recall`，`clientMsgId` 走 Query）：事务内按
+    `(sender_user_id, client_msg_id)` 批量置位 + 清正文，提交后向**该消息的全部参与人**（含撤回者自己的其他端）
+    推 `CHAT_RECALL` 帧；带 `@RateLimit`（60s / 30 次）。**仅发送人本人、仅 2 分钟窗口内**
+    （`ChatService.RECALL_WINDOW`，**不落库、不建列**——窗口是判定规则而非数据事实，留一行「窗口值」在库里
+    只会多一个会漂移的副本）；
+  - 🔢 新增错误码 **1034**（超窗：**终态错误**，重试不会有不同结果，前端应就地提示并撤下撤回入口）/
+    **1035**（消息不存在 / 非本人发送：四种情况合并成一个码，分开报会给出「这条幂等键是否存在」的探测面）/
+    **1036**（引用目标不在本会话或已被撤回）；
+  - 📡 新增 `CHAT_RECALL` 帧（`WsProtocol.TYPE_CHAT_RECALL` + `ChatRecallVO`）：**刻意不复用 `CHAT` 帧**——
+    后者的语义是「来了一条新消息」，重推会被客户端按新消息插流，未读数与会话摘要各多算一次；撤回不产生新消息，
+    帧语义必须与之一致。载荷带 `clientMsgId`（**匹配键**，客户端只有它能跨端指认一条消息）/ `senderUserId`（谁撤的）/
+    `chatScope + chatTargetId`（**本接收人视角**的会话定位，与 `CHAT_READ` 同一换算口径，客户端须比对当前会话后再改）/
+    `recallTime`；与 `CHAT_READ` 一样是**加速通道**，真值在库里，丢了只表现为「重新拉历史后才看到已撤回」；
+  - 📎 **引用存「快照」而不是「外键」**：`ChatSendDTO.quoteClientMsgId` 非空即为引用回复，服务端写入前校验
+    目标在同一会话内且未撤回，并把**被引用消息的发送人 + 正文**（按码点截断至 200）写进本次发送的每一行。
+    冗余的理由：被引用消息随后被撤回时正文已清空，若回查原消息，引用块会在几秒钟后集体变空白——
+    用户看到的是「引用了一条空消息」；
+  - 🖥️ **前端纯函数层**：新增 `web/src/services/chat/quote.ts`（`toQuoteDraft`——已撤回或无幂等键的消息
+    构造不出草稿，右键菜单里「引用」项的显隐**直接由它决定**，不另写一套判断，免得两处口径漂移）；
+    `services/chat/messages` 三则（`RECALL_WINDOW_MS` 2min + `RECALL_CLOCK_TOLERANCE_MS` 30s 钟差容忍 /
+    `isRecallable` / `applyRecall` 幂等收敛且未命中返回原数组 / `markConversationRecalled` 补左栏摘要）；
+    `isRecalled` 只看 `recallStatus`，`messageSenderLabel` 供引用块与撤回占位共用；新增 `CHAT_RECALL` 帧的
+    防御式解析（脏帧静默丢弃，宁可不打这次标记也不崩掉聊天页）与独立事件订阅（`wsStore.subscribeRecall` +
+    `useWebSocket({ onRecall })`），**不混进消息流、不动未读**；
+  - 🖱️ **右键气泡弹菜单（引用在前、撤回在后）**：新增 `components/ChatMessageMenu`（`Dropdown` **直接克隆 children**
+    而不是再包一层 `div`——多包一层会让百分比宽度被二次计算，右键范围与气泡对不上）、`components/ChatMessageQuote`
+    （引用块，取服务端快照，**不回查原消息**）、`components/ChatQuoteBar`（输入框上方的「正在引用」条 + 取消）；
+    撤回项**只对自己发的、且 2 分钟内的消息出现**，别人发的消息没有该项；
+  - 🛡️ **撤回「先发请求、成功后再改本地」**：撤回成功的表现是正文永久消失，本地先改而服务端拒绝
+    （1034 超窗 / 1035 不是你的消息）时原文已找不回来，只剩一个与事实不符的「已撤回」；反过来的代价只是几百毫秒
+    等待，而这期间 `CHAT_RECALL` 帧往往比响应先到（与本地应用走同一条幂等收敛规则），用户感觉不到；
+  - 🧭 **时间窗的权威判定在服务端**：前端 `isRecallable` 只控制菜单显隐（含 30s 钟差容忍，避免误藏入口），
+    越窗点击仍按 1034 提示而不是静默失败；**切换会话即清空引用草稿**（留着会让下一条消息被误挂到另一个会话的引用上，
+    服务端也会以 1036 拒绝，但那已经是发出去之后的事了）；发送失败时**保留**引用草稿，让用户改完正文直接重试同一句引用；
+  - 🧪 测试：后端新增 `ChatServiceRecallTest`**14 例**（批量翻转全部行 + 每个接收人视角各推一帧、群聊逐个成员、
+    超窗拒绝、窗内放行、未知 / 他人消息拒绝、重复撤回幂等、并发先手不报错、空幂等键拒绝，以及引用的
+    快照写全行 / 普通消息不写 / 跨会话拒绝 / 已撤回拒绝 / 目标不存在拒绝 / 按码点截断），
+   并把 `ChatRecallVO` 登记进 at-bootstrap 的 `PlatformIdJsonContractTest`（`senderUserId` / `chatTargetId`
+   要与前端字符串形式的会话键比对，漏标会让 `chatTargetId` 被舍入后匹配不上窗口）；
+    前端新增 `services/chat/quote.test.ts` **5 例** + 聊天页「右键撤回与引用」**9 例** +
+    三个新组件的组件级用例 **12 例**（`ChatMessageMenu` 6：两项顺序 / 撤回项 danger / 各方向单独可用 /
+    两项都不可用时不弹空菜单 / 两个入口不串台；`ChatMessageQuote` 3：两行结构 / 摘要原样渲染不截断 /
+    空摘要不塌成空白；`ChatQuoteBar` 3：可读的取消入口 / 取消回调 / 发送中禁用），
+    并在 `messages.test.ts`（30 例）/ `types.test.ts`（18 例）/ 协议契约 / `ws-client` 事件路由 /
+    `api.test.ts` 端点非静默处补相应断言；全量前端单测 **678 例**（62 个文件）全绿；
+  - 📚 文档同步：[`docs/api/README.md`](docs/api/README.md) §7 补 `CHAT_RECALL` 帧格式与四个口径要点、§1 的
+    `at-collaboration` 行补 `POST /api/v1/chat/messages/recall` 与 `quoteClientMsgId`、VO 新增字段；
+    [`docs/api/error-codes.md`](docs/api/error-codes.md) 补 1034~1036 三行 + 策略块 + HTTP 400 归类
+    （`1031~1036`）；`web/src/utils/result.ts` 登记 1034~1036 为策略 E / `BAD_REQUEST`。
+  - 🎛️ 顺带把聊天输入框工具栏的顺序调为**表情在前、文件在后**：`tools` 插槽此前整体排在表情按钮之前，
+    与「先内容、后载体」的直觉相反（表情是正文的一部分，文件是另一条通道）。
+
+- ⚙️ **群聊支持「群设置」：改群名 / 邀请成员 / 移除成员 / 退出群聊 / 解散群聊**
+  （`sql/V16__chat_group_manage_permission_points.sql` + `ChatGroupService` + `web/src/components/ChatGroupPanel`）。
+  V14 只解决了「群怎么建」——建完即冻结：改不了名、拉不进人、移不掉人、也解散不了，
+  而 `sys_group_member` 又是发送与历史拉取的**唯一**授权依据，成员关系一旦建错就只能重建一个群。
+  本次把群关系的完整生命周期补齐（`ChatController` 六个端点 + 四个权限点）：
+  - 🔐 **四个权限点与建群同一条授权线**（`chat:group:update / invite / remove / dissolve`，均**不授 AUDITOR**，
+    理由同建群：写 `sys_group_member` 就是决定后续消息可见范围，与审计员「权限锁定只读」冲突）；
+  - 🧭 **双授权线：权限点（`1003`）与群内身份（`1038` / `1041`）正交**，必须同时成立。权限点论
+    「这个账号有没有群管理这项功能」，身份论「我在**这个群**里是什么身份」——功能给了、身份不够照样拒绝。
+    改名 / 邀请要求群主或管理员，移除 / 解散**仅群主**（管理员也不满足）；
+  - 🧾 `GET /groups/{groupId}`（群详情）与 `POST /groups/{groupId}/quit`（退群）**不挂权限点**：
+    前者的越权面由「我是成员」堵住（非成员回 `1012`），后者作用对象恒为登录人本人——加权限点只会把
+    「建了群却看不到群资料 / 退不了自己」伪造成权限配置问题；
+  - 👑 **`ChatGroupDetailVO.ability` 由服务端算好**（`canRename / canInvite / canRemoveMember / canDissolve / canQuit`），
+    前端据此显隐而**不自行推断「我是不是群主」**：登录态里没有可信的用户主键，推断必然是错的；服务端按
+    `sys_group.owner_user_id` + `member_role` 实时算出，**不落第二份「谁是群主」的副本**；
+  - 💀 **`1039`：群主不能退群，也不能被移除**（含「群主移除自己」）。这两条路都必须堵死——都会造出一个
+    **没有所有者的群**，此后无人能改名 / 邀请 / 移除 / 解散，群变成只能发消息的死结构；群主想离开只能先解散；
+  - 🧟 **移除后重邀必须「复活」原成员行，而不是插入新行**：唯一键 `uk_group_user(group_id, user_id)`
+    **不含 `deleted`**，`@TableLogic` 只改标记、不释放唯一键，直接 insert 会撞键；沿用 `UserRoleMapper` 的
+    `markDeleted / markRestored` 口径。邀请对「已在群者」**幂等跳过**（全员已在群仍回 200 + 当前详情，
+    报「重复邀请」会让批量邀请里的其他人白等）；
+  - 🧯 **解散先清全体成员关系、再停群行**：反过来的中间态是「群已停用、成员行仍在」，而发送侧只认成员行，
+    并发下能往一个已解散的群写进消息；先落安全态；
+  - 🔢 新增错误码 **1037**（群不存在或已解散，404）/ **1038**（群内身份不足，403）/ **1039**（群主不能退群或被移除，403）/
+    **1040**（目标不是该群成员，404）/ **1041**（仅群主可执行，403）。1037 合并「不存在」与「已解散」——分开报
+    会给出「这个群 ID 曾经存在吗」的探测面；五个码均属**请求被拒**（会话仍然有效），前端不得清令牌 / 跳登录；
+  - 🖥️ 前端 `web/src/components/ChatGroupPanel`：**一个面板、两处入口**（`/chat` 页头 + 即时通讯抽屉头部），
+    按钮显隐 = **权限点 ∧ `ability`** 的合取——只看其一都会做出「按钮在、点了必失败」的界面。
+    危险动作（移除 / 退群 / 解散）一律走 `useDangerConfirm` 弹窗（行内气泡易误触，解散标 `critical`）；
+    邀请按成员上限提前拦一道，选人沿用建群的两条路径并归一到 `ChatTarget`；写接口**回最新详情**并据此刷新面板
+    （省一次回读，也避免「写完之后读到的还是旧值」）；
+  - 🧪 测试：后端新增 `ChatGroupManageServiceTest`（邀请的复活 / 幂等 / 超限 / 身份不足、移除的 `1041` / `1040` / `1039`、
+    退群、解散以 `InOrder` 断言**先清成员后停群行**）；前端新增 `ChatGroupPanel/index.test.tsx` **7 例**
+    （权限点与 `ability` 的合取两侧、改名回传、退群二次确认、已在群者不进待邀请列表、群主行无「移除」），
+    并补 `ChatDrawer` 测试里的 `useAccess` 替身；
+  - 📚 文档同步：[`docs/api/README.md`](docs/api/README.md) §1 `at-collaboration` 行把「不做成员增删」
+    改写为六个群管理端点及其授权口径、[`docs/api/error-codes.md`](docs/api/error-codes.md) 补 1037~1041 五行 +
+    双授权线说明块 + 附录 A 的 403 / 404 归类、
+    [`docs/development/frontend-permission-map.md`](docs/development/frontend-permission-map.md) 补七行面板能力
+    与「权限点 ∧ 身份」显隐口径、`web/src/utils/result.ts` 显式登记 1038 / 1039 / 1041 为**策略 D**、
+    1037 / 1040 为**策略 E**（不登记会按首段数字降级）。
 
 ### 🔄 Changed（变更）
 
@@ -726,6 +1004,98 @@
 
 ### 🐛 Fixed（修复）
 
+- 🖼️ **头像「传完既没提示、也不出预览」，根因不在头像功能而在二进制通道读响应体的方式**：
+  `uploadBinary` 把 `xhr.responseType` 设成 `'json'`（响应体是 `Result`），而 `readBinaryBody`
+  仍去读 `xhr.responseText`——规范只允许在 `responseType` 为 `'' / 'text'` 时读它，其余取值下
+  **必抛 `InvalidStateError`**（Chrome / Firefox / Safari / jsdom 行为一致）。于是「后端已 200、
+  图已落库」的每一次上传都在读响应体那一步炸掉，被上层当成解析失败：用户看到的就是「点了没反应、
+  没有成功提示」，`avatarUrl` 也拿不到、预览自然不更新。修复：`'json'` 一律取浏览器已解析好的
+  `xhr.response`（响应体不是 JSON 时为 `null`，交由 HTTP 状态兜底），只有文本型才读 `responseText`。
+  测试：`request.test.ts` 的假 XHR 改为**与浏览器同语义**（`json` 下读 `responseText` 抛
+  `InvalidStateError`、只填已解析的 `response`——这正是原用例假绿的原因），新增两条用例钉住；
+  **已验证旧实现下必然失败**，修复后 25 例全绿。真机复现与验证：Playwright 开真实浏览器，
+  把 `admin` 头像置空后走列表「编辑 → 上传头像」——旧写法在页面内直接执行即得
+  `THROWS InvalidStateError`（与线上病症同源），修复后弹出「头像已更新」且预览 `img` 的
+  `naturalWidth=1`（图确实加载出来了）。
+- 💬 **即时通讯抽屉里自己刚发的消息会变成两个气泡**：抽屉的消息流一直是**追加**维护
+  （发送响应 `[...prev, sent]`、实时帧 `[...prev, msg]`），可自己发的消息本来就有**两条到达路径**——
+  HTTP 发送响应，以及服务端把这条帧**原样推回**（推送覆盖该用户全部连接），同一条消息因此被画两遍。
+  `/chat` 页没这个问题，因为它走 `mergeMessage`（同时认 `id` 与 `clientMsgId`）。修复：抽屉改为复用
+  共用规则，去重规则只留一份而非两处各写一份（顺带获得按 `id` 排序：迟到的帧落到正确位置，
+  不再永远挂在流末尾）。测试：新增 `ChatDrawer 消息合并` 用例走真实链路（点发送 → 注入服务端推回的
+  同一条帧 → 断言只有一个气泡），**已验证在旧的追加实现下失败**
+  （`expected [<span>, <span>] to have a length of 1 but got 2`）。
+- 💬 **顺带收敛：抽屉的会话列表侧也不再自研一份规则**：抽屉原本自己写了一份 `applyIncoming`——
+  不排序（新消息到了会话不往前挪）、不判乱序（迟到的旧帧会把摘要改回旧文案）、列表里还没有的会话
+  就地插一条缺 `targetName` 的壳（先显示「用户 #id」再跳真名）；`/chat` 页走的是
+  `applyIncomingToConversations`（含乱序保护与排序），于是同一件事有了两份实现。修复：抽屉改取共用
+  规则，并补上「列表里还没有这个会话 → 重拉一次会话列表」而不是插壳。共用逻辑随之下沉到领域层
+  `src/services/chat/messages.ts`（与 `readReceipt.ts` / `fileCard.ts` 同层），组件不再从 `pages/`
+  反向取逻辑——模块与它的测试一并从 `pages/chat/` 迁到 `services/chat/`。测试：新增
+  `ChatDrawer 会话列表` 三个用例（新消息把该会话顶到最前且摘要更新、迟到的旧帧不让摘要回退、
+  未知会话重拉列表而**不**插壳），**已验证三者在旧的自研实现下全部失败**（分别卡在「列表不排序」
+  「旧帧覆盖摘要」「不重拉列表」三处断言上）。
+- 💬 **抽屉的置读口径也对齐会话页：只对别人发来的置读，置读后回正顶栏角标**：会话页的规则有两条——
+  `if (!isMine(incoming))` 才 `markChatRead`（自己发的会被推送原样收回来，多标签页里给自己置读
+  没有任何意义），以及 `affected > 0` 时 `wsStore.refresh()`（未读数的唯一事实源是 `wsStore`，
+  少这一拉顶栏红点就停在旧数字上）。抽屉两条都不满足：对**每一条**帧（含自己发的）都置读，
+  且从不 refresh。修复后抽屉的两处置读（进入会话、会话正开着收到帧）与会话页逐项一致。
+  测试：新增 `ChatDrawer 已读口径` 三个用例（别人发来的帧 → 置读 + 回正角标；置读没改到行 → 不白拉
+  一次未读快照；自己发的帧 → 不置读但消息照常合并），**已验证旧口径下失败 2 例**——「别人发来的帧」
+  卡在 `refresh` 从未被调用（`expected "vi.fn()" to be called 1 times, but got 0 times`）、
+  「自己发的帧」卡在置读仍被调用（`expected "vi.fn()" to not be called at all, but actually been
+  called 1 times`）；第三例是「别过度刷新」的护栏，旧口径下本就通过。聊天域 10 个测试文件 154 例
+  通过，`tsc --noEmit` 与 `biome lint` 均干净。
+- 💬 **「发起会话」对话框把「第一条消息」标成可选，留空提交后会话在左侧列表里根本不出现（刷新即消失）**：
+  会话采用**写扩散**模型——只有发出首条消息才会落 `sys_notify_message` 行，而会话列表是按消息行分组推导的，
+  故「空会话」压根不成立；但弹窗文案写着「可以留空，创建后再输入」，校验也放行空内容，
+  于是用户以为建好了、点进空会话也无处可写（列表里没有入口）。修复：**首条消息改为必填**——
+  文案去掉「（可选）」与「可以留空，创建后再输入」，空内容提交就地提示 `chat.new.content.required`，
+  从源头杜绝「以为建了其实没建」。顺带把「非管理员发起会话」的目标输入拆分为
+  私聊（输入登录账号 + 内联解析反馈）与群聊（输入群 ID）两条渲染分支，并让解析请求做在途去重、
+  输入变更即失效，避免旧响应覆盖新输入。
+  首条消息的输入框**换成聊天界面那个 `ChatComposer`**（发送按钮在框内、Enter 发送 / Shift + Enter
+  换行、带表情面板），弹窗页脚随之只留「取消」——发起动作与聊天页共用同一条代码路径，
+  不再是一个另写的裸 `TextArea` 加一个页脚按钮（同一动作两个入口，改文案还必然漂移）；
+  `ChatComposer` 新增 `bare`（无外壳）样式开关，供弹窗内嵌使用，去掉为「消息流 ↔ 输入区」
+  设计的内边距与上分隔线。正文长度上限仍为 1000，唯去掉 `showCount`
+  （计数器与「框内工具栏」这套布局会互相挤位，而首条消息几乎用不到计数）。
+- 🧑💻 **聊天头像前后不一致：列表里「系统管理员」是「系」，一点进会话就变成「用」**：
+  详情态的会话只是一个**定位键**（点击列表时只取了 `scope + targetId`，名字被留在列表里），
+  而详情态的标题与消息头像**各查各的**——标题做了「回查会话列表补名字」，头像直接拿裸定位取首字，
+  于是回落成「用户 #<雪花ID>」的首字「用」，与同屏标题自相矛盾。
+  修复：新增 `resolveSessionDisplay`（会话名回填的唯一出口）并约定**详情态标题与头像必须取同一个展示对象**；
+  抽屉点击时把 `targetName` 随定位一起带进详情，不再依赖回查（深链、列表尚未加载完的空窗也能即刻正确）；
+  聊天页里重复的内联回填一并收敛到该函数。
+  测试：新增 `ChatDrawer` 头像一致性渲染测试（**已验证在旧实现下失败**，避免写出永远通过的假回归）
+  与 `resolveSessionDisplay` 单元测试，聊天域 57 项测试通过，`tsc --noEmit` 与 `biome lint` 均干净。
+- 📄 **别人发来的文本文件预览被拒：提示「该类型无法在线预览，而发送方未允许下载」，
+  可同一个文件在发送方自己的文件域里却能正常预览**：根因是取件层把
+  **「可预览」当成了「可交给浏览器按 MIME 渲染」**。`ChatAttachmentService#issueTicket` 原先用
+  `FileTypePolicy.inlineRenderable(ext)` 填 `previewSupported`，而该方法是**安全边界**
+  （只认「PDF + 光栅图」），于是 `.txt` / `.md` / `.json` / `.xml` / `.csv` / `.log` / `.sql`
+  这类文本被下成 `previewSupported=false`，前端照此弹提示；取流层对文本同样会以
+  「不支持在线预览」拒绝（实测附着 `测试.txt` / `usage_mode=1`）。
+  修复：新增 `FileTypePolicy#previewable(ext) = inlineRenderable || previewableText`
+  把**产品口径**（用户能不能在线看到）与**安全口径**（能否让浏览器按 MIME 渲染）显式分开，
+  `previewSupported` 改用它——该方法<b>只用于能力告知，绝不用于判定能否内联</b>。
+  同时新增文本专用下发通道 `FileDownloadService#streamTextPreview`：MIME **服务端硬编码**
+  `text/plain;charset=UTF-8` + `X-Content-Type-Options: nosniff`（内容里写满 `<script>`
+  也只会被当可见字符显示）、`Content-Disposition: inline`、`private, no-store`，
+  读取上限 `previewTextMaxBytes`（与文件域文本预览同上限），截断时回 `X-Preview-Truncated`
+  以便区分「文件就这么长」与「被截断」；该通道刻意**不支持 `Range`**——按字节分段会把多字节
+  字符切断，反使每段都解码失败。
+  顺带修掉一处编码隐患：把文本解码抽成 `TextPreviewDecoder`（**编码判定只此一份**），
+  文件域（JSON 返回字符串）与取件层共用同一实现，严格 UTF-8 → 严格 GBK → ISO-8859-1 兜底，
+  并带「末尾最多回退 3 字节」重试以区分「内容被截断」与「编码不对」——否则 GBK 文本在浏览器里
+  会整篇乱码，也会出现「同一文件两处预览编码不一致」的诡异差异。
+  **安全边界未放宽**：`inlineRenderable` 对 `txt` / `xml` / `html` / `svg` 仍为 `false`；
+  Office / 压缩包 / 可执行 / 网页类仍无预览路径，且**绝不降级为下载**（降级等于把预览票变成
+  下载票，绕过「仅预览」档位）。契约层面未新增端点 / 字段 / 错误码，仅 `ChatAttachmentTicketVO#previewSupported`
+  的语义扩为「是否支持在线预览」；分享取件侧（访问类型 `preview`）的同类误拒一并修复。
+  测试：新增 `FileTypePolicyPreviewBoundaryTest`（46 项，含**反方向**守住「文本可预览但绝不可内联」）
+  与 `FileDownloadServiceTextPreviewTest`（7 项：UTF-8 / GBK / 截断 / 多字节截断边界 / 安全响应头 /
+  仍需拒绝的 Office·压缩包 / 内容缺失显式失败），`at-file` 全量 98 项测试通过。
 - 💬 **会话「发送消息」恒定报「目标用户不存在或不可用」**：两层缺陷叠加，且**下层一直被上层挡住**。
   上层是 **19 位雪花 ID 当 JSON number 过线**——`at-collaboration` 的 `ConversationVO` 与
   `NotifyMessageVO`（WS 实时帧）里的会话定位 ID 未标 `@JsonSerialize(using = ToStringSerializer.class)`，

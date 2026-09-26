@@ -11,6 +11,22 @@ target/
 # 历史单体代码归档（不参与 AntTransfer 构建，控制上下文体积）
 archive/
 
+# ============ 前端本地依赖与构建缓存（必须排除） ============
+# ⚠️ web/node_modules 实测约 13.5 万个文件 / 1.3 GB。后端镜像只需要 server/
+#    下的 Java 源码，前端依赖与镜像构建毫无关系；一旦漏排，每次 docker build
+#    都要把 GB 级上下文打包传输，构建会长时间卡在 transferring context，
+#    且几乎没有有效产出。
+web/node_modules/
+**/node_modules/
+
+# umi 运行时缓存与前端产物：同样与后端镜像无关
+# （web/dist 是给 Nginx 托管的静态产物，不由本镜像承载）
+web/.umi/
+web/.umi-production/
+web/dist/
+**/.umi/
+**/.umi-production/
+
 # 本地日志 / 临时文件
 *.log
 .DS_Store

@@ -45,6 +45,21 @@ java -Xms256m -Xmx512m -jar server/at-bootstrap/target/at-bootstrap-1.0.0-SNAPSH
 
 ### 方式 B：🐳 Docker（推荐）
 
+> ⚡ **构建提速（云服务器必读）**：镜像构建阶段会在容器内执行 `mvn package`。不做预热的话，
+> 容器要从零下载全部依赖，云服务器上通常十几分钟，且中途任一网络抖动即整段失败。做法是把
+> 开发机已拉好的仓库带上去：
+>
+> ```powershell
+> pwsh deploy/docker/scripts/New-MavenBundle.ps1     # 开发机执行，导出依赖包
+> scp deploy/docker/m2/m2-repository.tar.gz ubuntu@<server>:<项目目录>/deploy/docker/m2/
+> ```
+>
+> 包存在时 `Dockerfile` 会先解压到镜像内 `/root/.m2/repository` 再 `mvn package`，容器内只需
+> 补齐个别缺失构件；包不存在时自动跳过、退化为在线解析（CI 即走此路径，构建不会失败）。
+> 另：`.dockerignore` 已排除前端 `web/node_modules`（13.5 万文件 / 1.3 GB），否则每次构建都要
+> 传输 GB 级上下文。详见 `deploy/docker/m2/README.md` 与 `deploy/docker/README.md`。
+
+
 ```bash
 # 完整环境：MySQL + Redis + server
 docker compose up -d --build        # 可选变量见 .env.example
