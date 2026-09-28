@@ -41,6 +41,13 @@ export default {
   'component.avatar.nickname': 'Nickname',
   'component.avatar.roles': 'Roles',
 
+  // Self-service avatar change in the profile dialog (takes effect on upload)
+  // Pre-check failures reuse system.user.avatar.tooLarge / typeInvalid: checkAvatarFile is a
+  // shared pre-check named after the system domain, so its keys are not duplicated here
+  'component.avatar.avatar.upload': 'Upload avatar',
+  'component.avatar.avatar.hint': 'PNG / JPEG / GIF / WebP, up to {max}',
+  'component.avatar.avatar.updated': 'Avatar updated',
+
   // Self-service password change dialog (signs out every session on success)
   'component.avatar.changePassword.title': 'Change password',
   'component.avatar.changePassword.alert.title': 'You will be signed out after changing',

@@ -30,4 +30,17 @@ export const AUTH_ENDPOINTS = {
    * {@code token_epoch + 1}，连本次请求用的 access token 也当场作废。</p>
    */
   changePassword: '/api/v1/auth/password',
+
+  /**
+   * 本人更换头像（multipart，字段名 {@code file}；**上传即生效**）。
+   *
+   * <p>路径是 {@code /v1/users/me/avatar} 而不是 {@code /v1/system/users/{id}/avatar}：
+   * 前者按 docs/api/README.md §1 的划分属「本人资料自助」，目标用户来自令牌，
+   * <b>无权限点要求</b>；后者是管理员改他人头像，需 {@code system:user:update}。
+   * 前端不得把两者混用——用管理端点改自己，会把「改头像」这件事错误地绑上管理权限。</p>
+   *
+   * <p>注意与「头像直出」{@code GET /v1/users/{id}/avatar}（免登录、只回图片字节）区分：
+   * 本端点是写路径、须持 access token、回 JSON 摘要。</p>
+   */
+  myAvatar: '/api/v1/users/me/avatar',
 } as const;

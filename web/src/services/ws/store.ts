@@ -85,7 +85,9 @@ export type TypingListener = (typing: WsTypingPayload) => void;
  * 就会一直显示旧图（直到刷新）。所以订阅方应当<b>立刻</b>用帧里的 `avatarUrl` 换图，
  * 而不是等下一次拉取。真值仍在 `sys_user.avatar_url`，丢了只是本端晚一步。</p>
  *
- * <p>订阅方无需按 `userId` 过滤：该帧只推给变更者本人的连接（见 `protocol` 里载荷注释）。</p>
+ * <p><b>订阅方必须按 `userId` 区分</b>：该帧是<b>广播帧</b>（推给所有在线端），
+ * 「写全局头像覆盖表」对所有人成立，但「写我自己的登录态」只在
+ * `profile.userId` 命中当前用户时才可以（见 `protocol` 里载荷注释与 `components/ProfileSync`）。</p>
  */
 export type ProfileListener = (profile: WsProfilePayload) => void;
 

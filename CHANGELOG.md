@@ -738,6 +738,32 @@
     [`docs/development/frontend-permission-map.md`](docs/development/frontend-permission-map.md) 补七行面板能力
     与「权限点 ∧ 身份」显隐口径、`web/src/utils/result.ts` 显式登记 1038 / 1039 / 1041 为**策略 D**、
     1037 / 1040 为**策略 E**（不登记会按首段数字降级）。
+- 🖼️ **本人自助更换头像（`POST /api/v1/users/me/avatar`）与「头像一变、全端立刻换图」**（[AT-DIFF-11](docs/development/AT-DIFF-todos.md#at-diff-11头像双写入口与-profile-帧广播)）：
+  - 🔐 **新增独立通道，而不是复用管理面路径**：`at-auth` 新增 `UserSelfController` + `SelfProfileService`，
+    端点落在 `/v1/users/me` —— **不挂任何权限点**，目标 ID 恒取令牌 subject，路径里的 `me` 让「改谁」
+    不再是一个可篡改的入参（越权在结构上不可达）。不吊销会话、不触发权限重评估（换头像不参与任何授权判定）；
+  - 🧾 **审计动作分离**：新增 `OperationLog.ACTION_USER_AVATAR_SELF`（`USER_AVATAR_SELF`），
+    与管理员侧 `USER_AVATAR` 分开编码，使审计能回答「是本人自改还是管理员改他人」；两者都**不记录头像 key**
+    （地址里含可直出访问的凭据，不该在审计表长期留档）；
+  - 📡 **`PROFILE` 帧由「推给本人多端」改为全员广播**（`WsBroadcaster#broadcast`，`WsDelivery.userId=null`）：
+    产品口径是「头像一变，所有能看到它的地方立刻换图」——除本人其他标签页 / 设备外，会话对端、群成员列表、
+    用户管理列表里的这张头像也要立刻变。精确扇出需要一张「谁在关注谁」的订阅表并与群成员关系变更对账，
+    而帧载荷只有 `userId + 免登录可读的直出地址`，广播的暴露面与「让对方直接访问该 URL」相同，
+    且换头像是低频人工动作（滚动发布期间旧实例收到 `userId=null` 会按原逻辑丢弃，
+    退化为「下次拉取时刷新」，属可接受降级）；
+  - 🖥️ **前端新增全局头像覆盖表**：`services/avatar/overrides.ts`（模块级状态 + 订阅）+ `hooks/useAvatarUrl.ts`
+    + `components/UserAvatar`，把「覆盖表优先、页面数据兜底」的取值口径收敛到一处；`ProfileSync` 按 `userId`
+    分两步处理 —— **任何人**的帧都写入覆盖表，**仅 `userId` == 当前登录人**时才更新登录态
+    （否则会把自己的顶栏头像改成别人的）；`null` 覆盖值的语义是「已无头像」，必须**压掉**回落值，
+    与「本地无记录」严格区分。顶栏下拉（`AvatarDropdown`）新增换头像入口，成功后同步本地 profile / 登录态 /
+    覆盖表三处，登出时 `resetAvatarOverrides()`；`chat` 页与 `ChatDrawer` / `ChatGroupPanel` 的气泡、
+    标题、成员头像统一改走 `UserAvatar`；
+  - 🧪 测试：后端 `SecurityConfigTest` 5 例全绿（含白名单反向 + 正向双向断言）；前端全量 **765 例**通过
+    （新增 `useAvatarUrl` 用例、`ProfileSync` 补「他人帧不改登录态但写覆盖表」等契约），`tsc` 与 `lint` 通过；
+  - 📚 文档同步：[`docs/api/README.md`](docs/api/README.md) §1 前缀表 / §5 鉴权表（新增 2 行免登录与自助端点）/
+    §7 下行帧表补 `PROFILE` 帧与四个口径要点、[`system-design.md`](docs/architecture/system-design.md) §3.5 白名单红线、
+    [`frontend-permission-map.md`](docs/development/frontend-permission-map.md)、PRD §4 / §4.1、
+    [`AT-DIFF-todos.md`](docs/development/AT-DIFF-todos.md) 新增 **AT-DIFF-11** 与 **GAP-10**。
 
 ### 🔄 Changed（变更）
 
@@ -1248,6 +1274,14 @@
   且难过安全评审。现改为显式 `signWith(key, Jwts.SIG.HS256)`，验签后额外校验 JWA 算法头与预期一致
   （不一致即 `1006 TOKEN_INVALID`）；密钥统一经 `buildSigningKey` 校验 **≥ 32 字节** 后以
   `SecretKeySpec("HmacSHA256")` 构造。
+- 🖼️ **头像白名单由通配收紧为数字正则**（`SecurityConfig` 的 `BUILT_IN_PERMIT_ALL`）：头像直出读路径
+  `GET /v1/users/{id}/avatar` 原以 `/v1/users/*/avatar` 放行，而 Spring Security 的路径放行**不看 HTTP 方法**，
+  该条会连带放行写路径 `POST /v1/users/me/avatar` —— 「谁能改头像」被静默放宽成**匿名可调**。
+  现改为 `{userId:[0-9]+}`（顺带把 `/v1/users/abc/avatar` 这类注定 400 的路径挡在鉴权之前），
+  并新增回归护栏 `SecurityConfigTest#builtInWhitelist_shouldNotPermitSelfAvatarUpload`：
+  **反向**断言写路径不匹配任一白名单条目 + **正向**断言数字读路径仍匹配
+  （只做反向断言时，把整条白名单删空也会变绿）。详见
+  [AT-DIFF-11](docs/development/AT-DIFF-todos.md#at-diff-11头像双写入口与-profile-帧广播)。
 
 ## [1.0.0-SNAPSHOT] 🚧 - 开发中
 

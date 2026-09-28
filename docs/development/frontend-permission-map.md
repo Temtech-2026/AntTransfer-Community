@@ -49,10 +49,10 @@
 | 工作台 `/workbench`（web 首页） | 页面可见（待办 / 待审批 / 传输统计） | —（后端按当前登录用户收敛，无原子权限点） | 全部业务角色 |
 | （不存在）日志清除 | 任何入口都**不渲染** | 后端从不签发 `audit:log:clear` | 任何角色（含 SUPER_ADMIN）都无 |
 | 权限地图 `/permission-map` | 页面可见（我的权限点 / 角色 / 审批授权） | —（后端 `GET /v1/permission/map` 只返回当前登录用户的权限，无原子权限点） | 全部业务角色 |
-| 顶栏头像下拉（全局，`AvatarDropdown`） | 个人信息 / 修改密码 / 退出登录 | —（`GET /v1/auth/me`、`PUT /v1/auth/password`、`POST /v1/auth/logout` 均按当前登录身份收敛，**不设原子权限点**） | 全部业务角色（有登录态即可见；改密成功后服务端全端吊销，前端须清本地令牌并回登录页） |
+| 顶栏头像下拉（全局，`AvatarDropdown`） | 个人信息 / **更换头像** / 修改密码 / 退出登录 | —（`GET /v1/auth/me`、`POST /v1/users/me/avatar`、`PUT /v1/auth/password`、`POST /v1/auth/logout` 均按当前登录身份收敛，**不设原子权限点**；换头像的路径是 `/users/me`，目标 ID 恒取令牌 subject，越权在结构上不可达） | 全部业务角色（有登录态即可见；换头像成功后本端就地换图 + 写本地头像覆盖表，其他在线端由 `PROFILE` 广播帧同步；改密成功后服务端全端吊销，前端须清本地令牌并回登录页） |
 | 系统管理 `/system/users` | 页面可见（菜单） | `system:user:list` | 仅 SUPER_ADMIN |
 | 系统管理 `/system/users` | 新建用户 | `system:user:create` | 仅 SUPER_ADMIN |
-| 系统管理 `/system/users` | 编辑资料 / 调岗 | `system:user:update` | 仅 SUPER_ADMIN |
+| 系统管理 `/system/users` | 编辑资料 / 调岗 / **更换他人头像**（`POST /v1/system/users/{id}/avatar`） | `system:user:update`（且**受操作者数据范围收敛**——管理员只改得动自己可见范围内的人，与本人在 `/users/me` 自改头像不是同一条路径） | 仅 SUPER_ADMIN |
 | 系统管理 `/system/users` | 启用 / 停用 | `system:user:status` | 仅 SUPER_ADMIN |
 | 系统管理 `/system/users` | 重置口令 | `system:user:reset-password` | 仅 SUPER_ADMIN |
 | 系统管理 `/system/users` | 分配角色 | `system:user:assign-role` | 仅 SUPER_ADMIN |

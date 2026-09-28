@@ -26,17 +26,21 @@ IDE 提示（任选其一）：
 - 也可在代码中右键 → Find Usages 定位到本文档锚点。
 
 > 说明：AT-DIFF-06 / 07 / 08 / 09 为**外发分享主线落地时新识别的口径差异**，AT-DIFF-10 为
-> **审计主线落地时新识别的口径差异**，均属「已实现且未阻塞」的登记项（代码内无 `TODO` 标记，
+> **审计主线落地时新识别的口径差异**，AT-DIFF-11 为**本人资料自助（头像）落地时新登记的
+> 端点与帧口径**（含一处白名单放行面的收紧），均属「已实现且未阻塞」的登记项（代码内无 `TODO` 标记，
 > 仅本文档登记），故上表 grep 计数仍为 3 处（02/03/05）。
 
 > 另：2026-09-14 复核 `docs/prd/README.md` §4.1 后端现状时新识别 **8 项实现缺口**（**非口径差异**，
-> 属「§4 要求的动作代码里还没有」），登记在文末「🧱 后端功能缺口登记（GAP-01 ~ GAP-09）」，
+> 属「§4 要求的动作代码里还没有」），登记在文末「🧱 后端功能缺口登记（GAP-01 ~ GAP-10）」，
 > 同样不落 `TODO` 标记、同样按「整体完工后关闭」处理；其中 3 项（共享空间 / 审批端点 / 分片上传）
 > 已由 **D-5 / D-11** 覆盖，未重复登记。
 >
 > **GAP-09** 为 2026-09-20 落地「文件列表安全状态徽标」时新识别的缺口：
 > 前端已按**可选字段**实现（有则显示、无则整条不渲染），故不阻塞、也不影响正确性，
 > 仅登记「服务端补齐后即可生效」的字段需求。
+>
+> **GAP-10** 为 2026-09-29 落地「本人自助换头像」时新识别的缺口：把「个人中心」从
+> 「只有头像这一半」补记为「昵称自助仍缺」。
 
 > 发布门禁建议：进入版本收尾前，将「TODO[AT-DIFF- 为 0」纳入 checklist
 > （对应 docs/deployment/README.md 上线清单），防止带未裁决口径发版。
@@ -55,6 +59,7 @@ IDE 提示（任选其一）：
 | [AT-DIFF-08](#at-diff-08-4004-语义扩展票据失效) | `4004` 语义扩展：是否承载「一次性票据失效」 | `server/at-file/.../service/ShareAccessService.java`、`docs/api/error-codes.md` | 📝 已登记（未阻塞） |
 | [AT-DIFF-09](#at-diff-09-contentscaninterceptor-落点) | `ContentScanInterceptor` 落点：`at-common` SPI vs CE 暂落 `at-file` | `server/at-file/.../extension/ContentScanInterceptor.java` | 📝 已登记（未阻塞） |
 | [AT-DIFF-10](#at-diff-10-审计写入器同构三份) | 审计写入器同构三份：抽公共实现 vs 保持三份（实体 / Mapper 已共享） | `server/at-permission/.../service/PermissionAuditLogger.java`、`server/at-file/.../service/FileAuditLogger.java` | 📝 已登记（未阻塞） |
+| [AT-DIFF-11](#at-diff-11头像双写入口与-profile-帧广播) | 头像双写入口（本人 `/users/me/avatar` ↔ 管理员 `/system/users/{id}/avatar`）与 `PROFILE` 帧全员广播 | `server/at-auth/.../controller/UserSelfController.java`、`server/at-collaboration/.../event/CollaborationEventListener.java` | 📝 已登记（未阻塞） |
 
 ---
 
@@ -209,9 +214,36 @@ IDE 提示（任选其一）：
     后承载共享写入器；届时同步本文档与 `docs/architecture/system-design.md` 表族地图。
 - **影响面**：无正确性风险；仅「写入器代码重复度」一处内部实现口径待后续收敛。
 
+## AT-DIFF-11：头像双写入口与 `PROFILE` 帧广播
+
+- **差异 / 新增**：① **头像的写入多出一条与管理员并列的入口** —— `POST /api/v1/users/me/avatar`
+  （`at-auth`，**不挂权限点**，目标 ID 恒取令牌 subject、路径里的 `me` 使越权结构上不可达）与既有的
+  `POST /api/v1/system/users/{id}/avatar`（`at-permission`，`system:user:update` **+** 数据范围可见性）
+  **并列存在，共用同一个 `UserProfileChangedEvent` 与 `PROFILE` 帧**；两条路径**不做**「目标是自己就跳过
+  权限校验」的合并——那等于在权限校验器上开一个「参数填自己即放行」的口子（典型越权形状）。
+  ② 下行 `PROFILE` 帧的收件人集合为**全员广播**（`WsBroadcaster#broadcast`，`WsDelivery.userId = null`），
+  而 `docs/api/README.md` §7 的帧清单此前**从未登记**该帧，本次一并补录（帧表 + 「四个口径要点」）。
+- **理由（广播 vs 精确扇出）**：产品口径是「头像一变，所有能看到它的地方立刻换图」——本人多端、
+  会话对端、群成员列表、用户管理列表都在展示这张头像。要精确匹配收件人，就得维护一张「谁在关注谁」的
+  订阅表，并让它与群成员关系变更保持对账（`PRESENCE` 那套订阅集合语义不同，**不可复用**）；
+  而本帧载荷只有 `userId + 头像直出地址`（后者本就是免登录可读的公开路径），
+  全员广播的暴露面与「让对方直接访问该 URL」完全相同，且换头像是低频人工动作，不构成放大。
+- **安全边界（自动化护栏）**：头像直出读路径 `GET /v1/users/{userId}/avatar` 位于白名单，
+  该条目的 ID 段**必须是数字正则** `{userId:[0-9]+}`。改动前的写法是 `*`，而 Spring Security 的
+  路径放行**不看 HTTP 方法**，于是写路径 `POST /v1/users/me/avatar` 被同一条匿名放行顺带吃掉，
+  「谁能改头像」被静默放宽成匿名可调。回归护栏 `SecurityConfigTest#builtInWhitelist_shouldNotPermitSelfAvatarUpload`：
+  **反向断言**写路径不匹配任一白名单条目 **+** **正向断言**数字读路径仍匹配
+  （只做反向断言时，把整条白名单删空也能变绿）。
+- **兼容性**：滚动发布期间**旧实例**收到 `userId = null` 的 `PROFILE` 帧会按原「按用户扇出」逻辑丢弃，
+  表现为「那几端要等下次拉列表 / 会话才刷新」，属**可接受降级**（帧本就是加速通道，
+  真值在 `sys_user.avatar_url`）。
+- **影响面**：无正确性风险。新增 1 个端点、1 条免登录白名单条目（**收紧而非放宽**）、
+  1 个审计动作 `USER_AVATAR_SELF`（与管理员侧 `USER_AVATAR` 分开编码，使审计能区分
+  「本人自改」与「管理员改他人」）；对外契约见 `docs/api/README.md` §1 / §5 / §7。
+
 ---
 
-## 🧱 后端功能缺口登记（GAP-01 ~ GAP-09）
+## 🧱 后端功能缺口登记（GAP-01 ~ GAP-10）
 
 > **来源**：2026-09-14 以 `server/` 实际代码为准复核 `docs/prd/README.md` §4.1「实现现状核查」时，
 > 在**已落地部分中发现的缺口**。与 AT-DIFF 的区别：AT-DIFF 记的是「外部计划书 vs 已冻结契约的口径差异（待裁决）」，
@@ -242,6 +274,7 @@ IDE 提示（任选其一）：
 | [GAP-07](#gap-07全文搜索未建索引) | 检索 `keyword` 走 LIKE 模糊匹配，未建全文索引 | P1 能力 / 性能缺口 | `at-file/.../controller/FileController.java`（`NodeQuery`） |
 | [GAP-08](#gap-08轻-im-缺-提及与消息保留策略) | 轻 IM 缺 @ 提及与「消息保留 ≥ 30 天」策略 | P1 验收缺口 | `at-collaboration/.../service/ChatService.java` |
 | [GAP-09](#gap-09安全徽标所需字段未下发) | 安全徽标所需字段未下发：`watermarkEnabled` / `expireAt` | P1 能力缺口 | `at-file/.../model/vo/FileNodeVO.java`、`web/src/pages/file/components/SecurityBadges.tsx` |
+| [GAP-10](#gap-10个人资料自助仅落头像缺改昵称) | 个人资料自助仅落头像：缺「本人改昵称」端点（`PUT /v1/users/me`） | P1 能力缺口 | `server/at-auth/.../controller/UserSelfController.java` |
 
 ---
 
@@ -418,3 +451,24 @@ IDE 提示（任选其一）：
   让前端能显示「剩余 N 天」；④ 同步 `docs/api/README.md` 的 FileNode 字段表与前端类型
   （前端已按可选实现，服务端补齐后**无需改前端**）。
 - **触发时机**：安全可视化 / 合规加固期，**与 GAP-06（密级变更治理）同批**。
+
+### GAP-10：个人资料自助仅落头像（缺改昵称）
+
+- **现象**：`docs/api/README.md` §1 的前缀表把 `at-auth` 的 `/api/v1/users` 描述为
+  「本人资料 / 个人中心改昵称」，但代码里**只有换头像**（`POST /api/v1/users/me/avatar`，
+  见 **AT-DIFF-11**）：没有任何「本人改昵称 / 姓名」端点，前端也没有对应的个人中心表单。
+- **证据**：
+  - `server/at-auth` 的 `UserSelfController` 仅暴露 `/v1/users/me/avatar`（`@RequestMapping("/v1/users/me")` 下唯一方法）；
+  - 全仓无「本人自助改资料」入口：`UserAdminPort#updateProfile` 是**管理面**「管理员改他人资料」的写侧，
+    走 `system:user:update` **+** 数据范围校验（`AccessControlService#assertResourceVisibleTo`），
+    与本人在 `/users/me` 自改不是同一条路径。
+- **影响**：不影响现有功能正确性，但「个人中心」在产品口径上只完成了一半——头像能自改、昵称不能；
+  用户只能找管理员改显示名，而显示名在会话列表、消息气泡、审批记录、审计日志里到处都是。
+- **回头需完成**：① **先定口径**：昵称是否允许用户自改？若允许，是否需唯一性与敏感词 / 长度校验
+  （现 `sys_user.nickname` 无唯一约束）；② 落 `PUT /api/v1/users/me`（或 `PATCH`）+ 独立审计动作
+  （与 `USER_AVATAR_SELF` 同构另立 `USER_PROFILE_SELF`，以免审计里与管理员侧混淆）；
+  ③ 复用 `PROFILE` 帧广播昵称变更：帧载荷需**新增可选字段** `displayName`（新增字段属非破坏性扩展，
+  但**必须同步** `docs/api/README.md` §7 与前端 `web/src/services/ws/protocol.ts` 的解析口径）；
+  ④ 同步 §1 前缀表与 PRD §4 / §4.1 的表述。
+- **触发时机**：个人中心 / 用户体验完善期；建议与「群成员展示名口径」相关需求一并做
+  （两者共用同一份展示名回落规则，分两次做必然出现两套口径）。

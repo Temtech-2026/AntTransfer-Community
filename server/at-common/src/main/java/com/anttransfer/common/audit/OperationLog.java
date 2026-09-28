@@ -194,6 +194,19 @@ public class OperationLog extends BaseEntity {
      */
     public static final String ACTION_PASSWORD_CHANGE = "PASSWORD_CHANGE";
 
+    /**
+     * 审计动作：本人自助更换头像（{@code POST /api/v1/users/me/avatar}）。
+     *
+     * <p>与 {@link #ACTION_USER_AVATAR} 的区别，同「本人自助改密」与「管理员重置他人口令」的分法：
+     * 那条是<b>管理员更换他人</b>头像（操作人与目标不同，且受数据范围约束）；
+     * 本条是<b>账号主本人更换自己的</b>头像（操作人与目标同一，不需要任何管理权限点）。
+     * 合并编码会让审计查询无法回答「这张头像到底是本人换的，还是管理员替他换的」——
+     * 而这正是账号被接管后最先被利用的一类动作。</p>
+     *
+     * <p>{@code detail} 同样<b>只记「换成功了」</b>，不记头像存储 key / 路径。</p>
+     */
+    public static final String ACTION_USER_AVATAR_SELF = "USER_AVATAR_SELF";
+
     /* ============================== 域标识 ============================== */
 
     /** 所属域：文件（与 V1 约定一致：AUTH/PERMISSION/TRANSFER/FILE/COLLABORATION/COMMON） */

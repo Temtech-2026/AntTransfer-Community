@@ -33,7 +33,6 @@ import {
 import { useAccess, useIntl } from '@umijs/max';
 import {
   App,
-  Avatar,
   Button,
   Empty,
   Input,
@@ -49,6 +48,7 @@ import dayjs from 'dayjs';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import useDangerConfirm from '@/components/DangerConfirm';
+import UserAvatar from '@/components/UserAvatar';
 import {
   dissolveChatGroup,
   fetchChatGroupDetail,
@@ -469,9 +469,11 @@ const ChatGroupPanel: React.FC<ChatGroupPanelProps> = ({
           const joinedAt = formatJoinTime(member.joinTime);
           return (
             <div key={member.userId} className={styles.member}>
-              <Avatar size={32} src={member.avatarUrl ?? undefined}>
+              {/* 成员头像走 `UserAvatar`（覆盖表优先）：群里有人换头像时，
+                  资料变更帧到达即换图，不必重拉群详情 */}
+              <UserAvatar size={32} userId={member.userId} src={member.avatarUrl}>
                 {name.slice(0, 1).toUpperCase()}
-              </Avatar>
+              </UserAvatar>
               <div className={styles.memberMain}>
                 <div className={styles.memberName}>
                   <span>{name}</span>

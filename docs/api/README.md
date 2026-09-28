@@ -19,7 +19,7 @@
 | 后端模块 | 前缀 | 典型资源 |
 | --- | --- | --- |
 | `at-auth` | `/api/v1/auth` | `token`、`token/refresh`、`logout`、`me`、`password`（均为动作端点；**自助改密**归此域） |
-| `at-auth` | `/api/v1/users` | **本人**资料 / 当前账号（个人中心改昵称）；`sys_user` 的表主在本模块。**自助改密**按「凭据动作」形态落在 `/api/v1/auth/password`，不在本前缀下 |
+| `at-auth` | `/api/v1/users` | **本人**资料 / 当前账号：`POST /api/v1/users/me/avatar`（**本人自助换头像**——multipart 字段 `file`，PNG / JPG / GIF / WebP、单张 ≤ 2 MiB；**不挂权限点**，目标 ID 恒取令牌 subject，路径里的 `me` 使越权在结构上不可达）；头像**直出** `GET /api/v1/users/{userId}/avatar?v=<存储 key>`（**免登录**，只回图片字节，见 §5）。`sys_user` 的表主在本模块。**自助改密**按「凭据动作」形态落在 `/api/v1/auth/password`，不在本前缀下。⚠️ 「个人中心改昵称」尚未实现（见 [AT-DIFF-11](../development/AT-DIFF-todos.md#at-diff-11头像双写入口与-profile-帧广播) / [GAP-10](../development/AT-DIFF-todos.md#gap-10个人资料自助仅落头像缺改昵称)） |
 | `at-permission` | `/api/v1/system/users`、`/api/v1/roles`、`/api/v1/permission-points`、`/api/v1/permission` | **系统管理面**（管理员「管别人」）：用户管理 `GET /api/v1/system/users`（分页，按操作者数据范围收敛）、`GET /api/v1/system/users/{id}`、`GET /api/v1/system/users/dept-options`（部门下拉）、`GET /api/v1/system/users/role-options`（角色下拉）、`POST /api/v1/system/users`（建号，可带初始角色）、`PUT /api/v1/system/users/{id}`（编辑；**换部门即调岗**，触发权限重评估回收审批授权）、`PATCH /api/v1/system/users/{id}/status`（启停；停用=离职，回收审批授权并吊销在途会话）、`POST /api/v1/system/users/{id}/reset-password`（禁止对自己）、`PUT /api/v1/system/users/{id}/roles`（整集替换角色，禁止对自己）、`DELETE /api/v1/system/users/{id}`（逻辑删除，受保护账号与最后一个超管不可删）；角色管理 `GET /api/v1/roles`（分页）、`GET /api/v1/roles/options`（全量下拉）、`GET /api/v1/roles/{id}`、`POST /api/v1/roles`、`PUT /api/v1/roles/{id}`、`DELETE /api/v1/roles/{id}`（内置角色不可删）、`GET /api/v1/roles/{id}/permissions`、`PUT /api/v1/roles/{id}/permissions`（整集替换；`AUDITOR` 权限锁定只读）；权限点目录 `GET /api/v1/permission-points`（只读全树）；授权申请 `/api/v1/permission/...`；动态菜单 `GET /api/v1/permission/menus`（按登录用户权限点过滤 `type=1` 节点组装树，见 `architecture.md` §4 D-9） |
 | `at-file` | `/api/v1/files`、`/api/v1/folders`、`/api/v1/shares` | 文件元数据 / 上传 / 下载；**目录树**：`GET /api/v1/folders/tree`（整树，不分页）、`POST /api/v1/folders`（新建）、`PATCH /api/v1/folders/{id}/rename`、`PATCH /api/v1/folders/{id}/move`、`DELETE /api/v1/folders/{id}`（目录内文件进回收站，不销毁物理文件）；**下载与预览**：`POST /api/v1/files/{id}/ticket`（换票，需 `file:download`）、`GET /api/v1/files/{id}/content`（**免登录**，票取；支持 `Range` 续传、`speedLimit` 任务级限速、`disposition=inline`）、`GET /api/v1/files/{id}/thumbnail`（**免登录**，票取）、`GET /api/v1/files/{id}/preview`（返回预览策略，需 `file:preview`）；**外发链接（CE 实际落地方，见 [AT-DIFF-06](../development/AT-DIFF-todos.md#at-diff-06-外发分享模块归属)）**：`POST /api/v1/shares`（创建）、`GET / DELETE /api/v1/shares/{token}`、`GET /api/v1/shares/mine`、`POST /api/v1/shares/batch/revoke`（批量失效**所选**：请求体为令牌列表，单次上限 200，回**实际失效条数**）、`POST /api/v1/shares/all/revoke`（**一键失效本人全部生效中链接**；无请求体、**不接受任何范围参数**，作用域由服务端按登录主体决定）；访客免登录通道 `POST /api/v1/shares/{token}/verify`（换**一次性票**）、`POST /api/v1/shares/redeem`（核销取件，回元信息 + **取件票** `contentTicket`）、`GET /api/v1/shares/{token}/content?ticket=`（凭**取件票**流式取字节，支持 `Range` 断点续传、`speedLimit` 限速；凭证走查询串，浏览器原生 `<a href>` 下载无法携带 `Authorization` 头）；**回收站与销毁**：`DELETE /api/v1/files/{id}`（移入回收站，需 `file:edit`）、`POST /api/v1/files/{id}/restore`（还原）、`POST /api/v1/files/batch/recycle`（批量移入）、`GET /api/v1/files/recycle`（回收站分页）、`POST /api/v1/files/recycle/empty`（清空回收站）、`DELETE /api/v1/files/{id}/destroy`（**彻底销毁**：绕过回收站、物理删除并递减引用计数；需 `file:destroy`，该点已收敛为**仅 SUPER_ADMIN**，且 `level>=3` 高敏感文件须关联一张「已通过」的高敏感审批单，否则 4017）；**标签（US-10）**：`GET|POST /api/v1/tags`、`PUT|DELETE /api/v1/tags/{tagId}`、`GET|PUT /api/v1/files/{nodeId}/tags`（全量覆盖，空数组即清空；读 `file:preview` / 写 `file:edit`，不另立 `tag:*` 权限点）；列表多标签筛选复用 `GET /api/v1/files?tagId=` 或 `tagIds=`（多值与 `tagId` 为 **AND**）；**历史版本（US-13，P1）**：`GET|POST /api/v1/files/{nodeId}/versions`（近 N 版列表 / 上传新版本）、`POST /api/v1/files/{nodeId}/versions/{versionNo}/rollback`（回滚生成新版本，统一 `file:version`）；**批量打包下载（US-12，P1）**：`POST|GET /api/v1/packs`（创建 / 我的任务分页）、`GET /api/v1/packs/{taskId}`（任务详情，前端轮询终态）、`GET /api/v1/packs/{taskId}/content`（异步流式 zip 产物下发，支持 `Range` 续传，过期返回 4021，统一 `file:download`） |
 | `at-permission` | `/api/v1/audit` | **审计只读面**（US-06，独立于系统管理面）：日志检索 `GET /api/v1/audit/logs`（分页；按操作人 / 对象 / 域动作 / 结果 / 时间过滤，固定 `log_time` 倒序，对齐 `sys_operation_log` 四个索引）、导出 `GET /api/v1/audit/logs/export`（同过滤条件导出 CSV，UTF-8 BOM + RFC 4180 转义，**单次上限 10000 行**）；两端点共用 `audit:log:read`（仅 SUPER_ADMIN / AUDITOR）。审计记录 append-only，**不提供任何写 / 清除端点**（无 `audit:log:clear`） |
@@ -137,6 +137,8 @@ Authorization: Bearer <accessToken>
 | `POST /api/v1/auth/logout` | 登出：全端吊销（DB `token_epoch+1`，已签发 access/refresh 即刻失效） | ❌ |
 | `GET /api/v1/auth/me` | 当前用户摘要（含角色编码，角色变更即时生效） | ❌ |
 | `PUT /api/v1/auth/password` | 本人自助改密：body `{oldPassword, newPassword}`；成功后**全端**令牌失效（含发起本次请求的当前会话） | ❌ |
+| `POST /api/v1/users/me/avatar` | **本人自助换头像**：multipart 字段 `file`（PNG / JPG / GIF / WebP，≤ 2 MiB）；**不挂权限点**，不接受任何 `userId` 入参；成功后回本人摘要（含新头像地址）并广播 `PROFILE` 帧 | ❌ |
+| `GET /api/v1/users/{userId}/avatar?v=<存储 key>` | 头像**直出**：只回图片字节（`ETag` = 存储 key、`Cache-Control: public, max-age=600`、`nosniff`）；`?v=` 只是缓存版本号，服务端**不校验**（否则换头像后在途页面全变碎图） | ✅ |
 
 - 🔁 `accessToken` 过期（HTTP 401 + `code=1002`）时，前端**静默**调用 refresh 端点换取新令牌对并重放原请求一次；刷新失败（401 + `code=1006` / refresh 过期 / **旧 refresh 已被使用过**）跳转登录页。
 - 🚨 同一 refresh token 被使用两次（重复提交 / 泄露重放）时，服务端按疑似盗用处理：**吊销该用户全部会话**并返回 `code=1006`（PRD US-07）。
@@ -146,6 +148,14 @@ Authorization: Bearer <accessToken>
     否则后续请求只会拿到 401 + `code=1001`；
   - `code=1029`（原口令不正确）/ `code=1030`（新口令不合规）：属 HTTP 400 的**请求被拒**，会话仍然有效 ——
     就地提示、**不得清令牌、不得跳登录**，弹窗保持打开让用户修正。
+- 🖼️ **头像直出是唯一「按设计公开」的匿名读路径**（`GET /api/v1/users/{userId}/avatar`）。放行依据三条：
+  内容低敏感（**只有图片字节**，不得追加昵称 / 部门 / 工号等信息，否则必须改为「换票 + 凭票取字节」）、
+  用户 ID 不可枚举、端点限流（**60s / 300 次**，按源 IP + 路径，防「拿已知 ID 批量遍历」）。
+  「有账号但没头像」与「没有这个账号」**回同一个 `4005`**，不把 ID 有效性变成可探测信息。
+- ⚠️ **白名单条目的 ID 段必须是数字正则** `{userId:[0-9]+}` 而**不是** `*`：Spring Security 的路径放行
+  **不看 HTTP 方法**，用 `*` 时写路径 `POST /api/v1/users/me/avatar` 会被同一条匿名放行顺带吃掉，
+  「谁能改头像」就被静默放宽成匿名可调。回归护栏见 `SecurityConfigTest`
+  的 `builtInWhitelist_shouldNotPermitSelfAvatarUpload`（反向断言写路径不匹配 **+** 正向断言数字读路径仍匹配）。
 
 > ℹ️ 停用账号的即时吊销（GAP-02）：管理面 `PATCH /api/v1/system/users/{id}/status` 停用时，
 > 在**同一事务**内递增 `token_epoch` 并在提交后清 Redis 纪元镜像键，该用户全部在途会话**当场失效**；
@@ -182,7 +192,8 @@ Authorization: Bearer <accessToken>
   **90s 内无任何上行帧**即判定掉线并清理会话（关闭码 `4002`）。建议客户端回 PONG——否则客户端侧「静默假死」只能等服务端超时。
 - 📦 帧信封（上下行统一）：`{"type":"...","data":{...},"ts":1789000000000}`。
   下行 `type`：`CONNECTED`（连接就绪，含用户 ID 与未读快照）/ `NOTIFY`（系统通知单条）/ `CHAT`（会话消息单条）/
-  `CHAT_READ`（已读回执，见下）/ `CHAT_RECALL`（消息撤回，见下）/ `PRESENCE`（对端在线状态变更，见下）/
+  `CHAT_READ`（已读回执，见下）/ `CHAT_RECALL`（消息撤回，见下）/ `PROFILE`（用户头像变更，见下）/
+  `PRESENCE`（对端在线状态变更，见下）/
   `TYPING`（对端输入状态，见下）/ `UNREAD`（三口径未读快照）/ `PONG`。`ERROR` 仅承载协议层错误，**不承载业务错误码**。
 - ✅ `CHAT_READ` 帧载荷：`{"chatScope":1,"chatTargetId":"<id>","reader":{"userId":"<id>","displayName":"张三"},"clientMsgIds":["<幂等键>"]}`。
   三个口径要点（实现详见 `NotifyMessageService#markSessionRead` / `ChatReadReceiptVO`）：
@@ -220,6 +231,22 @@ Authorization: Bearer <accessToken>
   - **本帧是加速通道**：真值在库里（`recall_status = 1`），丢了只表现为「重新拉历史后才看到已撤回」，
     **不需要补偿重发**。客户端判定「已撤回」只看 `recallStatus`，**不能用正文是否为空**——
     撤回时正文确实被清空，但空正文本身是合法状态（文件 / 审批类消息的展示文案可为空）。
+- ✅ `PROFILE` 帧载荷：`{"userId":"<id>","avatarUrl":"<头像直出地址>"|null}`。
+  四个口径要点（写侧**双入口**：本人 `POST /api/v1/users/me/avatar`、管理员 `POST /api/v1/system/users/{id}/avatar`；
+  实现见 `WsBroadcaster#broadcast` / `ChatProfileVO`）：
+  - **全员广播，不按用户扇出**（`userId` 过滤在服务端为 `null`，投给所有在线连接）。产品口径是
+    「头像一变，所有能看到它的地方立刻换图」——除本人其他标签页 / 设备外，会话对端、群成员列表、
+    用户管理列表展示的这张头像也要立刻换。收件人集合无法廉价算出：要精确匹配就得维护一张
+    「谁在关注谁」的订阅表并让它与群成员关系变更保持对账；而本帧载荷只有 `userId + 免登录可读的直出地址`，
+    全员广播的暴露面与「让对方直接访问该 URL」完全相同。它与 `PRESENCE` 的订阅集合是两回事，**不要复用后者**。
+  - **客户端必须按 `userId` 判断，且分两步**：`userId` 是「头像被换掉的那个人」，不是接收人视角的目标。
+    **任何人**的 `PROFILE` 帧都要写入本地头像覆盖表（否则群里别人的头像不会跟着换），
+    但**只有 `userId` == 当前登录人时才更新登录态**（否则会把自己的顶栏头像改成别人的）。
+  - **`avatarUrl` 为 `null` 表示「该用户当前没有头像」**，不是「本次没带上地址」：客户端必须用它
+    **压掉**页面数据里的回落值，不能因为「本地还没有覆盖记录」就继续显示旧头像。
+  - **加速通道**：真值在 `sys_user.avatar_url`，丢了只表现为「本端要等下次拉会话列表 / 用户列表才看到新头像」，
+    **不补推、不需要补偿逻辑**。跨版本兼容：滚动发布期间旧实例收到 `userId=null` 的帧会按原逻辑丢弃，
+    退化为「下次拉取时刷新」，属可接受降级。
 - 🔁 可靠性：消息**先落库再推送**，WebSocket 只是加速通道而非唯一通道——离线用户仍可在
   `GET /api/v1/notifications/offline` 补拉。故**推送丢失无需补偿重发**，客户端也不必实现 ACK。
   `CHAT_READ` 同理：**它只是加速通道**，阅读事实存在会话消息行上，进入会话时由

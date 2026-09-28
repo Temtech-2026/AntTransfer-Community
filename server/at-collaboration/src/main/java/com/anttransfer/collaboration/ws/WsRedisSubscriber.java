@@ -64,13 +64,20 @@ public class WsRedisSubscriber implements MessageListener {
             log.warn("WS 广播报文解析失败，已丢弃该帧：cause={}", e.getMessage());
             return;
         }
-        if (delivery.userId() == null || delivery.frame() == null) {
+        if (delivery.frame() == null) {
             return;
         }
         try {
-            // 只对本机连接的该用户投递；不在本机 → 返回 0（正常，无需日志噪音）
-            registry.sendToLocal(delivery.userId(),
-                    objectMapper.writeValueAsString(delivery.frame()));
+            String json = objectMapper.writeValueAsString(delivery.frame());
+            if (delivery.userId() == null) {
+                // 全员广播（userId 为 null）：投给本机所有连接，不做用户筛选。
+                // 旧实例收到这类报文会走上面那条 `frame == null` 之外的旧分支被丢弃，
+                // 属滚动发布期间的可接受降级（那几端等下次拉取时更新）。
+                registry.broadcastToAllLocal(json);
+            } else {
+                // 只对本机连接的该用户投递；不在本机 → 返回 0（正常，无需日志噪音）
+                registry.sendToLocal(delivery.userId(), json);
+            }
         } catch (Exception e) {
             log.warn("WS 本地投递失败：userId={}, cause={}", delivery.userId(), e.getMessage());
         }

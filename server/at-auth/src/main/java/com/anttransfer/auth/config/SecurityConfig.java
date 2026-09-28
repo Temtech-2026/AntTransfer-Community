@@ -124,7 +124,13 @@ public class SecurityConfig {
             // 因此**不得**在这条路径上追加任何返回体字段，也不得把头像换成含身份信息的
             // 内容（如工牌照片、带水印的证件图）；一旦内容升级，本放行必须改为「换票 + 票据」
             // 模式（照 /v1/files/*/content 的做法）。
-            "/v1/users/*/avatar");
+            //
+            // ⚠️ ID 段必须用**数字正则**而不是 `*`：读路径是 /v1/users/{id}/avatar，而本人自助
+            // 换头像的写路径是 POST /v1/users/me/avatar，两者在 `*` 通配下会同时命中本条目——
+            // 上传接口被静默放行成匿名可达（Security 的路径放行不看 HTTP 方法）。限定为纯数字
+            // 后，「me」不再匹配，写路径回到「须持合法 access token」。这也顺带把
+            // 「/v1/users/abc/avatar」这类注定 400 的路径挡在鉴权之前。
+            "/v1/users/{userId:[0-9]+}/avatar");
 
     @Bean
     public PasswordEncoder passwordEncoder() {

@@ -30,7 +30,7 @@ import {
 } from '@ant-design/icons';
 import { useIntl } from '@umijs/max';
 import { createStyles } from 'antd-style';
-import { App, Avatar, Badge, Button, Drawer, Empty, Spin } from 'antd';
+import { App, Badge, Button, Drawer, Empty, Spin } from 'antd';
 import React, {
   useCallback,
   useEffect,
@@ -49,6 +49,7 @@ import ChatMessageMenu from '@/components/ChatMessageMenu';
 import ChatMessageQuote from '@/components/ChatMessageQuote';
 import ChatPeerStatus from '@/components/ChatPeerStatus';
 import ChatQuoteBar from '@/components/ChatQuoteBar';
+import UserAvatar from '@/components/UserAvatar';
 import useChatAttachmentDraft from '@/hooks/useChatAttachmentDraft';
 import useChatPresence from '@/hooks/useChatPresence';
 import useCurrentUserAvatar from '@/hooks/useCurrentUserAvatar';
@@ -632,6 +633,15 @@ const ChatDrawer: React.FC = () => {
     [active, conversations],
   );
 
+  /**
+   * 当前会话的对端用户 ID（仅单聊有值），口径与 `/chat` 页一致。
+   *
+   * <p>用在两处：会话列表项与消息气泡。它们都要把「用户 ID」交给头像组件去查全局覆盖表——
+   * 只有单聊的 `targetId` 是用户 ID；群聊的目标 ID 属于群，不能拿它查用户头像。</p>
+   */
+  const peerUserId =
+    active?.chatScope === ChatScope.PRIVATE ? activeDisplay?.targetId : undefined;
+
   const activeTitle = activeDisplay
     ? conversationTitle(activeDisplay)
     : intl.formatMessage({ id: 'chat.drawer.title' });
@@ -729,13 +739,14 @@ const ChatDrawer: React.FC = () => {
               index === 0 ? styles.readerAvatarFirst : styles.readerAvatar
             }
           >
-            <Avatar
+            <UserAvatar
+              userId={reader.userId}
               size={16}
               className={styles.readerAvatarInner}
-              src={reader.avatarUrl ?? undefined}
+              src={reader.avatarUrl}
             >
               {reader.displayName.slice(0, 1).toUpperCase()}
-            </Avatar>
+            </UserAvatar>
           </span>
         ))}
         {overflow > 0 ? (
@@ -857,13 +868,19 @@ const ChatDrawer: React.FC = () => {
                     onClick={() => void openSession(session)}
                   >
                     <Badge count={conversation.unreadCount} size="small">
-                      <Avatar
+                      <UserAvatar
+                        /* 单聊的 targetId 才是用户 ID，群聊不传（同 /chat 页口径） */
+                        userId={
+                          conversation.chatScope === ChatScope.PRIVATE
+                            ? conversation.targetId
+                            : undefined
+                        }
                         size={36}
                         className={styles.avatar}
-                        src={conversation.targetAvatarUrl ?? undefined}
+                        src={conversation.targetAvatarUrl}
                       >
                         {conversationInitial(conversation)}
-                      </Avatar>
+                      </UserAvatar>
                     </Badge>
                     <span className={styles.conversationMain}>
                       <span className={styles.conversationTitle}>
@@ -918,19 +935,25 @@ const ChatDrawer: React.FC = () => {
                       key={msg.id}
                       className={mine ? `${styles.row} ${styles.rowMine}` : styles.row}
                     >
-                      <Avatar
+                      <UserAvatar
+                        /* 「我发的」不给 userId：自己的头像只认登录态（与顶栏同源），
+                           由资料变更帧回写。别人发的用消息自带的发送人 ID，缺失时回落
+                           对端 ID（单聊里发送人即对端，与标题、首字兜底同源） */
+                        userId={mine ? undefined : msg.senderUserId ?? peerUserId}
                         size={28}
                         className={styles.avatar}
                         /* 「我发的」那一行不带发送人头像（服务端刻意省掉这一次查库），
                            自己的头像只认登录态，与顶栏同源；别人发的优先用消息自带的
                            发送人头像，缺失时回落当前会话头像（单聊里发送人即对端，
-                           与标题、首字兜底同源） */
-                        src={mine ? myAvatar : msg.senderAvatarUrl ?? activeDisplay?.targetAvatarUrl ?? undefined}
+                           与标题、首字兜底同源）。
+                           src 是回落值：`UserAvatar` 会先用上面的 userId 查全局覆盖表，
+                           因此发送人刚换过头像时无需重拉历史即可换图 */
+                        src={mine ? myAvatar : msg.senderAvatarUrl ?? activeDisplay?.targetAvatarUrl ?? null}
                       >
                         {mine
                           ? intl.formatMessage({ id: 'chat.drawer.mineAvatar' })
                           : messageSenderInitial(msg, conversationInitial(activeDisplay ?? active))}
-                      </Avatar>
+                      </UserAvatar>
                       <ChatMessageMenu
                         canRecall={isRecallable(msg)}
                         canQuote={quoteDraft != null}

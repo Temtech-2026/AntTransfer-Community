@@ -181,7 +181,13 @@ DB 事务内执行 `token_epoch = token_epoch + 1`，并主动失效两个 Redis
 - 鉴权采用**默认 DENY + 显式放行**：拦截器默认校验 `/api/**`（除白名单），
   `@RequireLogin` / `@RequirePermission` 仅作增强与声明，**禁止“漏标注解即放行”**；
 - 白名单（集中维护，禁止散落）：`POST /api/v1/auth/token`、
-  `POST /api/v1/auth/token/refresh`、外发分享下载通道、健康检查端点；
+  `POST /api/v1/auth/token/refresh`、外发分享下载通道、**头像直出** `GET /api/v1/users/{userId}/avatar`、
+  健康检查端点；
+- ⚠️ **白名单里的路径参数段一律用数字正则（`{userId:[0-9]+}`），不得用 `*`**：Spring Security 的路径放行
+  **不看 HTTP 方法**，读路径 `/v1/users/*/avatar` 会连带命中写路径 `POST /v1/users/me/avatar`，
+  把「本人自助换头像」静默放宽成匿名可调。回归护栏 `SecurityConfigTest`
+  （`builtInWhitelist_shouldNotPermitSelfAvatarUpload`）同时做反向与正向断言；
+- 头像直出的放行前提是「**只回图片字节**」：一旦要带昵称 / 部门等账号信息，必须改为「登录态换票 + 凭票取字节」；
 - **禁止仅在前端隐藏功能**（US-04：后端强制鉴权）。
 
 ## 4. 🗄️ 数据模型与表族

@@ -17,15 +17,37 @@
  * 上面的第 3 步并跳登录页。</p>
  */
 
-import { KeyOutlined, LogoutOutlined, UserOutlined } from '@ant-design/icons';
+import { KeyOutlined, LogoutOutlined, UploadOutlined, UserOutlined } from '@ant-design/icons';
 import { history, useIntl, useModel } from '@umijs/max';
 import type { MenuProps } from 'antd';
-import { Alert, App, Avatar, Descriptions, Form, Input, Modal, Spin, Tag } from 'antd';
+import {
+  Alert,
+  App,
+  Button,
+  Descriptions,
+  Form,
+  Input,
+  Modal,
+  Space,
+  Spin,
+  Tag,
+  Typography,
+  Upload,
+} from 'antd';
 import React, { startTransition, useMemo, useState } from 'react';
 
+import UserAvatar from '@/components/UserAvatar';
 import { DENY_ALL_PERMISSION } from '@/services/access';
-import { type AuthUserSummary, changePassword, fetchProfile, logout } from '@/services/auth';
+import {
+  type AuthUserSummary,
+  changePassword,
+  fetchProfile,
+  logout,
+  uploadMyAvatar,
+} from '@/services/auth';
+import { applyAvatarChange, resetAvatarOverrides } from '@/services/avatar/overrides';
 import { BizError } from '@/services/request';
+import { AVATAR_ACCEPT_ATTR, AVATAR_MAX_BYTES, checkAvatarFile } from '@/services/system';
 import { disposeAllUploadQueues } from '@/services/upload';
 import { wsStore } from '@/services/ws';
 import {
@@ -38,6 +60,12 @@ import HeaderDropdown from '../HeaderDropdown';
 type GlobalHeaderRightProps = {
   children?: React.ReactNode;
 };
+
+/**
+ * 头像上限的展示文案：由字节常量派生，避免「改了上限忘了改文案」的静默分叉
+ * （与用户管理页同口径，两处都从 `AVATAR_MAX_BYTES` 派生）。
+ */
+const AVATAR_MAX_LABEL = `${AVATAR_MAX_BYTES / 1024 / 1024} MB`;
 
 /** 自助改密表单值（confirmPassword 只用于本地比对，不发送给后端）。 */
 interface ChangePasswordFormValues {
@@ -81,6 +109,7 @@ export const AvatarDropdown: React.FC<GlobalHeaderRightProps> = ({ children }) =
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profile, setProfile] = useState<AuthUserSummary | undefined>();
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [passwordSubmitting, setPasswordSubmitting] = useState(false);
@@ -100,6 +129,63 @@ export const AvatarDropdown: React.FC<GlobalHeaderRightProps> = ({ children }) =
   };
 
   /**
+   * 本人自助更换头像（<b>上传即生效</b>，不经过任何表单的「确定」）。
+   *
+   * <p>走 `POST /v1/users/me/avatar`：无权限点要求，目标用户来自令牌。
+   * 与用户管理页里「管理员改他人头像」（`system:user:update`）是两条独立路径，
+   * 不要因为「看起来都是上传头像」就合并——合并会把改头像绑上管理权限，
+   * 或者在权限校验里开一个「参数填自己就放行」的口子。</p>
+   *
+   * <p><b>成功后必须同时更新三处</b>，缺任何一处都会出现「换个地方看还是旧图」：</p>
+   * <ol>
+   *   <li>本弹窗的头像（本地 `profile` state）——`profile` 是打开时拉的快照，不会自己变；</li>
+   *   <li>全局登录态 `currentUser.avatar`——顶栏与自己聊天气泡读的是它；</li>
+   *   <li>全局头像覆盖表——会话列表 / 群成员等经 `UserAvatar` 取值的地方读的是它
+   *       （其它端由服务端广播的资料变更帧负责写同一张表）。</li>
+   * </ol>
+   *
+   * <p>自己的其它在线端不靠这里同步，由服务端广播的 `PROFILE` 帧覆盖。</p>
+   */
+  const handleAvatarFile = async (file: File) => {
+    // 预检只为省一次必然失败的往返：类型真伪由服务端按文件头魔数判定
+    const errorTextId = checkAvatarFile(file);
+    if (errorTextId) {
+      message.error(intl.formatMessage({ id: errorTextId }, { max: AVATAR_MAX_LABEL }));
+      return;
+    }
+
+    setAvatarUploading(true);
+    try {
+      const updated = await uploadMyAvatar(file);
+      // 直接采用服务端下发的地址（已含 ?v= 缓存版本号），绝不自己拼接；
+      // 响应没带地址时保留原值，避免把「其实传成功了」显示成没有头像
+      const newAvatarUrl = updated?.avatarUrl ?? undefined;
+
+      if (newAvatarUrl) {
+        setProfile((prev) => (prev ? { ...prev, avatarUrl: newAvatarUrl } : prev));
+      }
+
+      setInitialState((state) =>
+        state?.currentUser
+          ? { ...state, currentUser: { ...state.currentUser, avatar: newAvatarUrl } }
+          : state,
+      );
+
+      const myUserId = initialState?.currentUser?.userid;
+      if (myUserId) {
+        applyAvatarChange(myUserId, newAvatarUrl ?? null);
+      }
+
+      message.success(intl.formatMessage({ id: 'component.avatar.avatar.updated' }));
+    } catch {
+      // 失败提示由上传通道负责（binaryRequest）：业务错误走 presentError，
+      // 网络层失败 / 超时也在通道内提示；此处只负责收尾 loading
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
+  /**
    * 清空本端会话并回登录页（服务端吊销由调用方各自负责）。
    *
    * <p>登出与改密共用：两者在服务端都已使当前令牌失效，剩下的差异只有「谁去吊销」。</p>
@@ -107,6 +193,8 @@ export const AvatarDropdown: React.FC<GlobalHeaderRightProps> = ({ children }) =
   const teardownLocalSession = () => {
     // 断连要在清令牌之后：避免用已失效的令牌触发一轮无意义的重连
     wsStore.stop();
+    // 清掉全局头像覆盖表：里面存的是可直出访问的地址，不该留在内存里跨账号传递
+    resetAvatarOverrides();
     // 上传控制器持有 File 引用与在途请求，不销毁会带着上个账号的任务进入下一个会话
     disposeAllUploadQueues();
     startTransition(() => {
@@ -225,12 +313,43 @@ export const AvatarDropdown: React.FC<GlobalHeaderRightProps> = ({ children }) =
       >
         <Spin spinning={profileLoading}>
           {/*
-            头像只读展示：`profile` 是打开弹窗时现拉的 `/auth/me`，因此这里永远是最新值。
-            换头像的入口只在用户管理页（需 system:user:update），本弹窗不提供上传，
-            避免「人人都能改自己头像」这条产品边界被悄悄放宽。
+            头像：展示 + 本人自助更换（上传即生效）。
+
+            `profile` 是打开弹窗时现拉的 `/auth/me`，所以初始展示永远是最新值；
+            上传成功后改用服务端下发的 `?v=` 新地址就地换图（见 handleAvatarFile）。
+
+            这里走的是本人自助通道（无权限点、目标用户来自令牌），
+            与用户管理页里管理员改他人头像（需 system:user:update）是两条独立路径。
           */}
           <div style={{ textAlign: 'center', marginBottom: 16 }}>
-            <Avatar size={72} src={profile?.avatarUrl} icon={<UserOutlined />} />
+            <UserAvatar
+              userId={profile?.id ?? currentUser.userid}
+              size={72}
+              src={profile?.avatarUrl}
+              icon={<UserOutlined />}
+            />
+            <Space direction="vertical" size={4} style={{ display: 'block', marginTop: 8 }}>
+              <Upload
+                accept={AVATAR_ACCEPT_ATTR}
+                showUploadList={false}
+                // 受控空列表：beforeUpload 返回 false 只是「不自动上传」，文件仍会留在 antd
+                // 内部列表里占满 maxCount，之后再选文件时 beforeUpload 便不再触发 ——
+                // 表现就是「第一次之后点了没反应」。把列表钉成空数组即可每次都走预检与上传。
+                fileList={[]}
+                beforeUpload={(file) => {
+                  void handleAvatarFile(file);
+                  // 返回 false 拦截 antd 的默认上传：改由 uploadMyAvatar 走 XHR 直发 FormData
+                  return false;
+                }}
+              >
+                <Button loading={avatarUploading} icon={<UploadOutlined />}>
+                  {intl.formatMessage({ id: 'component.avatar.avatar.upload' })}
+                </Button>
+              </Upload>
+              <Typography.Text type="secondary">
+                {intl.formatMessage({ id: 'component.avatar.avatar.hint' }, { max: AVATAR_MAX_LABEL })}
+              </Typography.Text>
+            </Space>
           </div>
           <Descriptions column={1} size="small" bordered>
             <Descriptions.Item label={intl.formatMessage({ id: 'component.avatar.account' })}>

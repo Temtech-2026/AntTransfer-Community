@@ -35,7 +35,6 @@ import { history, useAccess, useIntl } from '@umijs/max';
 import {
   Alert,
   App,
-  Avatar,
   Badge,
   Button,
   Input,
@@ -59,6 +58,7 @@ import ChatGroupPanel from '@/components/ChatGroupPanel';
 import ChatPeerStatus from '@/components/ChatPeerStatus';
 import EmptyState from '@/components/EmptyState';
 import SectionCard from '@/components/SectionCard';
+import UserAvatar from '@/components/UserAvatar';
 import useChatAttachmentDraft from '@/hooks/useChatAttachmentDraft';
 import useChatPresence from '@/hooks/useChatPresence';
 import useCurrentUserAvatar from '@/hooks/useCurrentUserAvatar';
@@ -1007,6 +1007,18 @@ const ChatPage = () => {
   const activeScope = activeSession?.chatScope ?? null;
 
   /**
+   * 当前会话的对端用户 ID（仅单聊有值）。
+   *
+   * <p>消息气泡的头像需要它：别人发的消息若没带发送人头像（老数据 / 反查不到），
+   * 会回落成会话头像——单聊里发送人就是对端，此时必须把对端 ID 一并交给头像组件，
+   * 否则覆盖表查不到这个 ID，「对端换了头像」在这一行就不生效。</p>
+   *
+   * <p>群聊刻意不给：群的目标 ID 是群组 ID，不是用户，不能拿它查用户头像。</p>
+   */
+  const peerUserId =
+    activeScope === ChatScope.PRIVATE ? activeDisplay?.targetId : undefined;
+
+  /**
    * 引用块里的「谁说的」、撤回占位里的「谁撤的」。
    *
    * <p>回落口径与标题同源（{@link labels}）：单聊的对端名就是会话标题，所以直接复用它；
@@ -1190,13 +1202,14 @@ const ChatPage = () => {
               index === 0 ? styles.readerAvatarFirst : styles.readerAvatar
             }
           >
-            <Avatar
+            <UserAvatar
+              userId={reader.userId}
               size={18}
               style={{ background: token.colorPrimary, fontSize: 10 }}
-              src={reader.avatarUrl ?? undefined}
+              src={reader.avatarUrl}
             >
               {reader.displayName.slice(0, 1).toUpperCase()}
-            </Avatar>
+            </UserAvatar>
           </span>
         ))}
         {overflow > 0 ? (
@@ -1249,7 +1262,11 @@ const ChatPage = () => {
         key={messageKey(message)}
         className={`${styles.row}${mine ? ` ${styles.rowSelf}` : ''}`}
       >
-        <Avatar
+        <UserAvatar
+          /* 「我发的」不给 userId：自己的头像只认登录态（与顶栏同源），由资料变更帧回写，
+             走覆盖表反而多一条可能不一致的路径。别人发的用消息自带的发送人 ID；
+             群聊里每行发送人不同，缺了它就画不出正确的脸 */
+          userId={mine ? undefined : message.senderUserId ?? peerUserId}
           size={32}
           style={{
             flexShrink: 0,
@@ -1259,11 +1276,13 @@ const ChatPage = () => {
           /* 「我发的」不带发送人头像（服务端刻意省掉这次查库），自己的头像只认登录态，
              与顶栏同源；别人发的优先用消息自带的发送人头像——群聊里每行发送人不同，
              只靠会话首字会画出一屏同款头像。消息没给人像时（老数据 / 反查不到），
-             再回落当前会话的头像：单聊里发送人就是对端，与标题、首字兜底同源 */
-          src={mine ? myAvatar : message.senderAvatarUrl ?? activeDisplay?.targetAvatarUrl ?? undefined}
+             再回落当前会话的头像：单聊里发送人就是对端，与标题、首字兜底同源。
+             src 只是**回落值**：`UserAvatar` 会用上面那个 userId 先查全局覆盖表，
+             所以「发送人刚换了头像」无需重拉历史就能换图 */
+          src={mine ? myAvatar : message.senderAvatarUrl ?? activeDisplay?.targetAvatarUrl ?? null}
         >
           {mine ? <UserOutlined /> : messageSenderInitial(message, activeInitial)}
-        </Avatar>
+        </UserAvatar>
         <div
           className={`${styles.bubbleWrap}${mine ? ` ${styles.bubbleWrapSelf}` : ''}`}
         >
@@ -1477,8 +1496,16 @@ const ChatPage = () => {
                           size="small"
                           overflowCount={99}
                         >
-                          <Avatar
+                          <UserAvatar
                             size={40}
+                            /* 只有单聊的 targetId 才是「用户 ID」；群聊的 targetId 是群组 ID，
+                               拿它去查用户头像覆盖表属于串域取值（雪花 ID 跨表理论上可碰撞），
+                               因此群聊一律不传 userId，只吃服务端下发的会话头像 */
+                            userId={
+                              item.chatScope === ChatScope.PRIVATE
+                                ? item.targetId
+                                : undefined
+                            }
                             style={{
                               background: active
                                 ? token.colorPrimary
@@ -1487,10 +1514,10 @@ const ChatPage = () => {
                                 ? token.colorTextLightSolid
                                 : token.colorTextSecondary,
                             }}
-                            src={item.targetAvatarUrl ?? undefined}
+                            src={item.targetAvatarUrl}
                           >
                             {conversationInitial(item, labels)}
-                          </Avatar>
+                          </UserAvatar>
                         </Badge>
                         <div className={styles.itemBody}>
                           <div className={styles.itemHead}>

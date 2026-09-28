@@ -87,11 +87,13 @@ export interface WsClientEvents {
    */
   typing?: (typing: WsTypingPayload, frame: WsFrame) => void;
   /**
-   * 收到 `PROFILE` 用户资料帧（本人的头像已更换）。
+   * 收到 `PROFILE` 用户资料帧（某人的头像已更换，**不一定是本人**）。
    *
-   * <p><b>它只推给变更者本人的全部在线端</b>，所以订阅方<b>无需</b>按 userId 过滤——
-   * 收到即代表「我自己的资料变了」。这与 `PRESENCE` 恰好相反（那里必须按 userId 比对），
-   * 因为在线状态帧会送到多个「认识该用户」的接收人手上。</p>
+   * <p><b>它是广播帧</b>（推给所有在线端），所以订阅方<b>必须</b>按 `userId` 区分：
+   * 写全局头像覆盖表对所有人都成立，而写「我自己的登录态」只有
+   * `profile.userId` 命中当前用户时才允许——两条处理见 `components/ProfileSync`。</p>
+   *
+   * <p>与 `PRESENCE` 同类（都要按 userId 比对），不要沿用「收到即代表是本人」的旧口径。</p>
    *
    * <p>不是消息：不进消息流、不影响未读三口径。</p>
    */

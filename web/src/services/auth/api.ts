@@ -5,7 +5,7 @@
  * 这里只负责「路径 + 参数 + 令牌落盘」三件事。</p>
  */
 
-import { requestData } from '@/services/request';
+import { requestData, uploadBinary } from '@/services/request';
 import { tokenStore } from '@/utils/token';
 
 import { AUTH_ENDPOINTS } from './endpoints';
@@ -75,4 +75,29 @@ export async function changePassword(payload: ChangePasswordRequest): Promise<vo
     silent: true,
   });
   tokenStore.clear();
+}
+
+/**
+ * 本人更换头像（multipart，<b>上传即生效</b>，无需再点「保存」）。
+ *
+ * <p>走 {@link uploadBinary} 而不是 `post`：multipart 必须由 XHR 直接发（axios 实例会把
+ * FormData 再包一层，服务端拿不到 `file` 部件），且这条通道自带 401 静默刷新重放，
+ * 与 JSON 通道共用同一把单飞锁。</p>
+ *
+ * <p><b>刻意不设置 `Content-Type`</b>：boundary 必须由浏览器生成，手写会丢掉 boundary
+ * 导致服务端 400（或解析出空文件）。</p>
+ *
+ * <p><b>与 `services/system#uploadUserAvatar` 的区别不只是路径：</b>那条需要
+ * `system:user:update` 权限点、用于管理员改<b>他人</b>；本条无权限点、只改<b>自己</b>。
+ * 两者都回变更后的用户摘要，调用方据此就地换图。</p>
+ *
+ * @param file 已通过 `checkAvatarFile` 预检的图片；服务端仍会按文件头魔数复核类型，
+ *   客户端 MIME 不是判定依据
+ * @returns 变更后的本人摘要（含新的头像地址，已带 `?v=` 缓存版本号；服务端未返回时为 undefined）
+ */
+export function uploadMyAvatar(file: File): Promise<AuthUserSummary> {
+  const form = new FormData();
+  // 字段名固定 file：与后端 @RequestPart("file") 逐字一致
+  form.append('file', file);
+  return uploadBinary<AuthUserSummary>(AUTH_ENDPOINTS.myAvatar, form);
 }

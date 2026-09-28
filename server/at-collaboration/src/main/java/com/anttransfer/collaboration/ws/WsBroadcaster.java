@@ -72,4 +72,36 @@ public class WsBroadcaster {
                     userId, frame.type(), e.getMessage());
         }
     }
+
+    /**
+     * 广播一帧给<b>所有在线连接</b>（不区分用户）。
+     *
+     * <p><b>用在哪：</b>只用于「这条事实与看到它的每个人都相关，且无法预先算出收件人集合」的少数帧。
+     * 当前唯一用例是资料变更（{@code PROFILE}）：某个人的头像换了，所有正在展示它的地方
+     * （自己的顶栏与多端、会话对端、群成员列表、用户管理列表）都该立刻换图，而
+     * 「谁正在展示这个人」是一张需要持续维护与对账的订阅表——为一个换头像动作引入它，
+     * 复杂度远大于收益。</p>
+     *
+     * <p><b>准入条件（新增调用方自问）：</b>① 载荷是否低敏感且不含对方未授权的字段
+     * （本帧只有 userId + 头像直出地址，后者本就是免登录可读的公开路径）；
+     * ② 频率是否足够低（换头像是低频人工动作，不是心跳或消息流——那类不得走全员广播）；
+     * ③ 丢了是否只退化为「下次拉取时更新」（是，属加速通道）。三条不满足时，
+     * 应当按用户扇出 {@link #push} 或引入真正的订阅集合。</p>
+     *
+     * @param frame 帧体
+     */
+    public void broadcast(WsFrame frame) {
+        if (frame == null) {
+            return;
+        }
+        try {
+            // userId 为 null 即「全员」语义，订阅端据此投给本机全部连接（见 WsDelivery 类注）
+            WsDelivery delivery = new WsDelivery(null, objectMapper.valueToTree(frame));
+            redisTemplate.convertAndSend(RedisKeyConstants.WS_CHANNEL,
+                    objectMapper.writeValueAsString(delivery));
+        } catch (Exception e) {
+            log.warn("WS 全员广播失败（事实已落库，各端将退化为下次拉取时更新）：type={}, cause={}",
+                    frame.type(), e.getMessage());
+        }
+    }
 }

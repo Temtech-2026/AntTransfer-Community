@@ -198,8 +198,13 @@ public class CollaborationEventListener {
      * 还把一件已经提交的事重新塞进一个可以失败的事务边界里。需要独立事务的是
      * {@code notificationPort.send}（要写通知表）那几条路径，不是本条。</p>
      *
-     * <p><b>推给谁：</b>变更者<b>本人的所有在线端</b>（{@code push} 按 userId 扇出到该账号的
-     * 全部连接）。会话对端刻意不推，理由见 {@link WsProtocol#TYPE_PROFILE}。</p>
+     * <p><b>推给谁：全员广播</b>（{@code broadcast}，投给所有在线连接）。
+     * 理由是产品口径「头像一变，所有能看到它的地方立刻换图」：除了本人自己的多端，
+     * 会话对端、群成员列表、用户管理列表也都在展示这个头像。收件人集合无法廉价算出——
+     * 要精确匹配就得维护一张「谁在关注谁」的订阅表并让它与群成员关系变更保持同步；
+     * 而本帧载荷只有 {@code userId + 头像直出地址}（后者本就是免登录可读的公开路径），
+     * 全员广播的暴露面与「让对方直接访问这个 URL」完全相同。频率上换头像是低频人工动作，
+     * 不构成放大。理由详见 {@link WsBroadcaster#broadcast} 与 {@link WsProtocol#TYPE_PROFILE}。</p>
      *
      * <p>异常必须自吞（与类注同因）：本方法在发布方的 {@code afterCommit} 阶段同步执行，
      * 抛出会把「已经提交成功的换头像」在调用方看来变成失败。</p>
@@ -210,10 +215,10 @@ public class CollaborationEventListener {
             return;
         }
         try {
-            wsBroadcaster.push(event.userId(), WsFrame.of(WsProtocol.TYPE_PROFILE,
+            wsBroadcaster.broadcast(WsFrame.of(WsProtocol.TYPE_PROFILE,
                     new ChatProfileVO(event.userId(), event.avatarUrl())));
         } catch (Exception e) {
-            log.error("资料变更帧推送失败（头像已落库，本人各端将退化为下次拉取时才刷新）：userId={}, cause={}",
+            log.error("资料变更帧广播失败（头像已落库，各端将退化为下次拉取时才刷新）：userId={}, cause={}",
                     event.userId(), e.toString());
         }
     }

@@ -42,6 +42,13 @@ export default {
   'component.avatar.nickname': '昵称',
   'component.avatar.roles': '角色',
 
+  // 个人信息弹窗里的本人头像自助更换（上传即生效，不走表单保存）
+  // 预检失败的提示复用 system.user.avatar.tooLarge / typeInvalid：
+  // checkAvatarFile 是按系统管理域命名的共用预检，key 不另起一套，避免同一句话两处维护
+  'component.avatar.avatar.upload': '上传头像',
+  'component.avatar.avatar.hint': '支持 PNG / JPEG / GIF / WebP，不超过 {max}',
+  'component.avatar.avatar.updated': '头像已更新',
+
   // 自助改密弹窗（成功后全端吊销，必须重新登录）
   'component.avatar.changePassword.title': '修改密码',
   'component.avatar.changePassword.alert.title': '修改成功后需要重新登录',

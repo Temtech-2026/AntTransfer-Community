@@ -17,6 +17,7 @@ package com.anttransfer.auth.config;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.util.AntPathMatcher;
 
 import java.util.List;
 
@@ -70,7 +71,12 @@ class SecurityConfigTest {
             "/v1/chat-attachments/*/content",
             // 头像直出：漏放行的表现最隐蔽——顶栏与列表里的头像全部静默回落到
             // 「展示名首字符」兜底图，接口不报错、控制台无异常，看起来就像「这个用户没上传头像」。
-            "/v1/users/*/avatar",
+            //
+            // ⚠️ ID 段必须是数字正则而非星号：本人自助换头像的写路径是 POST /v1/users/me/avatar，
+            // 在星号通配下会被这条匿名放行顺带吃掉（Security 的路径放行不看 HTTP 方法），
+            // 于是「谁能改头像」这件事被静默放宽成匿名可调。见下方
+            // builtInWhitelist_shouldNotPermitSelfAvatarUpload 的单向断言。
+            "/v1/users/{userId:[0-9]+}/avatar",
             "/ws/notify");
 
     @Test
@@ -124,5 +130,27 @@ class SecurityConfigTest {
         // 前端只能看到「正在建立实时连接」，没有任何可诊断信息。
         assertThat(SecurityConfig.resolvePermitAll(new AuthProperties()))
                 .contains("/ws/notify");
+    }
+
+    /**
+     * 本人换头像的<b>写路径</b>不得被匿名放行——这是「谁能改头像」的边界，漏了等于人人可改。
+     *
+     * <p>本用例按<b>真实匹配语义</b>断言，而不是比较字符串字面量：星号通配与数字正则
+     * 在肉眼上只差几个字符，但它们对 {@code /v1/users/me/avatar} 的判定完全不同。
+     * 同时做正向断言（数字 ID 的读路径仍匹配）——只做反向断言的话，
+     * 把整条白名单删空也能让测试变绿。</p>
+     */
+    @Test
+    @DisplayName("头像写路径不得匿名可达：/v1/users/me/avatar 不匹配任何白名单条目")
+    void builtInWhitelist_shouldNotPermitSelfAvatarUpload() {
+        AntPathMatcher matcher = new AntPathMatcher();
+        List<String> whitelist = SecurityConfig.resolvePermitAll(new AuthProperties());
+
+        assertThat(whitelist.stream().anyMatch(p -> matcher.match(p, "/v1/users/me/avatar")))
+                .as("写路径被放行 = 任何人无需登录即可覆盖头像，必须由 access token 把关")
+                .isFalse();
+        assertThat(whitelist.stream().anyMatch(p -> matcher.match(p, "/v1/users/123/avatar")))
+                .as("读路径必须仍然匿名可读，否则全部头像静默回落为「展示名首字符」兜底图")
+                .isTrue();
     }
 }
