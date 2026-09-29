@@ -411,7 +411,7 @@ class ChatServiceRecallTest {
 
     private static ChatSendDTO sendDTO(String clientMsgId, String quoteClientMsgId) {
         return new ChatSendDTO(ChatScope.PRIVATE, PEER_ID, MessageType.CHAT_TEXT,
-                "收到，请看上面那条", clientMsgId, quoteClientMsgId, null);
+                "收到，请看上面那条", clientMsgId, quoteClientMsgId, null, null);
     }
 
     private static NotifyMessage row(long recipientId, long senderId, long targetId) {

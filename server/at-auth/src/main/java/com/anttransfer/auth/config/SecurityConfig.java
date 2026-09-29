@@ -91,6 +91,23 @@ public class SecurityConfig {
             "/v1/auth/token/refresh", // 刷新令牌
             "/error",                 // 容器错误转发（否则错误页本身也要登录）
 
+            // —— 运维探针：版本信息与健康检查（at-bootstrap 的 spring-boot-starter-actuator） ——
+            // 为什么必须匿名：探针的典型调用者是负载均衡 / 容器编排 / 发布脚本，
+            // 它们处在**没有登录态、也拿不到 access token**的上下文里（健康检查失败会被
+            // 直接判定为实例不可用而下线）；再叠加一条——本项目的 Security 过滤器链在
+            // 认证失败时直接回 401，探针若要求凭证就等于「用探针查探针为何不可用」。
+            //
+            // 为什么可以匿名：暴露面由 application.yml 的 management 段以白名单收窄，
+            // 只开这两个端点，且都不含敏感内容——
+            //   · /v1/../actuator/info   只回版本号、提交号、构建时间（META-INF/build-info.properties）；
+            //     不含配置值、环境变量、连接串（那是 /actuator/env，已被 exposure 排除）
+            //   · /v1/../actuator/health 只回 {"status":"UP"}，show-details=never 保证不吐
+            //     数据源地址 / 磁盘路径 / Redis 版本等组件明细
+            // 反向约束：**不得**把它们换成 /actuator/** 通配，也不得在暴露列表里加 env / beans /
+            // configprops / heapdump——那会让这两条放行从「只暴露版本」变成「暴露整个进程」。
+            "/actuator/info",
+            "/actuator/health",
+
             // —— 产品固有的匿名入口：四处「浏览器无法携带 Authorization 头」的场景 ——
             // 外发分享访客侧：访客无登录态，凭「高熵令牌 + 提取码」自证身份；
             // 服务层逐项校验令牌 / 有效期 / 提取码 / 次数，另有 @RateLimit 抗爆破。

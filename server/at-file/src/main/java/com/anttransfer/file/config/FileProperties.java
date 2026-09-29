@@ -70,6 +70,16 @@ public class FileProperties {
      */
     private String avatarDirName = "_avatars";
 
+    /**
+     * 用户自定义消息提示音子目录名（位于 storageRoot 下）。
+     *
+     * <p>与头像目录<b>刻意分开</b>：两者上限不同（头像 2 MiB / 提示音 1 MiB）、
+     * 生命周期不同（提示音会随「切回内置音色」被清掉），落在一起会让清理逻辑互相误扫。
+     * 同样不做内容寻址——「换一个音再换回来」必须换新 key，否则 {@code ?v=} 版本号不变，
+     * 浏览器一直播旧音频（详见 {@code NotificationSoundStoragePort}）。</p>
+     */
+    private String notifySoundDirName = "_notify_sounds";
+
     /* ============================== 回收站 ============================== */
 
     /** 回收站保留期：默认 30 天（PRD US-09 权威口径，到期物理清理） */

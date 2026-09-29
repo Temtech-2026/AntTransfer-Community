@@ -47,4 +47,17 @@ public class ChatGroupRow {
 
     /** 成员数（含群主；已逻辑删除的成员行不计入） */
     private Long memberCount;
+
+    /**
+     * <b>我</b>在该群的消息免打扰状态：0-关闭 1-开启（取自我的成员行 {@code me}）。
+     *
+     * <p>与成员数共用同一次 JOIN——提醒偏好本就搭在 {@code me} 那一行上，不额外查询。</p>
+     */
+    private Integer muteStatus;
+
+    /** <b>我</b>的「有人 @ 我时提醒」开关：0-关闭 1-开启（取自我的成员行）。 */
+    private Integer notifyOnMention;
+
+    /** <b>我</b>的「群主 @ 所有人时提醒」开关：0-关闭 1-开启（取自我的成员行）。 */
+    private Integer notifyOnMentionAll;
 }

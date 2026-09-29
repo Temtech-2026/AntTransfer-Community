@@ -57,6 +57,14 @@ import java.util.List;
  *                        只有被点名者收到的那份为 {@code true}。前端据此渲染「@我」高亮，
  *                        会话列表则用它的未读计数画「有人 @ 我」角标
  *                        （{@code ConversationVO#mentionUnreadCount}）
+ * @param mentionType     本条消息的提及档位：0-未点名 1-{@code @我} 2-{@code @所有人}
+ *                        （归一化后恒为三态之一，不会为 {@code null}）。
+ *                        <b>与 {@code mentioned} 是包含关系</b>：{@code mentionType > 0}
+ *                        时 {@code mentioned} 恒为 {@code true}——布尔只回答「点没点我」，
+ *                        档位回答「是哪一种点名」。分档的用途是免打扰下的提醒裁决：
+ *                        「有人 @ 我」与「群主 @ 所有人」是两个可分别开关的提醒渠道
+ *                        （见 {@link ChatGroupNotifyPreferenceVO}），只靠布尔无法区分，
+ *                        前端也就无从在当前消息上套用用户对这两种打扰的不同容忍度
  * @param recallStatus    撤回状态：0-正常 1-已撤回（1 时 {@code content} 已清空，
  *                        前端应渲染为「已撤回」占位而不是空气泡）
  * @param recallTime      撤回时间（未撤回为 null）
@@ -99,6 +107,7 @@ public record NotifyMessageVO(
         Integer readStatus,
         LocalDateTime readTime,
         boolean mentioned,
+        Integer mentionType,
         Integer recallStatus,
         LocalDateTime recallTime,
         String quoteClientMsgId,
@@ -158,6 +167,7 @@ public record NotifyMessageVO(
                 message.getReadStatus(),
                 message.getReadTime(),
                 message.isRecipientMentioned(),
+                message.mentionTypeOrDefault(),
                 message.getRecallStatus(),
                 message.getRecallTime(),
                 message.getQuoteClientMsgId(),

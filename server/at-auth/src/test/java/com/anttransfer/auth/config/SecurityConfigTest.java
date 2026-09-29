@@ -77,7 +77,12 @@ class SecurityConfigTest {
             // 于是「谁能改头像」这件事被静默放宽成匿名可调。见下方
             // builtInWhitelist_shouldNotPermitSelfAvatarUpload 的单向断言。
             "/v1/users/{userId:[0-9]+}/avatar",
-            "/ws/notify");
+            "/ws/notify",
+            // 运维探针：调用方是负载均衡 / 容器编排 / 发布脚本，天然没有登录态与 token。
+            // 暴露面已由 application.yml 的 management 段收窄到这两个端点，
+            // 且 health 的 show-details=never 不吐组件明细。
+            "/actuator/info",
+            "/actuator/health");
 
     @Test
     @DisplayName("内置白名单覆盖认证入口与全部产品固有匿名入口")
@@ -152,5 +157,36 @@ class SecurityConfigTest {
         assertThat(whitelist.stream().anyMatch(p -> matcher.match(p, "/v1/users/123/avatar")))
                 .as("读路径必须仍然匿名可读，否则全部头像静默回落为「展示名首字符」兜底图")
                 .isTrue();
+    }
+
+    /**
+     * 运维探针只能<b>按端点</b>放行，不得退化成 {@code /actuator/**} 通配。
+     *
+     * <p>通配的后果不是「多放行了 info」，而是把 Boot 那些默认就该待在认证之后的端点
+     * 一并交出去：{@code /actuator/env}（配置与环境变量，含 {@code AUTH_ACCESS_TOKEN_SECRET}
+     * 这类密钥）、{@code /actuator/configprops}、{@code /actuator/beans}，以及最危险的
+     * {@code /actuator/heapdump}——一个 GET 就能把整个堆转储下载下来，等于把内存里的
+     * 令牌与用户数据打包外发。</p>
+     *
+     * <p>本用例与 application.yml 的 {@code management.endpoints.web.exposure} 白名单
+     * 构成双保险：即便配置被误改成 {@code '*'}，只要这里仍是按端点放行，
+     * 那些敏感端点就进不了匿名区。</p>
+     */
+    @Test
+    @DisplayName("运维探针按端点放行，不得退化为 /actuator/** 通配")
+    void actuatorProbes_mustNotBePermittedByWildcard() {
+        AntPathMatcher matcher = new AntPathMatcher();
+        List<String> whitelist = SecurityConfig.resolvePermitAll(new AuthProperties());
+
+        assertThat(whitelist)
+                .as("两个探针端点必须匿名可达，否则健康检查与「查现网版本」都要先登录")
+                .contains("/actuator/info", "/actuator/health");
+
+        for (String sensitive : List.of(
+                "/actuator/env", "/actuator/configprops", "/actuator/beans", "/actuator/heapdump")) {
+            assertThat(whitelist.stream().anyMatch(p -> matcher.match(p, sensitive)))
+                    .as("%s 不得匿名可达（内含密钥 / 配置 / 堆转储）", sensitive)
+                    .isFalse();
+        }
     }
 }

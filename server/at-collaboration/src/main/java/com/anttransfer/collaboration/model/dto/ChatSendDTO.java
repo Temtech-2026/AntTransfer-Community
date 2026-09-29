@@ -52,6 +52,13 @@ import java.util.List;
  *                        服务端据此把对应接收人的那一行标记为「被点名」（见 {@code V18} 口径 ①），
  *                        并<b>静默剔除</b>不属于本会话的 ID（不报错：见 {@code ChatService#resolveMentionTargets}）。
  *                        单聊忽略本字段——对方本就是唯一读者，点名没有额外语义。
+ * @param mentionAll      {@code @所有人}（选填，默认 false，仅群聊有意义）。
+ *                        <b>只有群主可以置 true</b>，其余身份一律以 1042（403）拒绝——
+ *                        {@code @所有人} 是一次性给全体成员推提醒的「面向全群的打扰权」，
+ *                        比改群名更重，故 CE 只认群主一档（与移除成员 / 解散同一取舍）。
+ *                        生效时全体成员（发送人自己除外）那一行的 {@code mention_type} 记为 2，
+ *                        与逐人 {@code mentionUserIds}（档位 1）可共存——两者叠加时以
+ *                        {@code @所有人}（档位 2）为准。单聊忽略本字段。
  * @author AntTransfer CE
  */
 public record ChatSendDTO(
@@ -63,5 +70,6 @@ public record ChatSendDTO(
         @NotBlank(message = "客户端消息 ID 不能为空")
         @Size(max = 64, message = "客户端消息 ID 过长") String clientMsgId,
         @Size(max = 64, message = "被引用消息 ID 过长") String quoteClientMsgId,
-        @Size(max = 500, message = "提及人数过多") List<Long> mentionUserIds) {
+        @Size(max = 500, message = "提及人数过多") List<Long> mentionUserIds,
+        Boolean mentionAll) {
 }

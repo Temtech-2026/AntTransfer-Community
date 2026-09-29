@@ -17,10 +17,12 @@ package com.anttransfer.collaboration.controller;
 
 import com.anttransfer.collaboration.model.dto.ChatGroupCreateDTO;
 import com.anttransfer.collaboration.model.dto.ChatGroupMemberAddDTO;
+import com.anttransfer.collaboration.model.dto.ChatGroupNotifyPreferenceDTO;
 import com.anttransfer.collaboration.model.dto.ChatGroupUpdateDTO;
 import com.anttransfer.collaboration.model.dto.ChatPeerAliasDTO;
 import com.anttransfer.collaboration.model.dto.ChatSendDTO;
 import com.anttransfer.collaboration.model.vo.ChatGroupDetailVO;
+import com.anttransfer.collaboration.model.vo.ChatGroupNotifyPreferenceVO;
 import com.anttransfer.collaboration.model.vo.ChatGroupVO;
 import com.anttransfer.collaboration.model.vo.ChatPeerVO;
 import com.anttransfer.collaboration.model.vo.ChatPresenceVO;
@@ -273,6 +275,52 @@ public class ChatController {
     @GetMapping("/groups/{groupId}")
     public Result<ChatGroupDetailVO> groupDetail(@PathVariable Long groupId) {
         return Result.ok(chatGroupService.detail(CurrentUserContext.currentUserId(), groupId));
+    }
+
+    /**
+     * 读取我在该群的消息提醒偏好（群设置面板里三个开关的当前状态）。
+     *
+     * <p><b>为什么不复用 {@code GET /groups/{groupId}}</b>：群详情已经带了这份偏好
+     * （见 {@code ChatGroupDetailVO#notifyPreference}），但它同时还要组装全量成员名单
+     * （最坏 500 条批量反查展示名 / 头像）。用户每拨一个开关就读一次全量名单是明显的浪费，
+     * 也因此有了下面那个只读三个开关的窄接口。</p>
+     *
+     * <p><b>不挂权限点、登录即用，但必须是群成员</b>：读取维度写死为「我与该群的关系」，
+     * 非成员一律 1012——不存在「读他人免打扰设置」的入参面（偏好是成员关系的私有属性，
+     * 存储口径见 {@code V20}）。</p>
+     *
+     * @param groupId 群 ID
+     */
+    @GetMapping("/groups/{groupId}/notify-preference")
+    public Result<ChatGroupNotifyPreferenceVO> groupNotifyPreference(@PathVariable Long groupId) {
+        return Result.ok(chatGroupService.notifyPreference(
+                CurrentUserContext.currentUserId(), groupId));
+    }
+
+    /**
+     * 更新我在该群的消息提醒偏好（免打扰 + {@code @我} + {@code @所有人}，整体覆盖式）。
+     *
+     * <p><b>为什么是 {@code PUT} 而不是 {@code PATCH}：</b>三个开关共同决定一条消息是否提醒，
+     * 请求体给的是「我看到并确认过的完整状态」，语义是一次替换而非增量修改——
+     * 增量更新会让两个并发请求互相覆盖对方的意图（详见 {@code ChatGroupNotifyPreferenceDTO}）。
+     * 三个字段缺一即被 {@code @NotNull} 拒（400），不会被静默当成关闭。</p>
+     *
+     * <p><b>是写操作，但只用登录态、不挂权限点</b>：作用对象写死为
+     * {@code CurrentUserContext} 对应的成员行，调用方无法替别人关闭提醒，
+     * 不存在「改到他人偏好」的入参面；它也不改任何共享状态（群名 / 成员名单都不动）。
+     * 滥用面由 {@code @RateLimit} 兜底。</p>
+     *
+     * @param groupId 群 ID
+     * @param dto     三个开关的完整状态
+     */
+    @PutMapping("/groups/{groupId}/notify-preference")
+    @RateLimit(windowSeconds = 60, max = 30, key = "chat-group-notify-preference",
+            message = "设置消息提醒过于频繁，请稍后再试")
+    public Result<ChatGroupNotifyPreferenceVO> updateGroupNotifyPreference(
+            @PathVariable Long groupId,
+            @Valid @RequestBody ChatGroupNotifyPreferenceDTO dto) {
+        return Result.ok(chatGroupService.updateNotifyPreference(
+                CurrentUserContext.currentUserId(), groupId, dto));
     }
 
     /**

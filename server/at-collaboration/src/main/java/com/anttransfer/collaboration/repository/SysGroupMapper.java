@@ -46,6 +46,11 @@ public interface SysGroupMapper extends BaseMapper<SysGroup> {
      * 不会把结果行数放大），{@code m} 是「这个群有多少人」（聚合来源）。
      * 少了 {@code me} 就是越权列出所有群，少了 {@code m} 成员数恒为 1。</p>
      *
+     * <p><b>顺带取我的提醒偏好</b>（{@code me} 那一行上的免打扰与两类提及开关）：
+     * 会话列表要为群聊回显人数，同时前端在收到实时消息时要用同一份偏好决定是否出声。
+     * 两者都挂在 {@code me} 上，一次 JOIN 即可，不额外查询；
+     * 这也是「偏好搭成员关系行」这一存储取舍的直接收益（见 {@code V20} 口径）。</p>
+     *
      * <p><b>不按 {@code group_type} 过滤：</b>群聊（2）与项目（1）都靠
      * {@code sys_group_member} 定义可见范围，会话发送侧也只校验成员资格。
      * 多一个类型条件会造成「同一条群聊消息，在项目里能发、在群里却选不到入口」的分裂。
@@ -62,10 +67,13 @@ public interface SysGroupMapper extends BaseMapper<SysGroup> {
      * @return 我加入的生效群（含群名 / 群主 / 成员数）；没加入任何群时返回空列表
      */
     @Select("""
-            select g.id            as id,
-                   g.name          as name,
-                   g.owner_user_id as ownerUserId,
-                   count(m.id)     as memberCount
+            select g.id                      as id,
+                   g.name                    as name,
+                   g.owner_user_id           as ownerUserId,
+                   count(m.id)               as memberCount,
+                   me.mute_status            as muteStatus,
+                   me.notify_on_mention      as notifyOnMention,
+                   me.notify_on_mention_all  as notifyOnMentionAll
             from sys_group g
                      join sys_group_member me
                           on me.group_id = g.id and me.user_id = #{userId} and me.deleted = 0
@@ -73,7 +81,8 @@ public interface SysGroupMapper extends BaseMapper<SysGroup> {
                                on m.group_id = g.id and m.deleted = 0
             where g.deleted = 0
               and g.status = 1
-            group by g.id, g.name, g.owner_user_id
+            group by g.id, g.name, g.owner_user_id,
+                     me.mute_status, me.notify_on_mention, me.notify_on_mention_all
             order by g.id desc
             """)
     List<ChatGroupRow> selectMyGroups(@Param("userId") Long userId);

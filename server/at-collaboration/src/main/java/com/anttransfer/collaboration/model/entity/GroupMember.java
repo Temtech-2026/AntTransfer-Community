@@ -64,6 +64,18 @@ public class GroupMember extends BaseEntity {
     /** 成员角色：只读 */
     public static final int ROLE_READONLY = 3;
 
+    /** 消息免打扰：关闭（默认，所有消息都提醒） */
+    public static final int MUTE_OFF = 0;
+
+    /** 消息免打扰：开启（仅按 mention 偏好决定是否提醒） */
+    public static final int MUTE_ON = 1;
+
+    /** 提醒开关：关闭 */
+    public static final int NOTIFY_OFF = 0;
+
+    /** 提醒开关：开启（默认） */
+    public static final int NOTIFY_ON = 1;
+
     /** 项目 / 群组 ID（逻辑关联 sys_group） */
     private Long groupId;
 
@@ -76,4 +88,37 @@ public class GroupMember extends BaseEntity {
     /** 加入时间（DB 默认 CURRENT_TIMESTAMP，入群时由应用显式赋值） */
     @TableField(value = "join_time")
     private LocalDateTime joinTime;
+
+    /**
+     * 消息免打扰：0-关闭 1-开启（见 {@code V20} 口径）。
+     *
+     * <p>本列是 (我, 这个群) 这条成员关系的私有属性——群主无法替成员关闭提醒。
+     * 关闭时所有消息都提醒；开启时是否提醒由 {@link #notifyOnMention} /
+     * {@link #notifyOnMentionAll} 逐档决定。</p>
+     */
+    @TableField(value = "mute_status")
+    private Integer muteStatus;
+
+    /** 有人 {@code @} 我时是否提醒：0-不提醒 1-提醒（仅在 {@link #muteStatus}=1 时参与裁决）。 */
+    @TableField(value = "notify_on_mention")
+    private Integer notifyOnMention;
+
+    /** 群主 {@code @} 所有人时是否提醒：0-不提醒 1-提醒（仅在 {@link #muteStatus}=1 时参与裁决）。 */
+    @TableField(value = "notify_on_mention_all")
+    private Integer notifyOnMentionAll;
+
+    /** 是否已开启消息免打扰（{@code null} 视为关闭——存量行 / 未设置即保持原行为）。 */
+    public boolean isMuted() {
+        return muteStatus != null && muteStatus == MUTE_ON;
+    }
+
+    /** 「有人 @ 我」提醒开关（{@code null} 视为开启，与 V20 默认值一致）。 */
+    public boolean isNotifyOnMentionEnabled() {
+        return notifyOnMention == null || notifyOnMention == NOTIFY_ON;
+    }
+
+    /** 「@所有人」提醒开关（{@code null} 视为开启，与 V20 默认值一致）。 */
+    public boolean isNotifyOnMentionAllEnabled() {
+        return notifyOnMentionAll == null || notifyOnMentionAll == NOTIFY_ON;
+    }
 }

@@ -51,4 +51,29 @@ public final class AuthVos {
     public record TokenResponse(String accessToken, String refreshToken, String tokenType,
                                 long expiresIn, UserSummary user) {
     }
+
+    /**
+     * 本人消息提示音设置（{@code GET/PUT /api/v1/users/me/notify-setting}）。
+     *
+     * <p><b>为什么把上限也下发：</b>{@code maxSoundBytes / maxSoundDurationMillis}
+     * 是服务端强制的准入事实，前端据它做「选好文件立刻提示超限」的即时反馈。
+     * 下发而不是让前端各写一份常数，是为了让「前端拦得住」与「后端真的拒」永远同一口径——
+     * 一旦两处数字分叉，用户就会遇到「本地提示没问题、上传却被拒」这类无法自解的故障。</p>
+     *
+     * <p><b>{@code customSoundUrl} 为空即代表没有自定义音频</b>（而非「有但地址取不到」）：
+     * 地址由 {@code NotificationSoundStoragePort#urlOf} 由库里的 key 现拼，
+     * key 为空时它返回 {@code null}。</p>
+     *
+     * <p>不含任何存储 key / 落盘路径——那些是取音频的凭据，只应存在于服务端。</p>
+     */
+    public record NotifySettingVO(
+            boolean soundEnabled,
+            String soundPreset,
+            String customSoundName,
+            Long customSoundSize,
+            Integer customSoundDurationMs,
+            String customSoundUrl,
+            long maxSoundBytes,
+            long maxSoundDurationMillis) {
+    }
 }

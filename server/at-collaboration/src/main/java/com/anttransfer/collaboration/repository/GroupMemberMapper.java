@@ -83,7 +83,8 @@ public interface GroupMemberMapper extends BaseMapper<GroupMember> {
      * 群主恒为第一行——面板上「群主在最前」不需要额外排序规则。</p>
      */
     @Select("""
-            select id, group_id, user_id, member_role, join_time
+            select id, group_id, user_id, member_role, join_time,
+                   mute_status, notify_on_mention, notify_on_mention_all
             from sys_group_member
             where group_id = #{groupId}
               and deleted = 0
@@ -98,7 +99,8 @@ public interface GroupMemberMapper extends BaseMapper<GroupMember> {
      * 不必映射实体）；本方法用在群管理面，需要 {@code member_role} 才能判定「管理员」。</p>
      */
     @Select("""
-            select id, group_id, user_id, member_role, join_time
+            select id, group_id, user_id, member_role, join_time,
+                   mute_status, notify_on_mention, notify_on_mention_all
             from sys_group_member
             where group_id = #{groupId}
               and user_id = #{userId}
@@ -126,11 +128,19 @@ public interface GroupMemberMapper extends BaseMapper<GroupMember> {
      * <p>{@code join_time} 一并刷新为本次入群时间：审计上「他是什么时候重新进群的」应看本次，
      * 而不是上一次。{@code member_role} 显式回落为普通成员——不能沿用他上一次的角色，
      * 否则「移除管理员后再拉回来」会静默恢复其管理身份。</p>
+     *
+     * <p><b>提醒偏好一并无条件回落默认值</b>（免打扰关 + 两类提及提醒开）：偏好是
+     * 「他对这个群」的当下选择，被移除期间这份选择已经失去载体；若复活时沿用旧值，
+     * 他会在毫不知情的情况下带着上一轮设定的免打扰回到群里，表现为「刚进群就收不到提醒」。
+     * 与 {@code member_role} 同一取舍：重新入群即回到新成员状态。</p>
      */
     @Update("""
             update sys_group_member
             set deleted = 0,
                 member_role = #{memberRole},
+                mute_status = 0,
+                notify_on_mention = 1,
+                notify_on_mention_all = 1,
                 join_time = #{joinTime},
                 update_by = #{operatorId},
                 update_time = now()
@@ -173,4 +183,36 @@ public interface GroupMemberMapper extends BaseMapper<GroupMember> {
               and deleted = 0
             """)
     int markAllDeleted(@Param("groupId") Long groupId, @Param("operatorId") Long operatorId);
+
+    /**
+     * 更新「我在这个群」的提醒偏好（免打扰 + 两类提及提醒），整体覆盖式写入。
+     *
+     * <p><b>为什么是覆盖三列而不是按需更新其中一列：</b>三个开关共同决定一条消息是否提醒，
+     * 分开更新会让两个并发请求（一个开免打扰、一个关 @ 提醒）互相覆盖对方的意图，
+     * 最终状态取决于提交顺序。整体覆盖下，客户端每次提交的是「我看到并确认过的完整状态」，
+     * 语义是一次替换而非增量——与三档开关的 UI 天然对应。</p>
+     *
+     * <p><b>归属由 WHERE 写死</b>：{@code group_id + user_id + deleted = 0} 同时回答了
+     * 「这个人还在这个群里吗」——非成员 / 已退群的行 {@code deleted = 1}，受影响行数 0，
+     * 由服务层转 {@code 1012}，不存在「改到别人偏好」或「改已退群群偏好」的入参面。</p>
+     *
+     * @return 受影响行数（1=成功，0=非成员 / 已退群）
+     */
+    @Update("""
+            update sys_group_member
+            set mute_status = #{muteStatus},
+                notify_on_mention = #{notifyOnMention},
+                notify_on_mention_all = #{notifyOnMentionAll},
+                update_by = #{operatorId},
+                update_time = now()
+            where group_id = #{groupId}
+              and user_id = #{userId}
+              and deleted = 0
+            """)
+    int updateNotifyPreference(@Param("groupId") Long groupId,
+                               @Param("userId") Long userId,
+                               @Param("muteStatus") int muteStatus,
+                               @Param("notifyOnMention") int notifyOnMention,
+                               @Param("notifyOnMentionAll") int notifyOnMentionAll,
+                               @Param("operatorId") Long operatorId);
 }

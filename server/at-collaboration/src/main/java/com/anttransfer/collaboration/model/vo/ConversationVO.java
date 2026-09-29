@@ -61,6 +61,14 @@ import java.time.LocalDateTime;
  *                        <b>与 {@code unreadCount} 是包含关系</b>：被点名的消息也是未读，
  *                        同时计入两者——前端据此把角标换成强调样式，而不是把两个数相加。
  *                        0 表示这个会话里没有「有人 @ 我」的未读
+ * @param memberCount     群聊成员数（含群主）——会话标题旁展示的人数。单聊恒为 {@code null}
+ *                        （由 {@code targetName} 回答「对方是谁」，人数没有语义）。
+ *                        仅当「我仍是该群成员」时才有值；已退群 / 被移除后我读不到成员关系，
+ *                        此时为 {@code null}，前端不渲染人数（该会话本就已无法继续发言）
+ * @param notifyPreference 我在该群的消息提醒偏好（免打扰 + 两类提及开关）。
+ *                        单聊恒为 {@code null}（单聊没有免打扰这一概念）；
+ *                        已退群 / 被移除时同样为 {@code null}。
+ *                        用途见 {@link ChatGroupNotifyPreferenceVO}：前端收到实时消息时据此决定是否出声
  * @author AntTransfer CE
  * @implNote ID 字段以字符串过线，理由见 {@code UserVO}；此处漏标即「点已有会话发消息报
  * 目标用户不存在」的直接根因——targetId 被前端舍入后再回传，后端自然查无此人。
@@ -81,5 +89,7 @@ public record ConversationVO(
         boolean lastMessageMine,
         LocalDateTime lastTime,
         long unreadCount,
-        long mentionUnreadCount) {
+        long mentionUnreadCount,
+        Long memberCount,
+        ChatGroupNotifyPreferenceVO notifyPreference) {
 }

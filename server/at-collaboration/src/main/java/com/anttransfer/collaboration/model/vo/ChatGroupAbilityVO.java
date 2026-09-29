@@ -40,6 +40,12 @@ package com.anttransfer.collaboration.model.vo;
  * @param canRemoveMember 能否移除群成员（仅群主）
  * @param canDissolve     能否解散该群（仅群主）
  * @param canQuit         能否退出该群（除群主外的成员）
+ * @param canMentionAll   能否在本群 {@code @所有人}（<b>仅群主</b>）。
+ *                        为什么只给群主：{@code @所有人} 是一次性给全体成员推提醒的
+ *                        「面向全群的打扰权」，比改群名更重，且本身不可撤销——一旦发出，
+ *                        全体成员的设备就已收到提醒。CE 把它与移除成员 / 解散同档。
+ *                        前端据此决定 {@code @} 面板里是否出现「所有人」一项；
+ *                        服务端仍以 1042 独立强校验，不依赖本布尔
  * @author AntTransfer CE
  */
 public record ChatGroupAbilityVO(
@@ -47,5 +53,6 @@ public record ChatGroupAbilityVO(
         boolean canInvite,
         boolean canRemoveMember,
         boolean canDissolve,
-        boolean canQuit) {
+        boolean canQuit,
+        boolean canMentionAll) {
 }

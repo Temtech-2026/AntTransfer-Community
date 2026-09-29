@@ -20,6 +20,7 @@ import com.anttransfer.collaboration.model.dto.ChatSendDTO;
 import com.anttransfer.collaboration.model.entity.ChatPeerAlias;
 import com.anttransfer.collaboration.model.entity.NotifyMessage;
 import com.anttransfer.collaboration.model.entity.SysGroup;
+import com.anttransfer.collaboration.model.vo.ChatGroupNotifyPreferenceVO;
 import com.anttransfer.collaboration.model.vo.ChatPeerVO;
 import com.anttransfer.collaboration.model.vo.ChatPresenceVO;
 import com.anttransfer.collaboration.model.vo.ChatReaderVO;
@@ -28,6 +29,7 @@ import com.anttransfer.collaboration.model.vo.ChatTargetVO;
 import com.anttransfer.collaboration.model.vo.ChatTypingVO;
 import com.anttransfer.collaboration.model.vo.ConversationVO;
 import com.anttransfer.collaboration.model.vo.NotifyMessageVO;
+import com.anttransfer.collaboration.repository.ChatGroupRow;
 import com.anttransfer.collaboration.repository.ChatPeerAliasMapper;
 import com.anttransfer.collaboration.repository.ChatReadRow;
 import com.anttransfer.collaboration.repository.ConversationSummary;
@@ -174,6 +176,12 @@ public class ChatService {
      * 可索引的等值条件，会话列表的提及未读计数与气泡高亮都从它派生，
      * 而<b>不需要解析正文里的昵称</b>（口径与取舍见 {@link #resolveMentionTargets}）。</p>
      *
+     * <p><b>{@code @所有人}（{@code mentionAll=true}）走同一套写扩散，只是档位不同</b>：
+     * 全体接收人（发送人自己除外）那一行的 {@code mention_type} 记为 2（{@code @我} 为 1）。
+     * 分档的原因在收端：免打扰开启后，「有人 @ 我」与「群主 @ 所有人」是两个可分别开关的
+     * 提醒渠道，布尔 {@code mentioned} 答不了「是哪一种点名」。校验见
+     * {@link #resolveMentionAll}——只有群主可以置 true，否则 1042。</p>
+     *
      * @param senderId 发送人（取自登录态，不从入参取——否则可伪造他人发消息）
      * @param dto      发送参数
      * @return 发送人视角的消息视图（其自身那一行，{@code chatTargetId} 为对端 / 群组）
@@ -188,6 +196,10 @@ public class ChatService {
         // 提及目标必须在接收人清单内收敛（见 resolveMentionTargets）：
         // 非成员、自己、单聊场景一律静默剔除，不报错也不落标记
         Set<Long> mentionTargets = resolveMentionTargets(senderId, scope, recipients, dto.mentionUserIds());
+        // @所有人：只有群主可以（1042）。单聊 / 非群主一律在此拦下——
+        // 校验放在幂等回查之前，使「越权的重放」与「越权的首发」得到同一个 1042，
+        // 而不是因为上次恰好落库成功就变成 200（重放不应洗白一次越权调用）
+        boolean mentionAll = resolveMentionAll(senderId, scope, dto.targetId(), dto.mentionAll());
 
         NotifyMessage existed = findExisting(senderId, scope, dto.targetId(), dto.clientMsgId());
         if (existed != null) {
@@ -200,7 +212,7 @@ public class ChatService {
         // 引用快照：非引用消息返回 null；引用不合法时在此抛 1036（不落任何行）
         NotifyMessage quoted = resolveQuote(senderId, scope, dto.targetId(), dto.quoteClientMsgId());
 
-        List<NotifyMessage> rows = buildRows(senderId, scope, dto, recipients, quoted, mentionTargets);
+        List<NotifyMessage> rows = buildRows(senderId, scope, dto, recipients, quoted, mentionTargets, mentionAll);
         try {
             for (NotifyMessage row : rows) {
                 notifyMessageMapper.insert(row);
@@ -461,6 +473,16 @@ public class ChatService {
                         .filter(group -> group.getName() != null)
                         .collect(Collectors.toMap(SysGroup::getId, SysGroup::getName));
 
+        // 群聊还要回显「人数」与「我的提醒偏好」，两者都搭在我自己的成员行上，
+        // 由 selectMyGroups 一次 JOIN 取回（成员数是聚合、偏好是 me 那一行，见该方法注释）。
+        // 只有「我仍是成员」的群才有值：已退群 / 被移除后我读不到成员关系，两个字段均为 null，
+        // 前端不渲染人数、也不为新消息出声——但会话本身<b>不因此跳过</b>，历史消息仍在列表里。
+        // 单聊恒为 null（人数对单聊没有语义、单聊也没有免打扰）。
+        Map<Long, ChatGroupRow> myGroups = groupIds.isEmpty()
+                ? Map.of()
+                : sysGroupMapper.selectMyGroups(userId).stream()
+                        .collect(Collectors.toMap(ChatGroupRow::getId, row -> row));
+
         List<ConversationVO> conversations = new ArrayList<>(summaries.size());
         for (ConversationSummary summary : summaries) {
             NotifyMessage last = lastById.get(summary.getLastMessageId());
@@ -484,9 +506,42 @@ public class ChatService {
                     isSelfSent(last),
                     last.getCreateTime(),
                     summary.getUnreadCount() == null ? 0L : summary.getUnreadCount(),
-                    summary.getMentionUnreadCount() == null ? 0L : summary.getMentionUnreadCount()));
+                    summary.getMentionUnreadCount() == null ? 0L : summary.getMentionUnreadCount(),
+                    memberCountOf(summary, myGroups),
+                    notifyPreferenceOf(summary, myGroups)));
         }
         return conversations;
+    }
+
+    /**
+     * 本条会话若为群聊，取「我」的成员行快照；单聊恒返回 {@code null}。
+     *
+     * <p><b>必须按 {@code chatScope} 分流，不能只按 target 取值：</b>群 ID 与用户 ID 是两套序列，
+     * 数值上完全可能撞车（我和用户 42 的单聊、以及我所在的群 42）。若不加范围判断，
+     * 这条单聊会套上群 42 的人数与免打扰偏好——表现为「单聊标题旁莫名显示群人数」，
+     * 且新消息会按别人群的设置决定是否出声。</p>
+     */
+    private static ChatGroupRow myGroupRow(ConversationSummary summary, Map<Long, ChatGroupRow> myGroups) {
+        return isPrivateChat(summary.getChatScope()) ? null : myGroups.get(summary.getChatTargetId());
+    }
+
+    /** 群聊成员数（单聊 / 已退群为 {@code null}，口径见 {@code ConversationVO#memberCount}）。 */
+    private static Long memberCountOf(ConversationSummary summary, Map<Long, ChatGroupRow> myGroups) {
+        ChatGroupRow mine = myGroupRow(summary, myGroups);
+        return mine == null ? null : mine.getMemberCount();
+    }
+
+    /**
+     * 我在该群的提醒偏好（单聊 / 已退群为 {@code null}）。
+     *
+     * <p>随会话一起下发，省掉「前端为了决定要不要响而额外发一次请求」；
+     * 三个取值直接来自 {@code me} 那一行，{@code null} 由前端按默认值（免打扰关、提醒开）处理。</p>
+     */
+    private static ChatGroupNotifyPreferenceVO notifyPreferenceOf(ConversationSummary summary,
+                                                                  Map<Long, ChatGroupRow> myGroups) {
+        ChatGroupRow mine = myGroupRow(summary, myGroups);
+        return mine == null ? null : new ChatGroupNotifyPreferenceVO(
+                mine.getMuteStatus(), mine.getNotifyOnMention(), mine.getNotifyOnMentionAll());
     }
 
     /**
@@ -866,10 +921,16 @@ public class ChatService {
      * <p>{@code mentioned} 只对 {@code mentionTargets} 里的接收人置 1：发送人自己那一行
      * 必然不在其中（{@link #resolveMentionTargets} 已剔除自己），
      * 因此「自己 @ 自己」不会给发送人制造一个假角标。</p>
+     *
+     * <p><b>提及档位与布尔标记在同一次循环里算出、恒同源</b>（见 {@link #mentionTypeFor}）：
+     * 先定档位，再由档位投影出 {@code mentioned}。若两者各算各的，
+     * 日后新增一种提及形态时极易只改一处——库里就会出现「{@code mention_type=1} 但
+     * {@code mentioned=0}」这种自相矛盾的行，而按 {@code mentioned} 建索引的提及未读计数
+     * 会与气泡高亮对不上。</p>
      */
     private List<NotifyMessage> buildRows(Long senderId, int scope, ChatSendDTO dto,
                                           List<Long> recipients, NotifyMessage quoted,
-                                          Set<Long> mentionTargets) {
+                                          Set<Long> mentionTargets, boolean mentionAll) {
         boolean group = ChatScope.isGroup(scope);
         List<NotifyMessage> rows = new ArrayList<>(recipients.size());
         for (Long recipient : recipients) {
@@ -882,14 +943,17 @@ public class ChatService {
             row.setChatTargetId(group ? dto.targetId() : otherSide(senderId, recipient, dto.targetId()));
             row.setClientMsgId(dto.clientMsgId());
             row.setContent(dto.content());
-            // 提及标记只落在被点名者那一行：这是「行级属性」，同一条消息在不同接收人那里取值不同
-            row.setMentioned(mentionTargets.contains(recipient)
-                    ? NotifyMessage.MENTION_YES : NotifyMessage.MENTION_NONE);
+            // 提及是「行级属性」：同一条消息在不同接收人那里档位不同
+            boolean self = recipient.equals(senderId);
+            int mentionType = mentionTypeFor(self, mentionAll, mentionTargets.contains(recipient));
+            row.setMentionType(mentionType);
+            // 布尔标记是档位的投影，不独立判定（口径见方法注释）
+            row.setMentioned(mentionType == NotifyMessage.MENTION_TYPE_NONE
+                    ? NotifyMessage.MENTION_NONE : NotifyMessage.MENTION_YES);
             // 引用快照抄进每一行：接收人各自的视角里都要能渲染出「这是回复谁的哪句话」，
             // 而他们的那一行与发送人那一行是彼此独立的记录，无法事后互相回查
             applyQuote(row, quoted);
             // 自己那一行直接置读：不给发送人制造「自己发的消息未读」
-            boolean self = recipient.equals(senderId);
             row.setReadStatus(self ? NotifyMessage.READ_READ : NotifyMessage.READ_UNREAD);
             if (self) {
                 row.setReadTime(LocalDateTime.now());
@@ -897,6 +961,32 @@ public class ChatService {
             rows.add(row);
         }
         return rows;
+    }
+
+    /**
+     * 计算某一行的提及档位（{@code 0} 未点名 / {@code 1 @我} / {@code 2 @所有人}）。
+     *
+     * <p><b>优先级：自己 &gt; {@code @所有人} &gt; 逐人点名。</b></p>
+     * <ul>
+     *   <li><b>自己恒为 0</b>：发送人不是自己的读者。{@code @所有人} 在此也必须排除自己——
+     *       否则群主发一条 {@code @所有人}，自己的会话列表立刻多一个「有人 @ 我」角标，
+     *       而他根本没收到任何人的消息；</li>
+     *   <li><b>{@code @所有人} 覆盖逐人点名</b>：两者叠加时（既传了 {@code mentionAll=true}
+     *       又传了 {@code mentionUserIds}）以范围更大的档位为准。理由是收端的裁决语义——
+     *       免打扰下「@所有人」走的是 {@code notifyOnMentionAll}，若这里记成 1，
+     *       一个关掉了「@我」提醒的成员就收不到这条本该全群可见的提醒；
+     *       反过来（记 2 却只开了「@我」）不会漏提醒，因为有 {@code @所有人}
+     *       必然也应触达关注全群的人。取更大范围是两害相权更轻的一侧。</li>
+     * </ul>
+     */
+    private static int mentionTypeFor(boolean self, boolean mentionAll, boolean mentionedTarget) {
+        if (self) {
+            return NotifyMessage.MENTION_TYPE_NONE;
+        }
+        if (mentionAll) {
+            return NotifyMessage.MENTION_TYPE_ALL;
+        }
+        return mentionedTarget ? NotifyMessage.MENTION_TYPE_ME : NotifyMessage.MENTION_TYPE_NONE;
     }
 
     /**
@@ -945,6 +1035,53 @@ public class ChatService {
                     senderId, mentionUserIds.size(), targets.size(), dropped);
         }
         return targets;
+    }
+
+    /**
+     * 解析 {@code @所有人}：<b>只有群主可以</b>，越权一律 1042（403）。
+     *
+     * <p><b>为什么与 {@code mentionUserIds} 的宽容口径相反（一个静默剔除、一个直接报错）：</b>
+     * 逐人点名是「装饰性标记」——非法项最坏只是没人被高亮，不影响投递范围，
+     * 为它让整条消息发失败是拿主功能换装饰（见 {@link #resolveMentionTargets}）。
+     * {@code @所有人} 则相反：它<b>不是标记而是范围声明</b>，一发出就给全体成员的设备推提醒，
+     * 是不可撤销的打扰（用户可能正在开会、睡觉）。若也静默忽略，普通成员按下「@所有人」
+     * 会看到消息照常发出、界面无异常，却在心里默认「全群都被提醒到了」——
+     * 一次静默降级被当成成功，比一次明确的失败更糟。因此这里必须显式拒绝。</p>
+     *
+     * <p><b>为什么只给群主、不给管理员：</b>与移除成员 / 解散同档（见
+     * {@code ChatGroupAbilityVO#canMentionAll}）。管理员能改群名、拉人，这些都可逆且影响面有限；
+     * {@code @所有人} 面向全群推提醒且不可撤销，故 CE 只认群主一档。</p>
+     *
+     * <p><b>单聊忽略本字段</b>（返回 false 而非报错）：单聊的对方本就是唯一读者，
+     * {@code @所有人} 没有额外语义。若在此报错，一个「复用了同一套 UI 状态」的客户端
+     * 在单聊里残留 {@code mentionAll=true} 就会发不出消息——这是纯粹的契约洁癖伤人。</p>
+     *
+     * <p>是否置 true 只在这里判定一次；群主身份取自 {@code sys_group.owner_user_id}，
+     * 不信任客户端提交的任何身份字段。</p>
+     *
+     * @param senderId   发送人（取自登录态）
+     * @param scope      会话范围（单聊恒 false）
+     * @param targetId   群组 ID（群聊时）
+     * @param mentionAll 客户端提交的 {@code @所有人} 请求；{@code null} 视为 false
+     * @return 是否真正生效的 {@code @所有人}
+     * @throws BusinessException 群不存在 / 已解散（CHAT_TARGET_INVALID）、
+     *                           非群主（CHAT_MENTION_ALL_OWNER_REQUIRED，403）
+     */
+    private boolean resolveMentionAll(Long senderId, int scope, Long targetId, Boolean mentionAll) {
+        if (!Boolean.TRUE.equals(mentionAll) || !ChatScope.isGroup(scope)) {
+            return false;
+        }
+        // 群存在性：成员校验已在上游 resolveRecipients 通过，此处取群主用；
+        // 理论上必然存在（成员行挂在活着的群上），取不到只可能是并发解散，按目标无效处理
+        SysGroup group = sysGroupMapper.selectById(targetId);
+        if (group == null) {
+            throw new BusinessException(ErrorCode.CHAT_TARGET_INVALID, "群组不存在或已解散");
+        }
+        if (!senderId.equals(group.getOwnerUserId())) {
+            log.info("非群主尝试 @所有人 已被拒绝：sender={}, groupId={}", senderId, targetId);
+            throw new BusinessException(ErrorCode.CHAT_MENTION_ALL_OWNER_REQUIRED);
+        }
+        return true;
     }
 
     /** 单聊视角下的对端：接收人是发送人时看 targetId，否则看发送人。 */

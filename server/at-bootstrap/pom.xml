@@ -132,6 +132,15 @@
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
         </dependency>
+        <!-- Actuator：只用 health 与 info 两个探针端点（暴露白名单见 application.yml 的
+             management 段，严禁改为 '*'）。info 回显 META-INF/build-info.properties——
+             版本号、提交号、构建时间，使「线上跑的是哪个提交」可一条命令查证；
+             health 供负载均衡 / 容器编排在无凭证上下文探测。两者在 at-auth 的
+             SecurityConfig.BUILT_IN_PERMIT_ALL 中匿名放行，且不返回任何组件明细。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
 
         <!-- ============ 测试 ============ -->
         <dependency>
@@ -178,6 +187,26 @@
                         <goals>
                             <goal>repackage</goal>
                         </goals>
+                    </execution>
+                    <!-- 生成 META-INF/build-info.properties：
+                           · build.version / build.time / build.artifact —— 由插件自动采集；
+                           · build.commitId / build.branch —— 来自 additionalProperties，
+                             取值是父 pom <properties> 里的 git.commit / git.branch（默认 unknown），
+                             Docker 构建时由 Dockerfile 以 -Dgit.commit=... 传入。
+                         该文件由 GET /api/actuator/info 回显，是「线上跑的是哪个提交」的权威来源；
+                         build-info 绑定在 generate-resources 阶段，`mvn package` 自动执行，
+                         需单独触发时用：mvn -pl server/at-bootstrap spring-boot:build-info@build-info -->
+                    <execution>
+                        <id>build-info</id>
+                        <goals>
+                            <goal>build-info</goal>
+                        </goals>
+                        <configuration>
+                            <additionalProperties>
+                                <commitId>${git.commit}</commitId>
+                                <branch>${git.branch}</branch>
+                            </additionalProperties>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>

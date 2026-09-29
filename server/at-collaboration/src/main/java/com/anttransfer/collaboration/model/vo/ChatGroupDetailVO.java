@@ -39,6 +39,10 @@ import java.util.List;
  * @param memberLimit 成员数上限（服务端配置，前端用于「邀请后会不会超」的即时提示）
  * @param ability     我在该群内可执行的操作（服务端算好，前端不自行推导）
  * @param members     成员名单（按成员行 ID 升序，群主恒为第一行）
+ * @param notifyPreference 我在该群的消息提醒偏好（免打扰 + 两类提及开关）。
+ *                        查看者必是该群成员（非成员走不到这里——{@code requireMember} 先拦），
+ *                        所以永远有值；群设置面板的三个开关直接绑定它，
+ *                        无需为「读我自己的偏好」再单独发一次请求
  * @author AntTransfer CE
  */
 public record ChatGroupDetailVO(
@@ -50,5 +54,6 @@ public record ChatGroupDetailVO(
         int memberCount,
         int memberLimit,
         ChatGroupAbilityVO ability,
-        List<ChatGroupMemberVO> members) {
+        List<ChatGroupMemberVO> members,
+        ChatGroupNotifyPreferenceVO notifyPreference) {
 }

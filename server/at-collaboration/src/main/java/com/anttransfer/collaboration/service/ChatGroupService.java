@@ -17,12 +17,14 @@ package com.anttransfer.collaboration.service;
 
 import com.anttransfer.collaboration.model.dto.ChatGroupCreateDTO;
 import com.anttransfer.collaboration.model.dto.ChatGroupMemberAddDTO;
+import com.anttransfer.collaboration.model.dto.ChatGroupNotifyPreferenceDTO;
 import com.anttransfer.collaboration.model.dto.ChatGroupUpdateDTO;
 import com.anttransfer.collaboration.model.entity.GroupMember;
 import com.anttransfer.collaboration.model.entity.SysGroup;
 import com.anttransfer.collaboration.model.vo.ChatGroupAbilityVO;
 import com.anttransfer.collaboration.model.vo.ChatGroupDetailVO;
 import com.anttransfer.collaboration.model.vo.ChatGroupMemberVO;
+import com.anttransfer.collaboration.model.vo.ChatGroupNotifyPreferenceVO;
 import com.anttransfer.collaboration.model.vo.ChatGroupVO;
 import com.anttransfer.collaboration.repository.ChatGroupRow;
 import com.anttransfer.collaboration.repository.GroupMemberMapper;
@@ -182,6 +184,75 @@ public class ChatGroupService {
     public ChatGroupDetailVO detail(Long viewerId, Long groupId) {
         SysGroup group = requireActiveGroup(groupId);
         return toDetail(group, requireMember(groupId, viewerId));
+    }
+
+    /**
+     * 读取「我在这个群」的消息提醒偏好（群设置面板的三个开关的初始状态）。
+     *
+     * <p><b>归属写死为登录人</b>：入参只有群 ID，没有「目标用户」——偏好是 (我, 这个群)
+     * 这条成员关系的私有属性（见 {@code V20} 口径），调用方无从读到别人的免打扰设置。</p>
+     *
+     * <p><b>为什么不挂权限点</b>：与 {@code chat:group:update} 那类「改群」操作不同，
+     * 本操作只改自己的接收偏好，不改任何共享状态，也不产生对他人可见的影响，
+     * 属「登录即用」的自我配置（同 {@code /contacts/{peerId}/alias} 的取舍）。</p>
+     *
+     * @param viewerId 登录用户 ID
+     * @param groupId  群 ID
+     * @return 我的提醒偏好（三态常规化，恒有值）
+     * @throws BusinessException 群不存在 / 已解散（CHAT_GROUP_NOT_FOUND）、
+     *                           我不是该群成员（CHAT_NOT_GROUP_MEMBER）
+     */
+    public ChatGroupNotifyPreferenceVO notifyPreference(Long viewerId, Long groupId) {
+        requireActiveGroup(groupId);
+        return toNotifyPreferenceVO(requireMember(groupId, viewerId));
+    }
+
+    /**
+     * 更新「我在这个群」的消息提醒偏好（免打扰 + 两类提及开关，整体覆盖式）。
+     *
+     * <p><b>写入用单条 UPDATE 兜底归属，而不是「先查再改」：</b>UPDATE 的
+     * {@code where group_id + user_id + deleted = 0} 同时回答了「这个人还在这个群里吗」——
+     * 受影响行数为 0 即非成员 / 已退群，直接转 1012。这样「查成员」与「改偏好」之间
+     * 不存在可被并发退群撕开的窗口：即使成员关系在两条语句之间被删除，
+     * UPDATE 也会落到 0 行并如实拒绝，而不是拿着一份过期的成员快照写进去。</p>
+     *
+     * <p><b>群存在性单独先判</b>（{@code requireActiveGroup}）：否则「群不存在」会与
+     * 「我不是成员」落到同一个 1012，既丢掉了 1008 的可读性，也让「群 ID 是否存在」
+     * 无从区分（该区分在群 ID 已由调用方持有时不构成探测风险，见
+     * {@code ErrorCode#CHAT_GROUP_NOT_FOUND}）。</p>
+     *
+     * @param viewerId 登录用户 ID
+     * @param groupId  群 ID
+     * @param dto      三个开关的完整状态（缺一即被 {@code @NotNull} 拒，见 DTO 注释）
+     * @return 落库后的提醒偏好（即本次提交的完整状态）
+     * @throws BusinessException 群不存在 / 已解散（CHAT_GROUP_NOT_FOUND）、
+     *                           我不是该群成员 / 已退群（CHAT_NOT_GROUP_MEMBER）
+     */
+    @Transactional
+    public ChatGroupNotifyPreferenceVO updateNotifyPreference(Long viewerId, Long groupId,
+                                                              ChatGroupNotifyPreferenceDTO dto) {
+        requireActiveGroup(groupId);
+        int muteStatus = toFlag(dto.muteStatus());
+        int notifyOnMention = toFlag(dto.notifyOnMention());
+        int notifyOnMentionAll = toFlag(dto.notifyOnMentionAll());
+
+        int affected = groupMemberMapper.updateNotifyPreference(
+                groupId, viewerId, muteStatus, notifyOnMention, notifyOnMentionAll, viewerId);
+        if (affected == 0) {
+            throw new BusinessException(ErrorCode.CHAT_NOT_GROUP_MEMBER);
+        }
+
+        log.info("群提醒偏好已更新 groupId={} userId={} muteStatus={} notifyOnMention={} notifyOnMentionAll={}",
+                groupId, viewerId, muteStatus, notifyOnMention, notifyOnMentionAll);
+        return new ChatGroupNotifyPreferenceVO(muteStatus, notifyOnMention, notifyOnMentionAll);
+    }
+
+    /**
+     * 布尔开关 → 存储取值。免打扰与提及提醒用的是同一套 {@code 0-关 1-开} 刻度
+     * （见 {@code GroupMember.MUTE_ON / NOTIFY_ON}），故共用一个转换，不按列各写一份。
+     */
+    private static int toFlag(Boolean on) {
+        return Boolean.TRUE.equals(on) ? 1 : 0;
     }
 
     /**
@@ -543,8 +614,23 @@ public class ChatGroupService {
                 group.getOwnerUserId(),
                 members.size(),
                 SysGroup.MAX_MEMBERS,
-                new ChatGroupAbilityVO(admin, admin, owner, owner, !owner),
-                members);
+                new ChatGroupAbilityVO(admin, admin, owner, owner, !owner, owner),
+                members,
+                toNotifyPreferenceVO(me));
+    }
+
+    /**
+     * 把「我的成员行」投影成提醒偏好视图（三个开关都归一成 {@code 0/1}，不吐 {@code null}）。
+     *
+     * <p>{@code null} 只会出现在「{@code V20} 迁移前落库的成员行」上，而迁移脚本已给存量行
+     * 填了默认值；此处仍逐一兜底，使对外契约恒为三态取值，前端不必对每个开关再写一次
+     * {@code null} 判空（口径同 {@code NotifyMessage#mentionTypeOrDefault}）。</p>
+     */
+    private static ChatGroupNotifyPreferenceVO toNotifyPreferenceVO(GroupMember me) {
+        return new ChatGroupNotifyPreferenceVO(
+                me.isMuted() ? GroupMember.MUTE_ON : GroupMember.MUTE_OFF,
+                me.isNotifyOnMentionEnabled() ? GroupMember.NOTIFY_ON : GroupMember.NOTIFY_OFF,
+                me.isNotifyOnMentionAllEnabled() ? GroupMember.NOTIFY_ON : GroupMember.NOTIFY_OFF);
     }
 
     /**

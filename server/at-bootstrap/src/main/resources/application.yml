@@ -265,6 +265,28 @@ anttransfer:
     #（如 http://your.domain 或 https://*.company.com），携带凭证场景禁止使用 *
     allowed-origin-patterns: '${ANTTRANSFER_CORS_ALLOWED_ORIGINS:*}'
 
+# ---------------- 版本与运维探针（actuator） ----------------
+# 目的：让「线上跑的是哪个提交」成为一条命令可查的事实，而不是靠时间戳间接推断。
+# 暴露面刻意收窄：只开 health（仅 status，不含组件明细）与 info（只含构建元数据）。
+# 两者免登录（见 at-auth SecurityConfig.BUILT_IN_PERMIT_ALL）：健康探针常被负载均衡 /
+# 容器编排在无凭证上下文调用；info 只回版本号、提交号与构建时间，不含任何配置值、
+# 环境变量或连接串。实际路径带上下文前缀：GET /api/actuator/info、GET /api/actuator/health
+management:
+  endpoints:
+    web:
+      exposure:
+        # 白名单式暴露：Boot 默认只开 health，这里显式补 info；
+        # 严禁改成 '*'——那会把 env / beans / heapdump / threaddump 等敏感端点一并放出去
+        include: health,info
+  endpoint:
+    health:
+      # 永不返回组件明细（数据源地址、磁盘路径、Redis 版本等），只回 UP/DOWN
+      show-details: never
+  info:
+    build:
+      # 读取 META-INF/build-info.properties（由 spring-boot-maven-plugin 的 build-info goal 生成）
+      enabled: true
+
 # ---------------- 日志（profile 内可再细化） ----------------
 logging:
   level:

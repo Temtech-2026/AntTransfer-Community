@@ -207,6 +207,16 @@ public class OperationLog extends BaseEntity {
      */
     public static final String ACTION_USER_AVATAR_SELF = "USER_AVATAR_SELF";
 
+    /**
+     * 审计动作：本人变更消息提示音设置（{@code PUT/POST/DELETE /api/v1/users/me/notify-setting...}）。
+     *
+     * <p>只有本人一种主体（提示音是「我自己的耳朵」的事，不存在管理他人提示音的入口），
+     * 故不需要与任何「管理员版」动作区分编码。{@code detail} <b>只记</b>开关与音色档位、
+     * 是否发生了自定义音频的更换，<b>绝不记</b>存储 key / 直出地址——
+     * 那串 key 就是取音频的凭据，写进审计表等于长期留档一份可访问凭据。</p>
+     */
+    public static final String ACTION_USER_NOTIFY_SOUND_SELF = "USER_NOTIFY_SOUND_SELF";
+
     /* ============================== 域标识 ============================== */
 
     /** 所属域：文件（与 V1 约定一致：AUTH/PERMISSION/TRANSFER/FILE/COLLABORATION/COMMON） */

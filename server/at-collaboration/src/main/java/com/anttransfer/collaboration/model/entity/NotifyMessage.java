@@ -15,6 +15,7 @@
  */
 package com.anttransfer.collaboration.model.entity;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.anttransfer.common.entity.BaseEntity;
 import lombok.Getter;
@@ -64,6 +65,15 @@ public class NotifyMessage extends BaseEntity {
 
     /** 提及标记：本行接收人被本条消息点名 */
     public static final int MENTION_YES = 1;
+
+    /** 提及档位：本行接收人未被点名 */
+    public static final int MENTION_TYPE_NONE = 0;
+
+    /** 提及档位：本行接收人被单独点名（{@code @我}） */
+    public static final int MENTION_TYPE_ME = 1;
+
+    /** 提及档位：本条消息为群主 {@code @所有人}（面向全群的广播提及） */
+    public static final int MENTION_TYPE_ALL = 2;
 
     /** 撤回状态：正常（未撤回） */
     public static final int RECALL_NONE = 0;
@@ -129,6 +139,37 @@ public class NotifyMessage extends BaseEntity {
      * 若允许置位，发送人会给自己凭空制造一个「有人 @ 我」的角标。</p>
      */
     private Integer mentioned;
+
+    /**
+     * 提及档位：0-未点名 1-{@code @我} 2-{@code @所有人}（见 {@code V20} 口径）。
+     *
+     * <p><b>与 {@link #mentioned} 的关系是「投影」而不是「并列」：</b>{@code mentioned} 是本列
+     * 的布尔投影（本列 &gt; 0 时恒写 1）。保留 {@code mentioned} 的原因有二：
+     * 会话列表的「提及未读」计数与索引 {@code idx_session} 已建在它上面；只认
+     * {@code mentioned} 的老消费方不会因本版而失明。</p>
+     *
+     * <p>分档的用途：免打扰开启后，「有人 {@code @} 我」与「群主 {@code @} 所有人」是两个
+     * 可分别开关的提醒渠道（口径对齐微信），只靠布尔无法区分。</p>
+     */
+    @TableField(value = "mention_type")
+    private Integer mentionType;
+
+    /**
+     * 提及档位的归一化读取（{@code null} 归为「未点名」）。
+     *
+     * <p>{@code null} 只可能来自「本列迁移前落库的历史行」（{@code V20} 之前没有这一列，
+     * 存量行的取值是迁移脚本给的默认值 {@code 0}，但仍以 {@code null} 兜底，
+     * 避免依赖「迁移脚本一定先于代码上线」这一未强制的顺序）。对外契约只暴露
+     * {@code 0/1/2} 三态，不让 {@code null} 与 {@code 0} 两种「没点名」并存。</p>
+     */
+    public int mentionTypeOrDefault() {
+        return mentionType == null ? MENTION_TYPE_NONE : mentionType;
+    }
+
+    /** 本条消息是否属于「面向全群的提及」（{@code @所有人}）。 */
+    public boolean isMentionAll() {
+        return mentionTypeOrDefault() == MENTION_TYPE_ALL;
+    }
 
     /**
      * 撤回状态：0-正常 1-已撤回（见 {@link #RECALL_NONE} / {@link #RECALL_DONE}）。

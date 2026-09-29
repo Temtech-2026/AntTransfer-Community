@@ -212,7 +212,7 @@ class ChatSendIdempotencyE2eIntegrationTest {
 
         Set<String> failures = ConcurrentHashMap.newKeySet();
         runConcurrently(i -> chatService.send(ADMIN_ID, new ChatSendDTO(
-                SCOPE_PRIVATE, PEER_ID, TYPE_TEXT, "并发消息-" + i, clientMsgId, null, null)), failures);
+                SCOPE_PRIVATE, PEER_ID, TYPE_TEXT, "并发消息-" + i, clientMsgId, null, null, null)), failures);
 
         assertTrue(failures.isEmpty(),
                 "并发重发同一 clientMsgId 不应有任何请求失败（撞键必须被回查收敛）：" + failures);
@@ -234,9 +234,9 @@ class ChatSendIdempotencyE2eIntegrationTest {
         String clientMsgId = "it-send-seq-" + UUID.randomUUID();
 
         chatService.send(ADMIN_ID, new ChatSendDTO(
-                SCOPE_PRIVATE, PEER_ID, TYPE_TEXT, "第一次", clientMsgId, null, null));
+                SCOPE_PRIVATE, PEER_ID, TYPE_TEXT, "第一次", clientMsgId, null, null, null));
         chatService.send(ADMIN_ID, new ChatSendDTO(
-                SCOPE_PRIVATE, PEER_ID, TYPE_TEXT, "第二次", clientMsgId, null, null));
+                SCOPE_PRIVATE, PEER_ID, TYPE_TEXT, "第二次", clientMsgId, null, null, null));
 
         assertEquals(EXPECTED_ROWS, messageRowCount(ADMIN_ID, clientMsgId),
                 "顺序重发必须在 insert 之前就被幂等查询拦下");

@@ -75,6 +75,19 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
+        <!-- ===== 版本元数据（构建期注入，供 GET /api/actuator/info 回显） =====
+             被 at-bootstrap 的 spring-boot-maven-plugin「build-info」goal 引用
+             （additionalProperties → build.commitId / build.branch）。
+             默认 unknown 是刻意设计：.dockerignore 排除了 .git/，Docker 构建上下文里没有
+             版本库，镜像内无法自行取提交号，必须由外部传入——
+               · 裸 Maven：mvn -Dgit.commit=<sha> -Dgit.branch=<branch>
+               · Docker：  export GIT_COMMIT=... GIT_BRANCH=... 后 docker compose build
+                           （由根 docker-compose.yml 的 server.build.args 透传）
+             若默认值写成某个具体提交号（或留空导致渲染成 ${git.commit} 字面量），
+             查到的版本会指向错误提交——比没有版本号更危险。 -->
+        <git.commit>unknown</git.commit>
+        <git.branch>unknown</git.branch>
+
         <!-- ===== 第三方依赖版本统一锁定（供 dependencyManagement 引用） ===== -->
         <!-- MyBatis-Plus（Spring Boot 3 专用 starter；v3.5.9+ 分页插件拆分为 mybatis-plus-jsqlparser） -->
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
