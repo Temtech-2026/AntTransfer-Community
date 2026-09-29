@@ -4,6 +4,11 @@ import type { MenuProps } from 'antd';
 import { Button } from 'antd';
 import dayjs from 'dayjs';
 import 'dayjs/locale/en';
+import 'dayjs/locale/es';
+import 'dayjs/locale/fr';
+import 'dayjs/locale/ja';
+import 'dayjs/locale/ko';
+import 'dayjs/locale/ru';
 import 'dayjs/locale/zh-cn';
 import { useEffect, useMemo } from 'react';
 import { resolveUiLocale, SUPPORTED_LOCALES } from '@/utils/locale';
@@ -19,12 +24,22 @@ import useHeaderActionStyles from './style';
  */
 const DAYJS_LOCALE: Record<string, string> = {
   'zh-CN': 'zh-cn',
+  'ko-KR': 'ko',
+  'ja-JP': 'ja',
+  'fr-FR': 'fr',
+  'ru-RU': 'ru',
+  'es-ES': 'es',
   'en-US': 'en',
 };
 
 /** 语言自称（endonym，各语言都按自己的写法展示，不随界面语言翻译）。 */
 const localeLabelMap: Record<string, { emoji: string; label: string }> = {
   'zh-CN': { emoji: '🇨🇳', label: '简体中文' },
+  'ko-KR': { emoji: '🇰🇷', label: '한국어' },
+  'ja-JP': { emoji: '🇯🇵', label: '日本語' },
+  'fr-FR': { emoji: '🇫🇷', label: 'Français' },
+  'ru-RU': { emoji: '🇷🇺', label: 'Русский' },
+  'es-ES': { emoji: '🇪🇸', label: 'Español' },
   'en-US': { emoji: '🇺🇸', label: 'English' },
 };
 
@@ -41,7 +56,7 @@ export const LangDropdown: React.FC = () => {
   /**
    * 只暴露「声明受支持（`@/utils/locale` 的 SUPPORTED_LOCALES）**且**确实存在语言包」的语言。
    *
-   * <p>`src/locales` 下脚手架残留的 zh-TW / ja-JP / pt-BR / id-ID / fa-IR / bn-BD 只有骨架文案，
+   * <p>`src/locales` 下脚手架残留的 zh-TW / pt-BR / id-ID / fa-IR / bn-BD 只有骨架文案，
    * 业务文案缺失时 `react-intl` 会回退到 `defaultMessage`（中文）甚至原始 key，
    * 用户看到的就是「切了语言但界面没变」——与其提供一个坏掉的选项，不如不提供。
    */
@@ -49,7 +64,7 @@ export const LangDropdown: React.FC = () => {
     () => SUPPORTED_LOCALES.filter((locale) => allLocales.includes(locale)),
     [allLocales],
   );
-  // 归一化兜底：浏览器语言可能落在受支持集合之外（zh-TW / ja-JP / fa-IR…），
+  // 归一化兜底：浏览器语言可能落在受支持集合之外（zh-TW / pt-BR / fa-IR…），
   // 归一化在 `app.tsx` 的 getInitialState 里已做一次，这里只是渲染期的最后一道保险。
   const currentLocale = resolveUiLocale(getLocale());
 

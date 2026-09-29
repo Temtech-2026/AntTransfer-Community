@@ -15,6 +15,7 @@ import { CHAT_ENDPOINTS } from './endpoints';
 import type {
   ChatGroup,
   ChatGroupDetail,
+  ChatGroupNotifyPreference,
   ChatPeer,
   ChatPresenceVO,
   ChatSendPayload,
@@ -352,4 +353,55 @@ export function dissolveChatGroup(groupId: string): Promise<void> {
   return requestData<void>(CHAT_ENDPOINTS.group(groupId), {
     method: 'DELETE',
   });
+}
+
+/**
+ * 读我在该群的消息提醒偏好（免打扰 + 两类提及开关）。
+ *
+ * <p><b>静默</b>：属「面板主数据」——开关的初值由它决定，失败时面板渲染错误态 + 重试，
+ * 不叠全局 toast。注意群详情里已经带了同一份偏好，
+ * 因此只有「只改开关、不重拉全量成员名单」这条窄路径才需要单独读它。</p>
+ *
+ * <p>偏好是 {@code (我, 这个群)} 的私有属性，路径里只有群 ID：作用对象写死为登录人，
+ * 没有「读别人偏好」这个入参面（口径见 {@link CHAT_ENDPOINTS.groupNotifyPreference}）。</p>
+ *
+ * @param groupId 群 ID（19 位雪花 ID 字符串，禁止 `Number()` 归一）
+ */
+export function fetchGroupNotifyPreference(
+  groupId: string,
+): Promise<ChatGroupNotifyPreference> {
+  return requestData<ChatGroupNotifyPreference>(
+    CHAT_ENDPOINTS.groupNotifyPreference(groupId),
+    {
+      method: 'GET',
+      silent: true,
+    },
+  );
+}
+
+/**
+ * 覆盖写我在该群的消息提醒偏好（三个开关一起提交）。
+ *
+ * <p><b>整体覆盖而不是逐字段 PATCH：</b>三个开关在界面上是同时呈现、同时提交的一份状态，
+ * 逐字段改动会让「拨 A 开关的请求在路上、B 开关的旧值又写回去」这类交错产生
+ * 界面与实际不一致；整体覆盖天然幂等，重试与多端并发都以最后一次提交为准。</p>
+ *
+ * <p><b>不静默</b>：拨开关是用户的主动动作，失败必须明确反馈——
+ * 1012 非群成员（已退群 / 被移除后仍停留在面板上），否则开关会表现为「拨了又弹回去」
+ * 却没人告诉用户为什么。返回值即服务端落库后的偏好，调用方用它回填本地状态。</p>
+ *
+ * @param groupId 群 ID（19 位雪花 ID 字符串，禁止 `Number()` 归一）
+ * @param pref    三个开关的目标值（{@link NOTIFY_FLAG} 刻度，见 `toFlag`）
+ */
+export function updateGroupNotifyPreference(
+  groupId: string,
+  pref: ChatGroupNotifyPreference,
+): Promise<ChatGroupNotifyPreference> {
+  return requestData<ChatGroupNotifyPreference>(
+    CHAT_ENDPOINTS.groupNotifyPreference(groupId),
+    {
+      method: 'PUT',
+      data: pref,
+    },
+  );
 }

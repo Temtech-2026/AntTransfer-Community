@@ -15,7 +15,8 @@ export default {
   'app.request.offline':
     'Network unavailable. Please check your connection and try again.',
   // Fallback copy when no response body is available (shared by the XHR channel and the global errorHandler)
-  'app.request.default': 'Network error. Please check your connection and try again.',
+  'app.request.default':
+    'Network error. Please check your connection and try again.',
   'app.request.http': '{message} (HTTP {status})',
   'app.request.retryLater': '{message}. Please try again later.',
   'app.request.traceId': 'traceId: {traceId}',

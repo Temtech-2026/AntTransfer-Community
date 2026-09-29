@@ -14,7 +14,8 @@ export default {
     '该文件为机密级：申请将进入多级审批，且不会授予下载与外发权限，仅按需临时开放预览。',
   'file.level.applyHint.internal':
     '该文件为内部级：申请默认只授予预览与下载，外发分享需单独审批。',
-  'file.level.applyHint.public': '该文件为公开级：审批较快，但仍需填写真实使用目的。',
+  'file.level.applyHint.public':
+    '该文件为公开级：审批较快，但仍需填写真实使用目的。',
   'file.level.applyHint.unknown': '该文件尚未定级：审批人可能要求先完成定级。',
 
   /* ============================ 安全徽标 ============================ */
@@ -25,9 +26,11 @@ export default {
   'file.security.watermark.hint':
     '预览与下载画面会叠加动态水印（含账号与时间），用于溯源泄露',
   'file.security.expiring.label': '{days} 天后失效',
-  'file.security.expiring.hint': '该条目将在 {days} 天后失效，届时链接与授权一并作废',
+  'file.security.expiring.hint':
+    '该条目将在 {days} 天后失效，届时链接与授权一并作废',
   'file.security.expired.label': '已失效',
-  'file.security.expired.hint': '该条目已过失效时间，如需继续使用请重新申请授权',
+  'file.security.expired.hint':
+    '该条目已过失效时间，如需继续使用请重新申请授权',
 
   /* ============================ 扩展名分组 ============================ */
   'file.extGroup.doc': '文档',
@@ -165,7 +168,8 @@ export default {
   'file.move.title': '移动到',
   'file.move.ok': '移动',
   'file.move.alertTitle': '移动只改变存放位置',
-  'file.move.alertDescription': '密级、分享链接与已授予的权限都不会因移动而改变。',
+  'file.move.alertDescription':
+    '密级、分享链接与已授予的权限都不会因移动而改变。',
   'file.move.placeholder': '选择目标目录',
   'file.move.pending': '待移动 {count} 项',
   'file.move.pendingNames': '：{names}',
@@ -197,7 +201,8 @@ export default {
   'file.apply.field.expireAtExtra':
     '留空表示申请长期权限（更难过审）；建议按实际需要填写，到期自动回收',
   'file.apply.field.expireAtPlaceholder': '选择到期时间',
-  'file.apply.footnote': '提交后申请人身份、申请时间由服务端记录，不可代他人申请。',
+  'file.apply.footnote':
+    '提交后申请人身份、申请时间由服务端记录，不可代他人申请。',
   'file.apply.submit': '提交申请',
 
   /* ============================ 外发分享弹窗 ============================ */
@@ -205,7 +210,8 @@ export default {
   'file.share.title': '外发分享',
   'file.share.titleWithName': '外发分享：{name}',
   'file.share.createFailed': '创建外发分享失败',
-  'file.share.missingFileId': '该文件缺少物理文件 ID，无法创建外发链接，请刷新后重试',
+  'file.share.missingFileId':
+    '该文件缺少物理文件 ID，无法创建外发链接，请刷新后重试',
   'file.share.copied': '链接与提取码已复制',
   'file.share.copyDenied': '浏览器拒绝访问剪贴板，请手动选中复制',
   'file.share.again': '再创建一个',

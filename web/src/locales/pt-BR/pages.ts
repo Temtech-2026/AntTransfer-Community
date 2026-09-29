@@ -26,7 +26,8 @@ export default {
   'pages.login.loginWith': 'Login com :',
   'pages.login.registerAccount': 'Registra Conta',
   'pages.welcome.link': 'Bem-vindo',
-  'pages.welcome.celebrationTitle': 'Bem-vindo ao AntTransfer Community Edition',
+  'pages.welcome.celebrationTitle':
+    'Bem-vindo ao AntTransfer Community Edition',
   'pages.welcome.alertMessage':
     'Componentes pesados mais rápidos e mais fortes foram lançados.',
   /* ===== Página de boas-vindas (pages/Welcome.tsx) ===== */
@@ -39,8 +40,7 @@ export default {
   'pages.welcome.feature.transfer.title': 'Transferência segura de arquivos',
   'pages.welcome.feature.transfer.desc':
     'Upload retomável, progresso visível e verificação de checksum de upload instantâneo para cenários de arquivos grandes (at-transfer / at-file).',
-  'pages.welcome.feature.collaboration.title':
-    'Colaboração e compartilhamento',
+  'pages.welcome.feature.collaboration.title': 'Colaboração e compartilhamento',
   'pages.welcome.feature.collaboration.desc':
     'Espaços de colaboração e links de compartilhamento permitem que várias pessoas acessem com segurança o mesmo conjunto de arquivos (at-collaboration).',
   'pages.welcome.feature.permission.title': 'Permissões e auditoria',

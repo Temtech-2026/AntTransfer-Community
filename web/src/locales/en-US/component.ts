@@ -17,10 +17,12 @@ export default {
   'component.siderFooter.openTransfer': 'Open transfer center',
 
   // Header global search
-  'component.globalSearch.placeholder': 'Search file name / tag, press Enter to locate',
+  'component.globalSearch.placeholder':
+    'Search file name / tag, press Enter to locate',
   'component.globalSearch.ariaLabel': 'Global search',
   'component.globalSearch.scopeAria': 'Search scope',
-  'component.globalSearch.scopeTitle': 'Scope: file names and tags (jumps to the file workspace).',
+  'component.globalSearch.scopeTitle':
+    'Scope: file names and tags (jumps to the file workspace).',
   'component.globalSearch.scopeEe':
     'Full-text search inside file contents requires extraction and indexing, an EE capability.',
 
@@ -50,25 +52,34 @@ export default {
 
   // Self-service password change dialog (signs out every session on success)
   'component.avatar.changePassword.title': 'Change password',
-  'component.avatar.changePassword.alert.title': 'You will be signed out after changing',
+  'component.avatar.changePassword.alert.title':
+    'You will be signed out after changing',
   'component.avatar.changePassword.alert.desc':
     'For your security, changing the password immediately signs out every device. Please sign in again with the new password.',
   'component.avatar.changePassword.old': 'Current password',
-  'component.avatar.changePassword.oldPlaceholder': 'Enter your current password',
-  'component.avatar.changePassword.oldRequired': 'Please enter your current password',
+  'component.avatar.changePassword.oldPlaceholder':
+    'Enter your current password',
+  'component.avatar.changePassword.oldRequired':
+    'Please enter your current password',
   'component.avatar.changePassword.new': 'New password',
   'component.avatar.changePassword.newPlaceholder': 'Enter a new password',
   'component.avatar.changePassword.newRequired': 'Please enter a new password',
-  'component.avatar.changePassword.newLength': 'Password must be 8-64 characters long',
+  'component.avatar.changePassword.newLength':
+    'Password must be 8-64 characters long',
   'component.avatar.changePassword.newPattern':
     'Password must contain both letters and digits, with no spaces',
-  'component.avatar.changePassword.policyHint': '8-64 characters, must include letters and digits',
+  'component.avatar.changePassword.policyHint':
+    '8-64 characters, must include letters and digits',
   'component.avatar.changePassword.confirm': 'Confirm new password',
-  'component.avatar.changePassword.confirmPlaceholder': 'Enter the new password again',
-  'component.avatar.changePassword.confirmRequired': 'Please enter the new password again',
-  'component.avatar.changePassword.confirmMismatch': 'The two new passwords do not match',
+  'component.avatar.changePassword.confirmPlaceholder':
+    'Enter the new password again',
+  'component.avatar.changePassword.confirmRequired':
+    'Please enter the new password again',
+  'component.avatar.changePassword.confirmMismatch':
+    'The two new passwords do not match',
   'component.avatar.changePassword.submit': 'Change password',
-  'component.avatar.changePassword.done': 'Password changed, please sign in with the new password',
+  'component.avatar.changePassword.done':
+    'Password changed, please sign in with the new password',
 
   // Notification bell
   'component.notify.title': 'Notifications',
@@ -98,22 +109,27 @@ export default {
   // Chunked upload component
   'component.chunkUpload.title': 'File upload',
   'component.chunkUpload.busy': '{count} task(s) in progress',
-  'component.chunkUpload.resumableCount': '{count} unfinished upload(s) detected',
+  'component.chunkUpload.resumableCount':
+    '{count} unfinished upload(s) detected',
   'component.chunkUpload.resumableNote':
     'To avoid transferring the same data twice, select the same file again; chunks already received by the server will be skipped.',
   'component.chunkUpload.resumableSelect': 'Select file to resume',
   'component.chunkUpload.instantDone': 'Instant upload done',
   'component.chunkUpload.instantSuccess': 'Instant upload',
   'component.chunkUpload.progress.hashing': 'Computing file checksum…',
-  'component.chunkUpload.progress.prechecking': 'Checking instant-upload eligibility…',
+  'component.chunkUpload.progress.prechecking':
+    'Checking instant-upload eligibility…',
   'component.chunkUpload.progress.querying': 'Fetching uploaded chunks…',
   'component.chunkUpload.progress.merging': 'Merging chunks…',
-  'component.chunkUpload.progress.paused': 'Paused ({received}/{total} chunks done)',
+  'component.chunkUpload.progress.paused':
+    'Paused ({received}/{total} chunks done)',
   'component.chunkUpload.progress.failed': 'Upload failed',
-  'component.chunkUpload.progress.uploading': '{received}/{total} chunks · {speed}',
+  'component.chunkUpload.progress.uploading':
+    '{received}/{total} chunks · {speed}',
   'component.chunkUpload.progress.retried': ' · retried {count} time(s)',
   'component.chunkUpload.progress.chunks': '{count} chunks',
-  'component.chunkUpload.retryTooltip': 'Automatically retried with exponential backoff on network jitter',
+  'component.chunkUpload.retryTooltip':
+    'Automatically retried with exponential backoff on network jitter',
   'component.chunkUpload.retryTag': 'Retry {count}',
   'component.chunkUpload.draggerText': 'Click or drag files here to upload',
   'component.chunkUpload.draggerHint':
@@ -122,7 +138,8 @@ export default {
   'component.chunkUpload.concurrency': 'Concurrency',
   'component.chunkUpload.tuningNote': 'Changes apply to subsequent chunks',
   'component.chunkUpload.overallProgress': 'Overall progress',
-  'component.chunkUpload.overallSummary': '{finished}/{total} files · {uploaded} / {totalSize}',
+  'component.chunkUpload.overallSummary':
+    '{finished}/{total} files · {uploaded} / {totalSize}',
 
   // Code block (sample code shown in documentation areas)
   'component.codeBlock.copy': 'Copy',
@@ -153,4 +170,29 @@ export default {
   'component.transfer.status.error': 'Failed',
   'component.transfer.status.success': 'Completed',
   'component.transfer.status.canceled': 'Canceled',
+  // New-message sound (shown inside the profile panel; presets and switches share this prefix)
+  'component.avatar.notifySound.title': 'New message sound',
+  'component.avatar.notifySound.enabled': 'Play a sound on new messages',
+  'component.avatar.notifySound.presetLabel': 'Sound',
+  'component.avatar.notifySound.preset.default': 'Default',
+  'component.avatar.notifySound.preset.chime': 'Chime',
+  'component.avatar.notifySound.preset.bubble': 'Bubble',
+  'component.avatar.notifySound.preset.custom': 'Custom',
+  'component.avatar.notifySound.upload': 'Upload audio',
+  'component.avatar.notifySound.replace': 'Replace audio',
+  'component.avatar.notifySound.clear': 'Delete',
+  'component.avatar.notifySound.preview': 'Preview',
+  'component.avatar.notifySound.uploaded': 'Uploaded; sound switched to custom',
+  'component.avatar.notifySound.cleared': 'Custom sound deleted',
+  'component.avatar.notifySound.loadFailed': 'Failed to load sound settings',
+  'component.avatar.notifySound.typeInvalid':
+    'Only MP3 / WAV / OGG audio is supported',
+  'component.avatar.notifySound.tooLarge': 'Audio must not exceed {max}',
+  'component.avatar.notifySound.previewBlocked':
+    'The browser blocked autoplay. Click anywhere on the page and try again.',
+  'component.avatar.notifySound.customEmpty': 'No custom audio uploaded yet',
+  'component.avatar.notifySound.customMeta':
+    'Current audio: {name} ({size}, {duration})',
+  'component.avatar.notifySound.hint':
+    'Supports MP3 / WAV / OGG, up to {maxSize} and {maxDuration} long',
 } as const;

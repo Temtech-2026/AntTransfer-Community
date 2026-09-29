@@ -1,0 +1,18 @@
+export default {
+  'component.globalHeader.search': '사이트 내 검색',
+  'component.globalHeader.search.example1': '검색 팁 1',
+  'component.globalHeader.search.example2': '검색 팁 2',
+  'component.globalHeader.search.example3': '검색 팁 3',
+  'component.globalHeader.help': '사용 문서',
+  'component.globalHeader.historyVersion': '이전 버전',
+  'component.globalHeader.notification': '알림',
+  'component.globalHeader.notification.empty': '모든 알림을 확인했습니다',
+  'component.globalHeader.message': '메시지',
+  'component.globalHeader.message.empty': '모든 메시지를 읽었습니다',
+  'component.globalHeader.event': '할 일',
+  'component.globalHeader.event.empty': '모든 할 일을 완료했습니다',
+  'component.noticeIcon.clear': '비우기',
+  'component.noticeIcon.cleared': '비웠습니다',
+  'component.noticeIcon.empty': '데이터가 없습니다',
+  'component.noticeIcon.view-more': '더 보기',
+};

@@ -46,7 +46,8 @@ export default {
 
   /* ============================ Access request types ============================ */
   'file.applyType.access.label': 'View (preview)',
-  'file.applyType.access.hint': 'Online preview only; no download or external sharing',
+  'file.applyType.access.hint':
+    'Online preview only; no download or external sharing',
   'file.applyType.download.label': 'Download',
   'file.applyType.download.hint':
     'Download the original file; every use is logged',
@@ -112,11 +113,13 @@ export default {
   'file.selectedCount': '{count} selected',
   'file.uploadingCount': 'Uploading {count}',
   'file.grid.emptyRecycle': 'The recycle bin is empty',
-  'file.grid.emptyFolder': 'No files yet; upload one or create a subfolder first',
+  'file.grid.emptyFolder':
+    'No files yet; upload one or create a subfolder first',
 
   /* ============================ Download ============================ */
   'file.download.preparing': 'Preparing to download {name}',
-  'file.download.done': '{name} download started — check your browser downloads',
+  'file.download.done':
+    '{name} download started — check your browser downloads',
   'file.download.failed': 'Download failed',
 
   /* ============================ Recycle bin and destroy ============================ */
@@ -132,7 +135,8 @@ export default {
     'Every file in the recycle bin will be permanently destroyed and cannot be recovered. If you only need a break, leave them here.',
   'file.empty.done': '{count} items destroyed',
   'file.empty.noop': 'The recycle bin is already empty',
-  'file.batchRecycle.confirmTitle': 'Move the {count} selected items to the recycle bin?',
+  'file.batchRecycle.confirmTitle':
+    'Move the {count} selected items to the recycle bin?',
   'file.batchRecycle.confirmContent':
     'They will disappear from My files but can be restored at any time; no data is lost.',
   'file.batchRecycle.done': 'Moved {count} items to the recycle bin',
@@ -179,7 +183,8 @@ export default {
   'file.move.etc': ' and others',
   'file.move.unchanged':
     ' ({count} more are already in the target folder and will be skipped)',
-  'file.move.noop': 'The target folder is the current location; nothing to move',
+  'file.move.noop':
+    'The target folder is the current location; nothing to move',
   'file.move.done': 'Moved {count} items to "{target}"',
   'file.move.failed': 'Failed to move {count} items: {names}',
 

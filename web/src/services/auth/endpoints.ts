@@ -43,4 +43,35 @@ export const AUTH_ENDPOINTS = {
    * 本端点是写路径、须持 access token、回 JSON 摘要。</p>
    */
   myAvatar: '/api/v1/users/me/avatar',
+
+  /**
+   * 本人消息提醒设置：`GET` 读（含服务端下发的音频上限）/ `PUT` 整体覆盖（开关 + 音色）。
+   *
+   * <p>与头像同属「本人资料自助」：目标用户来自令牌，<b>路径里没有 userId</b>，
+   * 也不挂权限点——「我自己的手机响不响」不该是一件需要被授权的事。</p>
+   *
+   * <p>`PUT` 是<b>整体覆盖</b>而非逐字段 `PATCH`：三个字段（开关 + 音色）在界面上是同一份状态，
+   * 逐字段改动会让「并发提交时后到的旧值把新值写回去」这类交错产生界面与库不一致。</p>
+   */
+  myNotifySetting: '/api/v1/users/me/notify-setting',
+
+  /**
+   * 本人自定义提示音：`POST` multipart 上传（字段名 `file`，上传即生效）/ `DELETE` 清空。
+   *
+   * <p>只有这个写路径能把音色切成 {@code custom}：音色不是一个可以「直接声明」的字符串，
+   * 而是「确实有一段音频」这个事实的结果（否则会出现「音色是自定义却没有音」的悬空状态）。</p>
+   */
+  myNotifySound: '/api/v1/users/me/notify-setting/sound',
+
+  /**
+   * 本人自定义提示音内容直出（**需要带令牌**，故不能用 `<audio src>` 直连）。
+   *
+   * <p>刻意<b>不做匿名放行</b>：提示音只在本人已登录的会话里播放，少一个匿名入口就少一处越权面。
+   * 因此前端必须用 {@link downloadBinary} 带 Authorization 取回 Blob 再播放
+   * （见 `services/notify/soundPlayer`），直接把这个路径塞给 `<audio>` 只会拿到 401。</p>
+   *
+   * <p>服务端响应为 `private, no-cache` + 强 ETag：不带 `?v=` 参数时走 304 复用，
+   * 换了音频（key 变化）则自然命中新内容。</p>
+   */
+  myNotifySoundContent: '/api/v1/users/me/notify-setting/sound/content',
 } as const;

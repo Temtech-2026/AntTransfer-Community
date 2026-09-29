@@ -102,6 +102,12 @@ describe('resolveStrategy（错误码 → 处理策略）', () => {
     expect(resolveStrategy(4018)).toBe(HandleStrategy.DENY);
     // 1012 与 1003 同为策略 D：非群成员是「拒绝」而非「未登录」，跳登录是红线
     expect(resolveStrategy(1012)).toBe(HandleStrategy.DENY);
+    // 1038 / 1039 / 1041 / 1042 是「群内身份不足」这一族：会话未失效，就地提示即可，
+    // 尤其 1042（@所有人 仅群主）绝不能被降级成「跳登录」——那会把一次越权提示放大成强制重认证
+    expect(resolveStrategy(1038)).toBe(HandleStrategy.DENY);
+    expect(resolveStrategy(1039)).toBe(HandleStrategy.DENY);
+    expect(resolveStrategy(1041)).toBe(HandleStrategy.DENY);
+    expect(resolveStrategy(1042)).toBe(HandleStrategy.DENY);
   });
 
   it('E/F/G/H 类：请求修正 / 状态冲突 / 限流 / 系统兜底', () => {

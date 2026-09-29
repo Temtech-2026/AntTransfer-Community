@@ -25,7 +25,8 @@ export default {
   'pages.login.loginWith': 'Masuk dengan :',
   'pages.login.registerAccount': 'Daftar Akun',
   'pages.welcome.link': 'Selamat datang',
-  'pages.welcome.celebrationTitle': 'Selamat datang di AntTransfer Community Edition',
+  'pages.welcome.celebrationTitle':
+    'Selamat datang di AntTransfer Community Edition',
   'pages.welcome.alertMessage':
     'Komponen heavy-duty yang lebih cepat dan lebih kuat telah dirilis.',
   /* ===== Halaman selamat datang (pages/Welcome.tsx) ===== */

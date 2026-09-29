@@ -57,6 +57,7 @@ import {
   PASSWORD_POLICY_VIOLATION_CODE,
 } from '@/utils/result';
 import HeaderDropdown from '../HeaderDropdown';
+import NotifySoundSetting from './NotifySoundSetting';
 
 type GlobalHeaderRightProps = {
   children?: React.ReactNode;
@@ -365,6 +366,12 @@ export const AvatarDropdown: React.FC<GlobalHeaderRightProps> = ({ children }) =
               {roles.length > 0 ? roles.map((role) => <Tag key={role}>{role}</Tag>) : '-'}
             </Descriptions.Item>
           </Descriptions>
+          {/*
+            新消息提示音设置。
+            与头像一样属「本人自助」：无权限点、目标用户来自令牌，因此直接嵌在个人信息里，
+            不另开一个需要授权才能进的页面——「我自己的提示音」不该是一件需要被授权的事。
+          */}
+          <NotifySoundSetting />
         </Spin>
       </Modal>
       <Modal

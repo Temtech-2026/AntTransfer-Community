@@ -138,6 +138,11 @@ const STRATEGY_BY_CODE: Record<number, HandleStrategy> = {
   1039: HandleStrategy.DENY, // 群主不能退群、也不能被移除（403）
   1040: HandleStrategy.BAD_REQUEST, // 该成员不在群里（404）
   1041: HandleStrategy.DENY, // 仅群主可执行：移除成员 / 解散群聊（403）
+  // 1042 只认群主（管理员也不行），属「身份不足」→ 策略 D（就地提示，绝不清楚令牌、不跳登录）。
+  // 与 1041 分开登记是为了提示精确：1042 说的是「@所有人 这件打扰全群的事你做不了」，
+  // 而不是「你在群里不能说话」——若复用 1041，会让人误以为自己的发言权被收回；
+  // 也不能让它落到 1xxx 兜底，否则提示不从消息发送这一具体动作出发。
+  1042: HandleStrategy.DENY, // 非群主 @所有人（403）
 
   // 2xxx 参数校验
   2001: HandleStrategy.BAD_REQUEST,
@@ -176,6 +181,16 @@ const STRATEGY_BY_CODE: Record<number, HandleStrategy> = {
   4026: HandleStrategy.STATE_CONFLICT, // 附件已被发送方撤销：终态，刷新状态即可
   4027: HandleStrategy.DENY, // 用途档位不允许该操作：403 就地提示，绝不跳登录（与 1003 同为策略 D）
   4028: HandleStrategy.DENY, // 取件票据无效或已过期：重新换票即可，绝不跳登录（与 4018 同口径）
+  // 4029~4033 本人自定义提示音（上传准入 + 内容直出）。
+  // 前四个是「选的文件不合规」：用户要做的都是「换一个 / 剪短 / 重新导出」，
+  // 因此都是策略 E（就地提示，把原因挂在选择文件这一步），绝不能跳登录——
+  // 一次音频选错与登录态毫无关系。4033 是「尚未设置自定义提示音」：
+  // 内容端点会回它，但前端把它当「没有可播的自定义音」回落到内置音（不弹错误）
+  4029: HandleStrategy.BAD_REQUEST, // 提示音超 1 MiB：剪短或压缩后重试
+  4030: HandleStrategy.BAD_REQUEST, // 提示音超 10 秒：剪短后重试
+  4031: HandleStrategy.BAD_REQUEST, // 格式不支持（仅 MP3 / WAV / OGG）
+  4032: HandleStrategy.BAD_REQUEST, // 容器可识别但时长读不出：重新导出
+  4033: HandleStrategy.BAD_REQUEST, // 尚未设置自定义提示音（404）：回落到内置音
   4040: HandleStrategy.BAD_REQUEST,
   4101: HandleStrategy.BAD_REQUEST,
   4102: HandleStrategy.STATE_CONFLICT,

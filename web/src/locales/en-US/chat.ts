@@ -48,6 +48,14 @@ export default {
   // that fact outranks the static status
   'chat.typing': 'Typing…',
 
+  // Our own connection quality (always visible in the chat page header): distinct from
+  // the peer presence above — one is our link to the server, the other is the peer
+  'chat.connection.open': 'Live connection healthy',
+  'chat.connection.connecting': 'Connecting…',
+  'chat.connection.reconnecting': 'Reconnecting…',
+  'chat.connection.closed': 'Connection closed',
+  'chat.connection.idle': 'Not connected',
+
   'chat.stream.placeholder.title': 'Select a conversation to start chatting',
   'chat.stream.placeholder.desc':
     'Messages sync in real time; ones missed while offline are backfilled on reconnect',
@@ -59,7 +67,8 @@ export default {
   'chat.stream.loadMoreFailed': 'Failed to load earlier messages, please retry',
 
   // Composer matches WeChat: Enter sends, Shift + Enter adds a line break
-  'chat.composer.placeholder': 'Type a message — Enter to send, Shift + Enter for a new line',
+  'chat.composer.placeholder':
+    'Type a message — Enter to send, Shift + Enter for a new line',
   'chat.composer.empty': 'Message cannot be empty',
   'chat.composer.sendHint': 'Enter to send, Shift + Enter for a new line',
   'chat.composer.emoji': 'Emoji',
@@ -269,4 +278,15 @@ export default {
   'chat.drawer.mineAvatar': 'Me',
   'chat.drawer.fileFallback': '[File] {content}',
   'chat.drawer.send': 'Send',
+  // Group chat: member count and message alerts (the three switches in the group panel)
+  'chat.group.memberCount': '{count} members',
+  'chat.composer.mentionAll': 'Everyone',
+  'chat.group.notify.title': 'Message alerts',
+  'chat.group.notify.mute': 'Mute this group',
+  'chat.group.notify.mention': 'Alert me when someone mentions me',
+  'chat.group.notify.mentionAll': 'Alert me when the owner mentions everyone',
+  'chat.group.notify.muteHint':
+    'Messages in this group no longer make a sound; the two switches below decide whether you are still alerted.',
+  'chat.group.notify.mentionHint':
+    'Messages in this group are alerted normally; the two switches below only take effect once muting is on.',
 } as const;

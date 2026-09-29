@@ -20,11 +20,13 @@ import {
   dissolveChatGroup,
   fetchChatGroupDetail,
   fetchChatGroups,
+  fetchGroupNotifyPreference,
   inviteChatGroupMembers,
   quitChatGroup,
   removeChatGroupMember,
   renameChatGroup,
   setPeerAlias,
+  updateGroupNotifyPreference,
 } from './api';
 
 const GROUP = {
@@ -191,6 +193,81 @@ describe('群管理 API', () => {
 
     await expect(quitChatGroup(GROUP_ID)).rejects.toThrow(
       '只有群主可以执行该操作',
+    );
+  });
+});
+
+/**
+ * 群提醒偏好客户端的契约单测（读 / 整体覆盖写）。
+ *
+ * <p>只钉住三件「错了只有用户拨开关才暴露」的事：
+ * ① 路径里只有群 ID、<b>没有用户 ID</b>（作用对象写死为登录人，不给「替别人设免打扰」留入口）；
+ * ② 读静默（面板主数据）、写不静默（用户主动动作，1012 必须说清原因）；
+ * ③ 写走 `PUT` <b>整体覆盖</b>而非逐字段 `PATCH`——三个开关同时提交，重试 / 多端并发幂等。</p>
+ */
+describe('群提醒偏好 API', () => {
+  const GROUP_ID = '1949000000000000001';
+  const PREF = { muteStatus: 1, notifyOnMention: 1, notifyOnMentionAll: 0 };
+
+  it('fetchGroupNotifyPreference：GET 窄接口且静默（面板主数据）', async () => {
+    requestData.mockResolvedValue(PREF);
+
+    await expect(fetchGroupNotifyPreference(GROUP_ID)).resolves.toEqual(PREF);
+    expect(requestData).toHaveBeenCalledWith(
+      `/api/v1/chat/groups/${GROUP_ID}/notify-preference`,
+      { method: 'GET', silent: true },
+    );
+  });
+
+  it('路径只带群 ID：偏好是 (我, 这个群) 的私有属性，不存在读别人偏好的入参面', async () => {
+    requestData.mockResolvedValue(PREF);
+
+    await fetchGroupNotifyPreference(GROUP_ID);
+    await updateGroupNotifyPreference(GROUP_ID, PREF);
+
+    for (const [url] of requestData.mock.calls) {
+      expect(url).toBe(`/api/v1/chat/groups/${GROUP_ID}/notify-preference`);
+      expect(url).not.toMatch(/users|members/);
+    }
+  });
+
+  it('updateGroupNotifyPreference：PUT 整体覆盖三个开关，且不静默', async () => {
+    requestData.mockResolvedValue(PREF);
+
+    await expect(
+      updateGroupNotifyPreference(GROUP_ID, PREF),
+    ).resolves.toEqual(PREF);
+    expect(requestData).toHaveBeenCalledWith(
+      `/api/v1/chat/groups/${GROUP_ID}/notify-preference`,
+      { method: 'PUT', data: PREF },
+    );
+    const [, options] = requestData.mock.calls[0];
+    expect(options.silent).toBeUndefined();
+    // 整体覆盖：提交对象即界面上的全部开关，不做字段级合并
+    expect(Object.keys(options.data).sort()).toEqual([
+      'muteStatus',
+      'notifyOnMention',
+      'notifyOnMentionAll',
+    ]);
+  });
+
+  it('群 ID 原样以字符串进出（经 Number 归一就会写到另一个群的偏好上）', async () => {
+    requestData.mockResolvedValue(PREF);
+
+    await updateGroupNotifyPreference(GROUP_ID, PREF);
+
+    const [url, options] = requestData.mock.calls[0];
+    expect(url).toContain('1949000000000000001');
+    expect(url).not.toContain('1949000000000000000');
+    expect(typeof options.data.muteStatus).toBe('number');
+    expect(options.data).toEqual(PREF);
+  });
+
+  it('写失败抛给调用方（已退群 / 被移除后停在面板上会得 1012，开关不能悄悄弹回去）', async () => {
+    requestData.mockRejectedValue(new Error('你不在该群中'));
+
+    await expect(updateGroupNotifyPreference(GROUP_ID, PREF)).rejects.toThrow(
+      '你不在该群中',
     );
   });
 });

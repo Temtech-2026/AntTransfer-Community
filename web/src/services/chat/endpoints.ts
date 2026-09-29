@@ -108,4 +108,19 @@ export const CHAT_ENDPOINTS = {
   /** 退出群聊（`POST`，作用于登录人自己，故路径里只有群 ID、没有他人 ID）。 */
   groupQuit: (groupId: string): string =>
     `/api/v1/chat/groups/${groupId}/quit`,
+
+  /**
+   * 我的群提醒偏好（`GET` 读 / `PUT` 整体覆盖写）：同一路径两种方法。
+   *
+   * <p><b>为什么路径里只有群 ID、没有用户 ID：</b>偏好是 {@code (我, 这个群)} 这条成员关系的
+   * 私有属性（同 {@link CHAT_ENDPOINTS.peerAlias} 的取舍），作用对象写死为登录人。
+   * 挂成 {@code /groups/{groupId}/members/{userId}/notify} 会立刻引出
+   * 「能不能替别人设免打扰」这个本不该存在的话题。</p>
+   *
+   * <p><b>为什么不复用 {@link CHAT_ENDPOINTS.group}</b>：群详情也会带上这份偏好，
+   * 但它同时要组装全量成员名单（最坏 500 条批量反查展示名 / 头像）。
+   * 用户每拨一个开关就读一次全量名单是明显的浪费，故单开一个只读三个开关的窄接口。</p>
+   */
+  groupNotifyPreference: (groupId: string): string =>
+    `/api/v1/chat/groups/${groupId}/notify-preference`,
 } as const;

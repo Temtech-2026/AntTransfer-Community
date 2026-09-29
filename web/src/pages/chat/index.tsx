@@ -54,10 +54,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ChatAttachmentHeader from '@/components/ChatAttachmentHeader';
 import ChatAttachmentPicker from '@/components/ChatAttachmentPicker';
 import ChatComposer from '@/components/ChatComposer';
+import {
+  EMPTY_MENTION_SELECTION,
+  type MentionSelection,
+} from '@/components/ChatComposer/composer';
 import ChatFileCard from '@/components/ChatFileCard';
 import ChatGroupPanel from '@/components/ChatGroupPanel';
 import ChatPeerPanel from '@/components/ChatPeerPanel';
 import ChatPeerStatus from '@/components/ChatPeerStatus';
+import ConnectionQuality from '@/components/ConnectionQuality';
 import EmptyState from '@/components/EmptyState';
 import SectionCard from '@/components/SectionCard';
 import UserAvatar from '@/components/UserAvatar';
@@ -118,6 +123,10 @@ import {
   prependHistory,
   sortConversations,
 } from '@/services/chat/messages';
+import {
+  setConversationNotifyPreferences,
+  setGroupNotifyPreference,
+} from '@/services/chat/notifyPreference';
 import { toQuoteDraft, type ChatQuoteDraft } from '@/services/chat/quote';
 import type { ChatGroupDetail } from '@/services/chat/types';
 import {
@@ -169,6 +178,8 @@ const MAX_GROUP_NAME = 64;
  * （超限返回 1032）。两边若只改一侧，由后端的 `ChatGroupMemberLimitTest` 断言暴露。</p>
  */
 const MAX_GROUP_MEMBERS = 500;
+
+
 
 /** 时间展示：今天给时分，今年给月日，更早给完整日期；解析失败时原样回显。 */
 function formatMessageTime(value?: string | null): string {
@@ -237,15 +248,15 @@ const ChatPage = () => {
    */
   const [quote, setQuote] = useState<ChatQuoteDraft | null>(null);
   /**
-   * 本次正文里<b>仍然有效</b>的 {@code @} 提及对象（用户 ID）。
+   * 本次正文里<b>仍然有效</b>的 {@code @} 提及（被点名的人 + 是否 {@code @}所有人）。
    *
    * <p>唯一写入方是输入框的 {@code onMentionChange}：用户删掉 {@code @昵称} 时它会把该人移除，
    * 因此这里不需要（也不该）跟着正文再算一遍——两份判定迟早会分叉，而分叉的后果是
    * 「@了却没人被点名」（见 components/ChatComposer/composer.ts 的 retainActiveMentions）。</p>
    *
-   * <p>发送成功后正文被清空，输入框会再报一次空名单，所以这里不必自己清。</p>
+   * <p>发送成功后正文被清空，输入框会再报一次空选择，所以这里不必自己清。</p>
    */
-  const [mentionUserIds, setMentionUserIds] = useState<string[]>([]);
+  const [mention, setMention] = useState<MentionSelection>(EMPTY_MENTION_SELECTION);
   // 待发文件、用途限制、拖拽投放与「先建授权再发消息」与即时通讯抽屉共用同一份实现，
   // 两个入口因此不会各走各的（见 hooks/useChatAttachmentDraft 文件头）
   const {
@@ -257,8 +268,9 @@ const ChatPage = () => {
     dropZoneProps,
     buildMessage,
   } = useChatAttachmentDraft();
-  // 可 @ 的群成员：单聊 / 未选中会话时是空名单，输入框据此不显示 @ 入口
-  const mentionables = useChatMentionables(activeSession);
+  // 可 @ 的群成员与 @所有人 能力：单聊 / 未选中会话时是空结果，输入框据此不显示 @ 入口。
+  // 两者出自同一次群详情请求（见 useChatMentionables），因此名单与能力永远同批到达
+  const { mentionables, canMentionAll } = useChatMentionables(activeSession);
 
   // —— 新建会话 ——
   const [newOpen, setNewOpen] = useState(false);
@@ -372,7 +384,12 @@ const ChatPage = () => {
     setConvLoading(true);
     setConvError(false);
     try {
-      setConversations(sortConversations(await fetchConversations()));
+      const list = sortConversations(await fetchConversations());
+      setConversations(list);
+      // 顺手把「我在各群的免打扰 / 提及开关」灌进全局索引：
+      // 新消息提示音的触发点在全局（与页面无关的 WS 帧），它读的就是这份索引。
+      // 放在这里而不是提示音组件里，是因为偏好本来就随会话列表下发，多拉一次纯属浪费
+      setConversationNotifyPreferences(list);
       setConvLoaded(true);
     } catch {
       // 失败提示由请求层给出，这里只把左栏切成「加载失败」空态
@@ -444,10 +461,21 @@ const ChatPage = () => {
     setConversations((prev) =>
       prev.map((item) =>
         item.chatScope === ChatScope.GROUP && item.targetId === detail.id
-          ? { ...item, targetName: detail.name }
+          ? {
+              ...item,
+              targetName: detail.name,
+              // 人数与提醒偏好同属这次群详情回吐的字段，一起同步：
+              // 只更新群名会让标题旁的人数停在旧值（邀请 / 移除成员后尤其明显），
+              // 也会让刚拨过的免打扰开关在提示音那边读到旧偏好
+              memberCount: detail.memberCount ?? item.memberCount,
+              notifyPreference: detail.notifyPreference ?? item.notifyPreference,
+            }
           : item,
       ),
     );
+    // 提示音索引单点更新（不必重拉整张会话列表）：全局提示音读的就是它，
+    // 漏了这一笔就会出现「刚设成免打扰，下一条消息还是响了」
+    setGroupNotifyPreference(detail.id, detail.notifyPreference);
   }, []);
 
   /**
@@ -538,7 +566,8 @@ const ChatPage = () => {
           session,
           content,
           quote?.clientMsgId,
-          mentionUserIds,
+          mention.userIds,
+          mention.mentionAll,
         ),
       );
       setInput('');
@@ -1090,6 +1119,27 @@ const ChatPage = () => {
     activeScope === ChatScope.PRIVATE ? activeDisplay?.targetId : undefined;
 
   /**
+   * 当前群会话的成员人数（单聊恒为 `null`）。
+   *
+   * <p>取数走 {@link viewConversations} 而不是 {@code activeSession}：人数随<b>会话列表</b>下发，
+   * 而 {@code activeSession} 只是一个「我打开了哪个会话」的轻量对象，
+   * 里面没有人数（把它当数据源就得给这个对象补一堆与「打开」无关的字段）。</p>
+   *
+   * <p>拿不到人数（列表还没加载完）时返回 `null` 并<b>不显示</b>那一段：
+   * 显示「0 人」会让用户以为群被解散了，而「暂时没有」和「真的没人」是两件事，
+   * 界面上不该用同一个数字表达。</p>
+   */
+  const activeMemberCount = useMemo(() => {
+    if (activeScope !== ChatScope.GROUP || !activeSession) {
+      return null;
+    }
+    const matched = viewConversations.find(
+      (item) => item.chatScope === ChatScope.GROUP && item.targetId === activeSession.targetId,
+    );
+    return matched?.memberCount ?? null;
+  }, [activeScope, activeSession, viewConversations]);
+
+  /**
    * 引用块里的「谁说的」、撤回占位里的「谁撤的」。
    *
    * <p>回落口径与标题同源（{@link labels}）：单聊的对端名就是会话标题，所以直接复用它；
@@ -1503,27 +1553,15 @@ const ChatPage = () => {
     );
   };
 
-  /** 右栏标题旁的连接状态点：不弹横幅，但让「实时是否在线」始终可见。 */
-  const statusDot = (
-    <span
-      className={styles.dot}
-      style={{
-        background:
-          status === 'open'
-            ? token.colorSuccess
-            : status === 'connecting' || status === 'reconnecting'
-              ? token.colorWarning
-              : token.colorError,
-      }}
-    />
-  );
-
   return (
     <PageContainer
       title={intl.formatMessage({ id: 'chat.title' })}
       subTitle={intl.formatMessage({ id: 'chat.subtitle' })}
       extra={
         <Space wrap>
+          {/* 常驻连接质量：异常时顶部另有 connectionAlert 给出重连入口，
+              这里只回答「此刻通道好不好」，不重复动作 */}
+          <ConnectionQuality status={status} />
           <Button
             icon={<ReloadOutlined />}
             onClick={() => void loadConversations()}
@@ -1551,16 +1589,13 @@ const ChatPage = () => {
                 <span className={styles.asideTitle}>
                   {intl.formatMessage({ id: 'chat.list.title' })}
                 </span>
-                <Space size={4}>
-                  {statusDot}
-                  <Button
-                    size="small"
-                    type="text"
-                    icon={<PlusOutlined />}
-                    onClick={openNewModal}
-                    aria-label={intl.formatMessage({ id: 'chat.action.new' })}
-                  />
-                </Space>
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<PlusOutlined />}
+                  onClick={openNewModal}
+                  aria-label={intl.formatMessage({ id: 'chat.action.new' })}
+                />
               </div>
               <div className={styles.search}>
                 <Input.Search
@@ -1641,8 +1676,20 @@ const ChatPage = () => {
                   <div className={styles.mainHeader}>
                     <div className={styles.mainHeading}>
                       <div className={styles.mainTitle}>
-                        {statusDot}
                         <span>{activeTitle}</span>
+                        {/*
+                          群成员人数：只在群聊且有数时显示（见 activeMemberCount）。
+                          用比标题更弱的颜色，是为了让它读起来像标题的注解而不是第二段标题——
+                          用户扫这一行时找的是「这是哪个会话」，人数只是佐证。
+                        */}
+                        {activeMemberCount != null ? (
+                          <Text type="secondary" className={styles.memberCount}>
+                            {intl.formatMessage(
+                              { id: 'chat.group.memberCount' },
+                              { count: activeMemberCount },
+                            )}
+                          </Text>
+                        ) : null}
                         <Tag
                           color={
                             activeScope === ChatScope.GROUP ? 'blue' : 'default'
@@ -1711,8 +1758,18 @@ const ChatPage = () => {
                     autoSize={{ minRows: 3, maxRows: 6 }}
                     /* 群成员名单为空（单聊 / 未选中会话）时输入框自然不显示 @ 入口 */
                     mentionables={mentionables}
+                    /*
+                      @所有人 入口只在服务端下发的能力为 true（群主）时出现。
+                      `undefined` = 不提供该入口：非群主不会看到一个点下去必然 1042 的选项，
+                      而能力判定的权威仍在服务端（前端显隐只是体验优化）
+                    */
+                    mentionAllLabel={
+                      canMentionAll
+                        ? intl.formatMessage({ id: 'chat.composer.mentionAll' })
+                        : undefined
+                    }
                     /* setState 引用恒定：输入框内部按正文重算生效提及，只在内容变化时上报 */
-                    onMentionChange={setMentionUserIds}
+                    onMentionChange={setMention}
                     placeholder={intl.formatMessage({
                       id: attachment
                         ? 'chat.attach.placeholder'

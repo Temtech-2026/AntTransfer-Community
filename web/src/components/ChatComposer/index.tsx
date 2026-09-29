@@ -33,8 +33,8 @@ import {
   SmileOutlined,
 } from '@ant-design/icons';
 import { useIntl } from '@umijs/max';
-import { createStyles } from 'antd-style';
 import { Button, Input, Tooltip } from 'antd';
+import { createStyles } from 'antd-style';
 import {
   type ReactNode,
   useCallback,
@@ -46,18 +46,22 @@ import {
 } from 'react';
 
 import {
+  buildMentionCandidates,
+  EMPTY_MENTION_SELECTION,
   type EmojiStorage,
-  type MentionCandidate,
-  type MentionTrigger,
-  filterMentionCandidates,
   insertAtCaret,
   insertMention,
+  type MentionCandidate,
+  type MentionSelection,
+  type MentionTrigger,
+  mentionAllCandidate,
   pushMention,
   pushRecentEmoji,
   readRecentEmoji,
   resolveComposerKey,
   resolveMentionTrigger,
   retainActiveMentions,
+  toMentionSelection,
   writeRecentEmoji,
 } from './composer';
 import { EMOJI_GROUPS, type EmojiGroup } from './emoji';
@@ -218,6 +222,17 @@ const useStyles = createStyles(({ token }) => ({
   },
 }));
 
+/**
+ * 提及选择的比较签名：`userIds` 顺序敏感（顺序即插入顺序），`mentionAll` 单独一维。
+ *
+ * <p>抽成函数而不是在两处各拼一次字符串：初值必须与「空选择」的签名完全一致，
+ * 否则组件挂载时就会凭空上报一次空提及，让父组件白渲染一轮
+ * （见 {@link EMPTY_MENTION_SELECTION}）。</p>
+ */
+function mentionSignature(selection: MentionSelection): string {
+  return `${selection.userIds.join(',')}|${selection.mentionAll}`;
+}
+
 /** 取 `localStorage`；隐身模式等场景下访问会抛异常，此时退化为「没有最近使用」。 */
 function useEmojiStorage(): EmojiStorage | null {
   return useMemo(() => {
@@ -271,7 +286,17 @@ export interface ChatComposerProps {
    */
   mentionables?: readonly MentionCandidate[];
   /**
-   * 当前生效的提及对象（用户 ID 列表）变化时回调，调用方在发送时随消息带上。
+   * 「{@code @}所有人」候选的展示名（已翻译，如「所有人」）。
+   *
+   * <p>不传 = 本会话不提供 {@code @}所有人（单聊，或服务端下发的能力里
+   * {@code canMentionAll} 为 false，即当前用户不是群主）。
+   * <b>是否显示只是体验层</b>：真正的门槛在服务端（越权会得 1042），
+   * 前端据此显隐是为了让非群主不必点一个必然失败的选项，而不是把权限判断搬到前端。</p>
+   */
+  mentionAllLabel?: string;
+  /**
+   * 当前生效的提及变化时回调（被点名的用户 ID 列表 + 是否 {@code @}所有人），
+   * 调用方在发送时随消息带上。
    *
    * <p><b>调用方请用稳定引用</b>（{@code useCallback}）：正文每次变化都会重算生效提及，
    * 内联箭头函数会让这个回调在父组件每次渲染时换引用。组件内部已用 ref 兜住
@@ -279,8 +304,11 @@ export interface ChatComposerProps {
    *
    * <p>不传 = 调用方不关心提及（如只读预览）；此时正文照样可以写 {@code @昵称}，
    * 只是不会有人被真正点名。</p>
+   *
+   * <p>「点名了谁」与「{@code @}所有人」在同一个对象里上报，因为它们在消息上是同一条记录的两个字段：
+   * 分成两个回调就可能出现「一半新一半旧」的中间状态被发出去（见 {@code MentionSelection}）。</p>
    */
-  onMentionChange?: (userIds: string[]) => void;
+  onMentionChange?: (selection: MentionSelection) => void;
   /** 窄容器（即时通讯抽屉）用紧凑内边距。 */
   compact?: boolean;
   /** 无外壳（弹窗里内嵌使用）：去掉输入区自身的内边距与上分隔线。 */
@@ -310,6 +338,7 @@ const ChatComposer = ({
   header,
   tools,
   mentionables,
+  mentionAllLabel,
   onMentionChange,
   compact = false,
   bare = false,
@@ -328,7 +357,9 @@ const ChatComposer = ({
    */
   const mentionEnabled = (mentionables?.length ?? 0) > 0;
   /** 当前正在输入中的 `@` 查询词；`null` = 候选面板未打开。 */
-  const [mentionTrigger, setMentionTrigger] = useState<MentionTrigger | null>(null);
+  const [mentionTrigger, setMentionTrigger] = useState<MentionTrigger | null>(
+    null,
+  );
   /** 候选面板的高亮项（鼠标悬停与上下键共用同一个「当前项」）。 */
   const [mentionIndex, setMentionIndex] = useState(0);
   /** 已确认插入、且正文里仍然留着的提及。 */
@@ -345,8 +376,13 @@ const ChatComposer = ({
    */
   const mentionChangeRef = useRef(onMentionChange);
   mentionChangeRef.current = onMentionChange;
-  /** 上一次上报过的 ID 串：内容没变就不上报，免得父组件白渲染一次。 */
-  const reportedMentionsRef = useRef('');
+  /**
+   * 上一次上报过的选择签名：内容没变就不上报，免得父组件白渲染一次。
+   *
+   * <p>初值取「空选择」的签名而不是空串：挂载时本来就没有任何提及，
+   * 拿空串当基准会把「无提及」当成一次变化，凭空上报一轮。</p>
+   */
+  const reportedMentionsRef = useRef(mentionSignature(EMPTY_MENTION_SELECTION));
 
   /** 同一页可能有多处输入框（页 + 抽屉），面板与页签的关联 id 必须唯一。 */
   const panelId = useId();
@@ -380,13 +416,30 @@ const ChatComposer = ({
 
   /* ------------------------------- @ 提及 ------------------------------- */
 
+  /**
+   * 「@所有人」伪候选。
+   *
+   * <p>它不属于 {@code mentionables}（那不是一个人，没有 ID 也没有头像），
+   * 但必须出现在同一份候选列表里，才能共用「上下键 / 回车 / 查询词过滤」这一整套选择交互；
+   * 用哨兵 ID 混进去、再在出口处剔除，比给面板单开一套键盘逻辑要可靠得多
+   * （两套逻辑迟早会在「输入法组合期让行」这类细节上分叉）。</p>
+   */
+  const mentionAllOption = useMemo(
+    () => (mentionAllLabel ? mentionAllCandidate(mentionAllLabel) : null),
+    [mentionAllLabel],
+  );
+
   /** 候选：只在面板打开时按查询词过滤（面板没开时算出来也没有消费者）。 */
   const mentionCandidates = useMemo(
     () =>
       mentionTrigger
-        ? filterMentionCandidates(mentionables ?? [], mentionTrigger.query)
+        ? buildMentionCandidates({
+            members: mentionables ?? [],
+            query: mentionTrigger.query,
+            mentionAll: mentionAllOption,
+          })
         : [],
-    [mentionables, mentionTrigger],
+    [mentionables, mentionAllOption, mentionTrigger],
   );
 
   /**
@@ -496,13 +549,16 @@ const ChatComposer = ({
     if (!mentionEnabled) {
       return;
     }
-    const userIds = mentions.map((item) => item.userId);
-    const signature = userIds.join(',');
+    // 哨兵在此剔除：发送侧拿到的是「真实用户 ID + 是否全群」两个正交字段
+    const selection = toMentionSelection(mentions);
+    // 签名必须带上 mentionAll：否则「只加/只去 @所有人」时 userIds 不变，
+    // 会被当成「内容没变」而不上报，发送出去的就是上一次的全群标记
+    const signature = mentionSignature(selection);
     if (signature === reportedMentionsRef.current) {
       return;
     }
     reportedMentionsRef.current = signature;
-    mentionChangeRef.current?.(userIds);
+    mentionChangeRef.current?.(selection);
   }, [mentionEnabled, mentions]);
 
   /**
@@ -632,7 +688,9 @@ const ChatComposer = ({
       if (event.key === 'Enter') {
         event.preventDefault();
         // 下标可能因候选收窄而越界，兜底取第一项
-        handlePickMention(mentionCandidates[mentionIndex] ?? mentionCandidates[0]);
+        handlePickMention(
+          mentionCandidates[mentionIndex] ?? mentionCandidates[0],
+        );
         return;
       }
     }
@@ -708,9 +766,7 @@ const ChatComposer = ({
         />
         <div className={styles.toolbar}>
           <div className={styles.tools}>
-            <Tooltip
-              title={intl.formatMessage({ id: 'chat.composer.emoji' })}
-            >
+            <Tooltip title={intl.formatMessage({ id: 'chat.composer.emoji' })}>
               <Button
                 type="text"
                 icon={<SmileOutlined />}
@@ -728,7 +784,9 @@ const ChatComposer = ({
                 <Button
                   type="text"
                   className={styles.mentionButton}
-                  aria-label={intl.formatMessage({ id: 'chat.composer.mention' })}
+                  aria-label={intl.formatMessage({
+                    id: 'chat.composer.mention',
+                  })}
                   aria-expanded={mentionTrigger !== null}
                   // 同上：按下不抢焦点，光标留在正文里，提及才插得准
                   onMouseDown={(event) => event.preventDefault()}

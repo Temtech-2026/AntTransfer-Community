@@ -1,9 +1,13 @@
 import bnBDPages from './bn-BD/pages';
 import enUSPages from './en-US/pages';
+import esESPages from './es-ES/pages';
 import faIRPages from './fa-IR/pages';
+import frFRPages from './fr-FR/pages';
 import idIDPages from './id-ID/pages';
 import jaJPPages from './ja-JP/pages';
+import koKRPages from './ko-KR/pages';
 import ptBRPages from './pt-BR/pages';
+import ruRUPages from './ru-RU/pages';
 import zhCNPages from './zh-CN/pages';
 import zhTWPages from './zh-TW/pages';
 
@@ -15,7 +19,8 @@ import zhTWPages from './zh-TW/pages';
  * 把 `pages.welcome.hero.title` 这样的原始 key 直接渲染到页面上，表现为「切到某语言后
  * 欢迎页满是英文 id」。
  *
- * <p>`i18n-parity.test.ts` 只比对 zh-CN ↔ en-US 的键集合，覆盖不到这 6 种语言；本用例按
+ * <p>`i18n-parity.test.ts` 只比对 zh-CN ↔ 已登记语言（en-US / es-ES / fr-FR / ja-JP / ko-KR / ru-RU）
+ * 的键集合，覆盖不到其余骨架语言；本用例按
  * {@link REQUIRED_KEYS} 逐语言核对，新增欢迎页文案时若漏翻译会立即失败。
  *
  * <p>维护方式：`REQUIRED_KEYS` 与 `pages/Welcome.tsx` 中引用的 id 一一对应，改动页面时同步。
@@ -46,6 +51,10 @@ const MESSAGES: Record<string, Record<string, string>> = {
   'zh-TW': zhTWPages,
   'en-US': enUSPages,
   'ja-JP': jaJPPages,
+  'ko-KR': koKRPages,
+  'fr-FR': frFRPages,
+  'ru-RU': ruRUPages,
+  'es-ES': esESPages,
   'pt-BR': ptBRPages,
   'id-ID': idIDPages,
   'fa-IR': faIRPages,

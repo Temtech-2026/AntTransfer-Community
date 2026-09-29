@@ -1,10 +1,14 @@
 import routes from '@root/config/routes';
 import bnBDMenu from './bn-BD/menu';
 import enUSMenu from './en-US/menu';
+import esESMenu from './es-ES/menu';
 import faIRMenu from './fa-IR/menu';
+import frFRMenu from './fr-FR/menu';
 import idIDMenu from './id-ID/menu';
 import jaJPMenu from './ja-JP/menu';
+import koKRMenu from './ko-KR/menu';
 import ptBRMenu from './pt-BR/menu';
+import ruRUMenu from './ru-RU/menu';
 import zhCNMenu from './zh-CN/menu';
 import zhTWMenu from './zh-TW/menu';
 
@@ -18,7 +22,7 @@ import zhTWMenu from './zh-TW/menu';
  * 表现为「切换语言时只有个别菜单项变化、其余菜单名看似没翻译」。
  *
  * <p>Ant Design Pro 脚手架自带的 8 个语言包只翻译了示例页菜单，项目自建菜单键（工作台 / 分片上传 /
- * 文件工作台 / …）最初只补在 zh-CN、en-US 上，其余 6 种语言因此整体回退成原始路由名。本用例把
+ * 文件工作台 / …）最初只补在 zh-CN、en-US 上，其余语言因此整体回退成原始路由名。本用例把
  * 「必需键」直接由 `config/routes.ts` 派生，新增菜单时若漏翻译会立即失败。
  */
 
@@ -55,6 +59,10 @@ const MENU_MESSAGES: Record<string, Record<string, string>> = {
   'zh-TW': zhTWMenu,
   'en-US': enUSMenu,
   'ja-JP': jaJPMenu,
+  'ko-KR': koKRMenu,
+  'fr-FR': frFRMenu,
+  'ru-RU': ruRUMenu,
+  'es-ES': esESMenu,
   'pt-BR': ptBRMenu,
   'id-ID': idIDMenu,
   'fa-IR': faIRMenu,

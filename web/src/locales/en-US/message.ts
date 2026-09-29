@@ -1,7 +1,8 @@
 /** Copy for the message center (system notifications + todos). */
 export default {
   'message.title': 'Messages',
-  'message.subtitle': 'Approvals, sharing and security alerts are streamed here in real time',
+  'message.subtitle':
+    'Approvals, sharing and security alerts are streamed here in real time',
   'message.tab.notifications': 'Notifications',
   'message.tab.todos': 'To-dos',
   'message.unread.badge': '{count} unread',
@@ -24,14 +25,17 @@ export default {
 
   'message.connection.connecting': 'Connecting…',
   'message.connection.reconnecting': 'Connection lost, reconnecting…',
-  'message.connection.closed': 'Connection closed, new messages will be delayed',
+  'message.connection.closed':
+    'Connection closed, new messages will be delayed',
   'message.connection.reconnectNow': 'Reconnect now',
   'message.connection.restored': 'Connection restored',
   'message.connection.backfilled': 'Caught up on {count} missed messages',
-  'message.connection.offlineHint': 'Messages missed while offline are pulled in after reconnect',
+  'message.connection.offlineHint':
+    'Messages missed while offline are pulled in after reconnect',
 
   'message.empty.title': 'No messages',
-  'message.empty.desc': 'Approvals, sharing and security alerts show up here in real time',
+  'message.empty.desc':
+    'Approvals, sharing and security alerts show up here in real time',
   'message.empty.filteredTitle': 'Nothing unread',
   'message.empty.filteredDesc': 'Switch to "All" to review the history',
 
@@ -45,7 +49,8 @@ export default {
   'message.todo.source.approval': 'Pending my approval',
   'message.todo.source.approvalResult': 'Approval result',
   'message.todo.source.transfer': 'Transfer completed',
-  'message.todo.jumpMissing': 'Target page is not available yet, check the approval center',
+  'message.todo.jumpMissing':
+    'Target page is not available yet, check the approval center',
 
   'message.type.1': 'Approval request',
   'message.type.2': 'Approval result',

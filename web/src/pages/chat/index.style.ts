@@ -160,6 +160,19 @@ const useStyles = createStyles(({ token }) => ({
   },
 
   /**
+   * 标题旁的群成员人数。
+   *
+   * <p>字号与字重都刻意比标题小一档：同一行里两段等重的文字会让人分不清
+   * 「哪个是会话名」（用户在这一行找的就是它）。不换行则是因为人数很短，
+   * 窄屏上让它自己折到第二行反而会把标题挤成一行碎片。</p>
+   */
+  memberCount: {
+    fontSize: token.fontSizeSM,
+    fontWeight: 400,
+    whiteSpace: 'nowrap',
+  },
+
+  /**
    * 标题行 + 对端状态：两行堆叠，状态在会话名下方。
    *
    * <p>与微信同口径——「在线 / 正在输入…」挂在标题下面而不是挤在右侧：
@@ -320,13 +333,6 @@ const useStyles = createStyles(({ token }) => ({
     padding: 24,
   },
 
-  /** 连接状态圆点。 */
-  dot: {
-    display: 'inline-block',
-    width: 8,
-    height: 8,
-    borderRadius: '50%',
-  },
 }));
 
 export default useStyles;

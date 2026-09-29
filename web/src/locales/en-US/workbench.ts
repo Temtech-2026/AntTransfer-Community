@@ -1,8 +1,7 @@
 /** Workbench (overview cards / quick links) copy. */
 export default {
   'workbench.title': 'Workbench',
-  'workbench.subtitle':
-    'Transfers, approvals and to-dos at a single glance',
+  'workbench.subtitle': 'Transfers, approvals and to-dos at a single glance',
   'workbench.action.refresh': 'Refresh',
 
   'workbench.degraded.title': 'Transfer volume and success rate unavailable',

@@ -66,12 +66,17 @@ export interface ChatAttachmentDraft {
    *                         由输入框的回调给出（见 {@code ChatComposer}），
    *                         这里只做「非群聊一律不带」的收敛——单聊没有点名语义，
    *                         让一个永远无效的字段在载荷里流动，排查时只会误导
+   * @param mentionAll       是否 {@code @}所有人（选填，仅群聊生效）。
+   *                         与 {@code mentionUserIds} 是两个<b>正交</b>的字段：
+   *                         前者是「点名了谁」，后者是「提醒全群」，
+   *                         可以同时存在（既 @所有人 又单独点名某人），服务端也按两个字段分别落库
    */
   buildMessage: (
     session: ChatSession,
     text: string,
     quoteClientMsgId?: string | null,
     mentionUserIds?: readonly string[] | null,
+    mentionAll?: boolean,
   ) => Promise<ChatSendPayload>;
 }
 
@@ -117,6 +122,9 @@ const useChatAttachmentDraft = (): ChatAttachmentDraft => {
       // @ 提及对象（选填，仅群聊）。它不影响 clientMsgId / 授权的任何口径，
       // 只是随正文一起过线的「点名名单」，故单独作为末位参数而不并入上面的对象
       mentionUserIds?: readonly string[] | null,
+      // @所有人（选填，仅群聊）。与上面的名单并列成两个参数而不是合成一个对象，
+      // 是为了让调用方在「没有名单、只想 @所有人」时不必凭空构造一个空对象
+      mentionAll?: boolean,
     ): Promise<ChatSendPayload> => {
       // 幂等键同源：一条消息与它携带的授权必须共用同一个键。各生成一个随机键的话，
       // 重试时消息被去重了、授权却会多出一条，发送方列表里凭空多一份额度
@@ -161,6 +169,12 @@ const useChatAttachmentDraft = (): ChatAttachmentDraft => {
         mentionUserIds:
           session.chatScope === ChatScope.GROUP && mentionUserIds?.length
             ? [...mentionUserIds]
+            : undefined,
+        // 只在真为 true 时才带上字段；不 @ 任何人时不发一个 `mentionAll: false`：
+        // 「默认不打扰全群」这件事应该由「字段缺席」表达，而不是靠每个调用点都记得传 false
+        mentionAll:
+          session.chatScope === ChatScope.GROUP && mentionAll === true
+            ? true
             : undefined,
       };
     },

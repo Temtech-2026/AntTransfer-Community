@@ -184,7 +184,7 @@ describe('app getInitialState', () => {
 
 describe('app getInitialState 界面语言归一化', () => {
   /**
-   * 浏览器语言可能落在受支持集合之外（`src/locales` 只有 zh-CN / en-US）。
+   * 浏览器语言可能落在受支持集合之外（`src/locales` 下不一定有对应语言包）。
    * 不收敛的话 `formatMessage` 会回退成中文 `defaultMessage` 甚至原始 key，
    * 现象就是用户说的「切换语言后界面文案没变」。
    */
@@ -208,8 +208,28 @@ describe('app getInitialState 界面语言归一化', () => {
     expect(mockSetLocale).toHaveBeenCalledWith('zh-CN', false);
   });
 
-  it('非中文语系且无语言包（ja-JP）收敛为 en-US', async () => {
+  it('韩文语系但地区不同（ko / ko-KP）收敛为 ko-KR，而非回落英文', async () => {
+    await initialLocaleFor('ko-KP');
+    expect(mockSetLocale).toHaveBeenCalledWith('ko-KR', false);
+
+    mockSetLocale.mockClear();
+    await initialLocaleFor('ko');
+    expect(mockSetLocale).toHaveBeenCalledWith('ko-KR', false);
+  });
+
+  it('日文语系但缺少地区（ja）收敛为 ja-JP，而非回落英文', async () => {
+    await initialLocaleFor('ja');
+    expect(mockSetLocale).toHaveBeenCalledWith('ja-JP', false);
+
+    // 精确命中受支持集合时不再写回（同「已在受支持集合内时不写回」用例），
+    // 这里补一条是为了确保 ja-JP 真的进了白名单，而不是碰巧被前缀匹配救回来。
+    mockSetLocale.mockClear();
     await initialLocaleFor('ja-JP');
+    expect(mockSetLocale).not.toHaveBeenCalled();
+  });
+
+  it('非中文语系且未登记（pt-BR）收敛为 en-US', async () => {
+    await initialLocaleFor('pt-BR');
     expect(mockSetLocale).toHaveBeenCalledWith('en-US', false);
   });
 

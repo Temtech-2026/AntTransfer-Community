@@ -76,11 +76,14 @@ export default {
     '服务端只保存散列，创建成功后请立即转达给对方，之后无法再次查看',
 
   /* ==================== 访客取件页（/share/:token，免登录） ==================== */
-  'shares.visit.subtitle': '有人通过 AntTransfer 向你发送了文件，输入提取码即可取件',
-  'shares.visit.invalidLink': '链接不完整：缺少分享令牌，请确认复制的是完整链接',
+  'shares.visit.subtitle':
+    '有人通过 AntTransfer 向你发送了文件，输入提取码即可取件',
+  'shares.visit.invalidLink':
+    '链接不完整：缺少分享令牌，请确认复制的是完整链接',
   'shares.visit.code.label': '提取码',
   'shares.visit.code.placeholder': '请输入邮件或聊天里收到的提取码',
-  'shares.visit.code.prefilled': '已自动填入链接里的提取码，确认后点击「提取文件」',
+  'shares.visit.code.prefilled':
+    '已自动填入链接里的提取码，确认后点击「提取文件」',
   'shares.visit.code.required': '请输入提取码',
   'shares.visit.submit': '提取文件',
   'shares.visit.redeemed': '提取成功，点击下方按钮下载',

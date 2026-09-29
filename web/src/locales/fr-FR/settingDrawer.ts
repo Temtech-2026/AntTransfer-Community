@@ -1,0 +1,33 @@
+export default {
+  'app.setting.pagestyle': 'Style général',
+  'app.setting.pagestyle.dark': 'Menu sombre',
+  'app.setting.pagestyle.light': 'Menu clair',
+  'app.setting.content-width': 'Largeur de la zone de contenu',
+  'app.setting.content-width.fixed': 'Largeur fixe',
+  'app.setting.content-width.fluid': 'Largeur fluide',
+  'app.setting.themecolor': 'Couleur du thème',
+  'app.setting.themecolor.dust': 'Crépuscule',
+  'app.setting.themecolor.volcano': 'Volcan',
+  'app.setting.themecolor.sunset': 'Coucher de soleil',
+  'app.setting.themecolor.cyan': 'Cyan clair',
+  'app.setting.themecolor.green': 'Vert aurore',
+  'app.setting.themecolor.daybreak': 'Bleu aube (par défaut)',
+  'app.setting.themecolor.geekblue': 'Bleu geek',
+  'app.setting.themecolor.purple': 'Violet prune',
+  'app.setting.navigationmode': 'Mode de navigation',
+  'app.setting.sidemenu': 'Disposition avec menu latéral',
+  'app.setting.topmenu': 'Disposition avec menu supérieur',
+  'app.setting.fixedheader': 'En-tête fixe',
+  'app.setting.fixedsidebar': 'Menu latéral fixe',
+  'app.setting.fixedsidebar.hint':
+    'Configurable avec la disposition à menu latéral',
+  'app.setting.hideheader': "Masquer l'en-tête au défilement",
+  'app.setting.hideheader.hint': "Configurable avec l'en-tête fixe",
+  'app.setting.othersettings': 'Autres paramètres',
+  'app.setting.weakmode': 'Mode daltonisme',
+  'app.setting.copy': 'Copier les paramètres',
+  'app.setting.copyinfo':
+    'Copie réussie. Remplacez la configuration par défaut dans config/defaultSettings.js',
+  'app.setting.production.hint':
+    "Le panneau de configuration n'est disponible qu'en développement pour la prévisualisation ; il n'apparaît pas en production. Copiez puis modifiez le fichier de configuration manuellement",
+};

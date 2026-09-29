@@ -87,7 +87,8 @@ export default {
   'shares.visit.invalidLink':
     'Incomplete link: the share token is missing. Make sure you copied the whole link.',
   'shares.visit.code.label': 'Extract code',
-  'shares.visit.code.placeholder': 'Enter the code you received by email or chat',
+  'shares.visit.code.placeholder':
+    'Enter the code you received by email or chat',
   'shares.visit.code.prefilled':
     'The extract code was filled in from the link — click the button to continue',
   'shares.visit.code.required': 'Enter the extract code',

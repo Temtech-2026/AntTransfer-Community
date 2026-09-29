@@ -72,7 +72,8 @@ export default {
   'approval.modal.applyScope': '申请：{action}',
   'approval.modal.desiredExpireAt': '期望到期：{at}',
   'approval.modal.grantScope': '授权范围（只能收紧，不能超过申请范围）',
-  'approval.modal.grantScopeDownscoped': '低于申请动作「{action}」——将按更小范围授权',
+  'approval.modal.grantScopeDownscoped':
+    '低于申请动作「{action}」——将按更小范围授权',
   'approval.modal.grantScopeSame': '与申请范围一致',
   'approval.modal.grantScopePlaceholder': '选择授权动作',
   'approval.modal.expireAt': '授权有效期（只能缩短，不能超过申请值）',

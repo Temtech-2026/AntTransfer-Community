@@ -72,20 +72,24 @@ export default {
   'approval.modal.applicationNo': 'Request no.: {no}',
   'approval.modal.applyScope': 'Requested: {action}',
   'approval.modal.desiredExpireAt': 'Requested expiry: {at}',
-  'approval.modal.grantScope': 'Grant scope (can only be narrowed, never widened)',
+  'approval.modal.grantScope':
+    'Grant scope (can only be narrowed, never widened)',
   'approval.modal.grantScopeDownscoped':
     'Lower than the requested action "{action}" — a narrower scope will be granted',
   'approval.modal.grantScopeSame': 'Same as the requested scope',
   'approval.modal.grantScopePlaceholder': 'Select the action to grant',
-  'approval.modal.expireAt': 'Grant expiry (can only be shortened, never extended)',
-  'approval.modal.expireCapped': 'Later than requested — it will be capped to {expireAt}',
+  'approval.modal.expireAt':
+    'Grant expiry (can only be shortened, never extended)',
+  'approval.modal.expireCapped':
+    'Later than requested — it will be capped to {expireAt}',
   'approval.modal.expireKeep': 'Leave empty for no expiry',
   'approval.modal.expirePlaceholder': 'Empty = no expiry',
   'approval.modal.opinionApprove': 'Approval note (optional)',
   'approval.modal.opinionReject': 'Rejection reason (required)',
   'approval.modal.opinionMax': 'Up to {max} characters',
   'approval.modal.opinionRequired': 'Please provide a rejection reason',
-  'approval.modal.opinionPlaceholderApprove': 'Add any conditions for the grant',
+  'approval.modal.opinionPlaceholderApprove':
+    'Add any conditions for the grant',
   'approval.modal.opinionPlaceholderReject':
     'Explain the reason; it will be shared with the applicant',
   'approval.modal.notice':

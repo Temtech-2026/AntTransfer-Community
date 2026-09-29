@@ -244,6 +244,103 @@ export function filterMentionCandidates(
   return matched.slice(0, limit);
 }
 
+/* ---------------------------- @所有人 ---------------------------- */
+
+/**
+ * 「@所有人」在<b>本地候选列表</b>里的哨兵 ID。
+ *
+ * <p><b>它绝不是用户 ID，也不允许流到服务端。</b>服务端表达「提醒全群」用的是独立的布尔字段
+ * （{@code ChatSendDTO.mentionAll}），而不是往 `mentionUserIds` 里塞一个特殊值；
+ * 若这个哨兵漏进 `userIds`，服务端只会把它当一个不存在的成员静默剔除，
+ * 用户看到的现象是「明明 @ 了所有人，却一个人都没被提醒」——一条不会报错、极难排查的路径。
+ * 因此所有出口都要经 {@link toMentionSelection} 过滤。</p>
+ *
+ * <p>取值刻意不可与雪花 ID 混淆（雪花 ID 全是数字），这样即使被误当作 ID 传出去，
+ * 服务端的合法性校验也会立刻拒绝，而不是碰巧命中某个真实用户。</p>
+ */
+export const MENTION_ALL_ID = '@all';
+
+/** 该候选是不是「@所有人」这条伪候选。 */
+export function isMentionAllId(userId: string): boolean {
+  return userId === MENTION_ALL_ID;
+}
+
+/** 构造「@所有人」候选；{@code label} 是已翻译的展示名（如「所有人」）。 */
+export function mentionAllCandidate(label: string): MentionCandidate {
+  return { userId: MENTION_ALL_ID, displayName: label };
+}
+
+/**
+ * 组装候选列表：`@所有人` 在首位（若匹配查询词），其后是匹配的成员，总体按 {@link limit} 截断。
+ *
+ * <p>「所有人」放首位而不是末位：它是这个面板里唯一一个「一次性作用于全群」的选项，
+ * 用户在刚敲下 {@code @} 时最可能想要它（想点名某个人的话，接着打字就会把范围收窄到那个人），
+ * 而放末位意味着它几乎永远被 8 条上限挤出视线——一个存在但找不到的入口等于没有。</p>
+ *
+ * <p>「所有人」的匹配用与其他候选完全相同的规则（见 {@link filterMentionCandidates}），
+ * 因此用户敲 {@code @所} / {@code @all}（取决于界面语言）都能命中它，不必为它单立一套匹配。</p>
+ */
+export function buildMentionCandidates(params: {
+  /** 群成员候选。 */
+  members: readonly MentionCandidate[];
+  /** 当前查询词。 */
+  query: string;
+  /** 「@所有人」候选；不传 = 该会话不支持 @所有人（非群主 / 单聊）。 */
+  mentionAll?: MentionCandidate | null;
+  limit?: number;
+}): MentionCandidate[] {
+  const limit = params.limit ?? MENTION_CANDIDATE_LIMIT;
+  const all = params.mentionAll
+    ? filterMentionCandidates([params.mentionAll], params.query, 1)
+    : [];
+  const rest = filterMentionCandidates(
+    params.members,
+    params.query,
+    Math.max(limit - all.length, 0),
+  );
+  return [...all, ...rest];
+}
+
+/**
+ * 上报给调用方的提及选择。
+ *
+ * <p>把「点名了谁」与「是否 @所有人」放在同一个对象里，是因为它们在服务端是<b>同一条消息</b>
+ * 的两个字段（{@code mentionUserIds} / {@code mentionAll}）；分成两个回调就有可能出现
+ * 「一半是新的、一半是旧的」的中间状态被发送出去。</p>
+ */
+export interface MentionSelection {
+  /** 被点名的成员 ID（已剔除 {@link MENTION_ALL_ID} 哨兵）。 */
+  userIds: string[];
+  /** 是否 @了所有人。 */
+  mentionAll: boolean;
+}
+
+/** 把本地提及列表翻译成上报值：剔除哨兵、区分「全群」标记。 */
+export function toMentionSelection(
+  mentions: readonly MentionCandidate[],
+): MentionSelection {
+  return {
+    userIds: mentions
+      .filter((item) => !isMentionAllId(item.userId))
+      .map((item) => item.userId),
+    mentionAll: mentions.some((item) => isMentionAllId(item.userId)),
+  };
+}
+
+/**
+ * 「没有任何提及」的常量对象，供调用方做 `useState` 初值。
+ *
+ * <p>刻意导出常量而不是让每个调用点写 `{ userIds: [], mentionAll: false }`：
+ * 字面量每次渲染都是新引用，而输入框会在<b>每次正文变化</b>时上报一次选择，
+ * 空选择于是成了持续产生新引用的稳定来源，任何以它为依赖的 `useMemo/useEffect`
+ * 都会被无谓地重算（多个入口同时挂着时更明显）。
+ * 常量还顺带让「空选择」在两处入口是同一个值，比较时不必逐字段判空。</p>
+ */
+export const EMPTY_MENTION_SELECTION: MentionSelection = {
+  userIds: [],
+  mentionAll: false,
+};
+
 /** {@link insertMention} 的结果。 */
 export interface MentionInsertResult {
   /** 插入后的完整文本。 */

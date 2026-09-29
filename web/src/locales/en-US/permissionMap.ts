@@ -2,14 +2,17 @@
 export default {
   /* ============================ 页面骨架 ============================ */
   'permissionMap.page.title': 'Permission Map',
-  'permissionMap.page.subTitle': 'The permissions I hold, their sources and validity',
+  'permissionMap.page.subTitle':
+    'The permissions I hold, their sources and validity',
   'permissionMap.loadFailed': 'Failed to load the permission map',
 
   /* ============================ 概览卡片 ============================ */
   'permissionMap.stat.perm.title': 'Permission points',
-  'permissionMap.stat.perm.footer': 'The backend only reports whether you hold them',
+  'permissionMap.stat.perm.footer':
+    'The backend only reports whether you hold them',
   'permissionMap.stat.role.title': 'Roles',
-  'permissionMap.stat.role.footer': 'One of the known sources of permission points',
+  'permissionMap.stat.role.footer':
+    'One of the known sources of permission points',
   'permissionMap.stat.grant.title': 'Approved grants',
   'permissionMap.stat.grant.footer': '{expired} of them have expired',
   'permissionMap.stat.expiring.footer': 'Expiring within 7 days',
@@ -43,7 +46,8 @@ export default {
 
   /* ============================ 有效期时间轴 ============================ */
   'permissionMap.timeline.title': 'Validity timeline',
-  'permissionMap.timeline.subTitle': 'Expiry axis: a grant takes effect once persisted',
+  'permissionMap.timeline.subTitle':
+    'Expiry axis: a grant takes effect once persisted',
   'permissionMap.timeline.expirePrefix': 'Expires',
   'permissionMap.timeline.fromApplication': 'Source application #{id}',
   'permissionMap.timeline.empty': 'No grants with a validity period',

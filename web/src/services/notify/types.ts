@@ -86,6 +86,22 @@ export const RecallStatus = {
 } as const;
 
 /**
+ * 提及档位（与后端 {@code NotifyMessage.MENTION_TYPE_*} 逐值对齐）。
+ *
+ * <p>为什么不是布尔：免打扰开启后，「有人 {@code @} 我」与「群主 {@code @} 所有人」
+ * 是两个<b>可分别开关</b>的提醒渠道（口径对齐微信）。只靠
+ * {@link NotifyMessage.mentioned} 无法区分是哪一种，也就无从在免打扰下决定要不要出声。</p>
+ */
+export const MentionType = {
+  /** 未点名。 */
+  NONE: 0,
+  /** 有人 {@code @} 我：看「@我提醒」开关。 */
+  ME: 1,
+  /** 群主 {@code @} 所有人：看「@所有人提醒」开关。 */
+  ALL: 2,
+} as const;
+
+/**
  * 已读某条会话消息的读者（对齐后端 {@code ChatReaderVO}）。
  *
  * <p><b>为什么必须有独立的类型而不是复用会话对端</b>：读者是「这条消息被谁读了」，
@@ -163,6 +179,19 @@ export interface NotifyMessage {
    * 所以渲染层不必再判一次方向。缺失（老接口 / 系统通知）按 {@code false} 处理。</p>
    */
   mentioned?: boolean | null;
+  /**
+   * 本条消息对<b>本行接收人</b>的提及档位（见 {@link MentionType}）。
+   *
+   * <p><b>与 {@link mentioned} 是包含关系，不是并列信息</b>：{@code mentionType > 0} 时
+   * {@code mentioned} 恒为 {@code true}。布尔只回答「点没点我」，档位回答「是哪一种点名」。
+   * 分档的用途只有一个，但很关键：<b>免打扰下的出声裁决</b>——
+   * 「有人 @ 我」与「群主 @ 所有人」是两个可分别开关的提醒渠道
+   * （见 {@link ChatGroupNotifyPreference}），用布尔无法区分，
+   * 也就无从在当前这条消息上套用用户对这两种打扰的不同容忍度。</p>
+   *
+   * <p>缺失（老接口 / 系统通知）按 {@link MentionType.NONE} 处理；服务端保证非空时为 0/1/2 三态。</p>
+   */
+  mentionType?: number | null;
   /**
    * 撤回状态：0-正常 1-已撤回（见 {@link RecallStatus}）。
    *

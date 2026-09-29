@@ -20,6 +20,7 @@ import {
   GlobalSearch,
   LangDropdown,
   NotificationBell,
+  NotifySoundAlert,
   OfflineBanner,
   OrgSwitcher,
   ProfileSync,
@@ -122,9 +123,9 @@ export async function getInitialState(): Promise<{
    * 界面语言归一化（必须发生在首次渲染之前，避免先渲染一屏原始 key 再跳变）。
    *
    * <p>Umi 的 `locale.baseNavigator: true` 会把 `navigator.language` 原样当作界面语言，
-   * 而浏览器语言可能是 `zh-TW` / `ja-JP` / `fa-IR` 这类 **`src/locales` 下没有语言包**的值。
+   * 而浏览器语言可能是 `zh-TW` / `pt-BR` / `fa-IR` 这类 **`src/locales` 下没有语言包**的值。
    * 那种情况下 `formatMessage` 会回退到 `defaultMessage`（中文）甚至原始 key，
-   * 用户看到的就是「切换语言后界面文案没变」。这里按 `resolveUiLocale` 收敛到中英双语，
+   * 用户看到的就是「切换语言后界面文案没变」。这里按 `resolveUiLocale` 收敛到已支持语言，
    * 并通过 `setLocale` 写回 localStorage 让后续访问保持一致。
    */
   const browserLocale = getLocale();
@@ -265,11 +266,16 @@ export const layout: RunTimeLayoutConfig = ({
      * <p>`ProfileSync` 不渲染 UI，只是「本人头像变更」（`PROFILE`）帧的落地处。
      * 它必须跟着布局常驻：用户不在聊天页时这一帧同样会来，丢了就表现为「另一端的
      * 头像怎么都不变」，而这正是本轮要修的现象。</p>
+     *
+     * <p>`NotifySoundAlert` 同样不渲染 UI，是新消息提示音的全局落地处。
+     * 它必须挂在布局而不是聊天页：只挂在聊天页会让「在文件页 / 审批页收到消息」彻底无声，
+     * 而那恰恰是提示音最该起作用的场景（人不在聊天页才需要被叫回来）。</p>
      */
     childrenRender: (dom) => (
       <>
         {dom}
         <ProfileSync />
+        <NotifySoundAlert />
         <ChatDrawer />
         <TransferMonitor />
       </>

@@ -109,6 +109,7 @@ function makeDetail(ability?: Partial<ChatGroupAbility>): ChatGroupDetail {
       canRemoveMember: true,
       canDissolve: true,
       canQuit: false,
+      canMentionAll: true,
       ...ability,
     },
     members: [

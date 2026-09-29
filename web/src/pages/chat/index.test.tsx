@@ -55,7 +55,7 @@ import {
   watchPeerPresence,
 } from '@/services/chat';
 import { SYSTEM_PERM } from '@/services/system';
-import { ChatPresenceStatus } from '@/services/ws';
+import { ChatPresenceStatus, type WsStatus } from '@/services/ws';
 import { FILE_DRAG_MIME, type FileDragPayload } from '@/utils/dragFile';
 
 import ChatPage from './index';
@@ -123,6 +123,8 @@ vi.mock('@/services/file/chatAttachment', async (importOriginal) => {
 // 在线状态 + 输入态），后注册的那次会把前一次的回调挤掉
 const wsHolder = vi.hoisted(() => ({
   options: null as null | Record<string, unknown>,
+  /** 连接状态：默认已连上；要验证异常文案的用例可临时改写（beforeEach 会复位）。 */
+  status: 'open' as WsStatus,
 }));
 
 /** 登录态替身：`useCurrentUserAvatar` 从它取「我自己的头像」。 */
@@ -133,14 +135,26 @@ const modelHolder = vi.hoisted(() => ({
 vi.mock('@/hooks/useWebSocket', () => ({
   default: (options: Record<string, unknown>) => {
     wsHolder.options = { ...wsHolder.options, ...options };
-    return { status: 'open', reconnectNow: vi.fn() };
+    return { status: wsHolder.status, reconnectNow: vi.fn() };
   },
 }));
 
 // 页面外壳（面包屑、页头）与发送链路无关，换成一个容器，避免把 pro-components 的
-// 布局逻辑拉进 jsdom
+// 布局逻辑拉进 jsdom。但 extra 必须渲染——页头常驻的连接质量指示住在那里，
+// 丢掉 extra 等于把「常驻可见 + 异常时改文案」这条口径移出测试视野
 vi.mock('@ant-design/pro-components', () => ({
-  PageContainer: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  PageContainer: ({
+    children,
+    extra,
+  }: {
+    children: ReactNode;
+    extra?: ReactNode;
+  }) => (
+    <div>
+      {extra}
+      {children}
+    </div>
+  ),
 }));
 
 const mockedCreate = vi.mocked(createChatAttachment);
@@ -548,6 +562,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   holder.search = '';
   modelHolder.initialState = undefined;
+  wsHolder.status = 'open';
   holder.model = access({
     permissions: { roles: ['USER'], permCodes: [], dataScope: DataScope.ALL },
   }) as AccessModel;
@@ -1039,5 +1054,54 @@ describe('聊天页 · 头像', () => {
 
     expect(container.querySelectorAll('img')).toHaveLength(0);
     expect(screen.getAllByText('系').length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * 页头连接质量 · 常驻与「不谎报」。
+ *
+ * <p>它替代了原先挂在会话列表标题旁的那个圆点，两条口径必须钉住：</p>
+ * <ol>
+ *   <li><b>常驻可见</b>：不用展开任何面板，页头就能读到当前通道状态；
+ *       会话列表标题旁只留「发起会话」，不再挤两个含义不同的圆点；</li>
+ *   <li><b>不谎报</b>：`idle`（页面刚挂载、握手还没开始）不能显示成故障文案——
+ *       「只要不是 open 就算断线」正是被替换掉的那个实现的毛病。</li>
+ * </ol>
+ */
+describe('聊天页 · 页头连接质量', () => {
+  it('页头常驻显示本端连接质量（无需展开任何面板）', async () => {
+    wsHolder.status = 'open';
+    renderPage();
+
+    expect(
+      await screen.findByText(t('chat.connection.open')),
+    ).toBeInTheDocument();
+  });
+
+  it('断线重连中：页头文案跟着变，不必去别处找状态', async () => {
+    wsHolder.status = 'reconnecting';
+    renderPage();
+
+    expect(
+      await screen.findByText(t('chat.connection.reconnecting')),
+    ).toBeInTheDocument();
+  });
+
+  it('idle（握手尚未开始）不谎报故障：是「未连接」而不是「连接已断开」', async () => {
+    wsHolder.status = 'idle';
+    renderPage();
+
+    expect(
+      await screen.findByText(t('chat.connection.idle')),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(t('chat.connection.closed'))).toBeNull();
+  });
+
+  it('会话列表标题旁不再有连接状态圆点：那里只回答「有哪些会话」', async () => {
+    renderPage();
+    await screen.findByText(t('chat.list.title'));
+
+    // 页头那份是页面上唯一的连接质量指示，列表标题旁不得再多一个
+    expect(screen.getAllByText(t('chat.connection.open'))).toHaveLength(1);
   });
 });

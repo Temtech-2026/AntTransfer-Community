@@ -1,8 +1,10 @@
 /**
- * `useChatMentionables`：给出「本会话可以 @ 谁」。
+ * `useChatMentionables`：给出「本会话可以 @ 谁」与「能不能 @所有人」。
  *
- * <p>这里钉的是四件事——只有群聊有名单、缺展示名的人不进名单、名单按群缓存且<b>切群不串群</b>、
- * 拉不到成员时静默降级成空名单（输入框不显示 @ 入口，而不是弹错误）。</p>
+ * <p>这里钉的是五件事——只有群聊有名单、缺展示名的人不进名单、名单按群缓存且<b>切群不串群</b>、
+ * 拉不到成员时静默降级成空结果（输入框不显示 @ 入口，而不是弹错误）、
+ * {@code @所有人} 能力<b>只透传服务端下发值</b>（拿不到能力一律回落 false，
+ * 不允许前端按身份推断，否则非群主会看到一个点下去必然 1042 的入口）。</p>
  */
 
 import { act, renderHook, waitFor } from '@testing-library/react';
@@ -15,7 +17,9 @@ import type {
 } from '@/services/chat/types';
 import { ChatScope } from '@/services/notify';
 
-import useChatMentionables, { toMentionCandidates } from './useChatMentionables';
+import useChatMentionables, {
+  toMentionCandidates,
+} from './useChatMentionables';
 
 vi.mock('@/services/chat/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/chat/api')>();
@@ -39,7 +43,10 @@ function member(overrides: Partial<ChatGroupMember>): ChatGroupMember {
   };
 }
 
-function detailOf(members: ChatGroupMember[]): ChatGroupDetail {
+function detailOf(
+  members: ChatGroupMember[],
+  canMentionAll = false,
+): ChatGroupDetail {
   return {
     id: '900000000000000777',
     name: '运维支持群',
@@ -52,10 +59,14 @@ function detailOf(members: ChatGroupMember[]): ChatGroupDetail {
       canRemoveMember: false,
       canDissolve: false,
       canQuit: true,
+      canMentionAll,
     },
     members,
   };
 }
+
+/** 空结果的完整形态：名单为空 + 能力为 false（拿不到能力时唯一安全的默认值）。 */
+const EMPTY_RESULT = { mentionables: [], canMentionAll: false };
 
 const privateSession: ChatSession = {
   chatScope: ChatScope.PRIVATE,
@@ -74,15 +85,21 @@ describe('toMentionCandidates 成员名单折算', () => {
   it('保留 userId / 展示名 / 头像', () => {
     expect(
       toMentionCandidates([
-        member({ userId: '1', displayName: '张三', avatarUrl: '/v1/users/1/avatar?v=2' }),
+        member({
+          userId: '1',
+          displayName: '张三',
+          avatarUrl: '/v1/users/1/avatar?v=2',
+        }),
       ]),
-    ).toEqual([{ userId: '1', displayName: '张三', avatarUrl: '/v1/users/1/avatar?v=2' }]);
+    ).toEqual([
+      { userId: '1', displayName: '张三', avatarUrl: '/v1/users/1/avatar?v=2' },
+    ]);
   });
 
   it('展示名裁掉首尾空白：否则插入正文会写出两个空格', () => {
-    expect(toMentionCandidates([member({ displayName: ' 张三 ' })])[0].displayName).toBe(
-      '张三',
-    );
+    expect(
+      toMentionCandidates([member({ displayName: ' 张三 ' })])[0].displayName,
+    ).toBe('张三');
   });
 
   it('没有展示名的成员不进名单（写不出可读的 @昵称）', () => {
@@ -105,7 +122,9 @@ describe('toMentionCandidates 成员名单折算', () => {
   });
 
   it('头像缺失时给 null，交给 Avatar 走首字符兜底', () => {
-    expect(toMentionCandidates([member({ avatarUrl: undefined })])[0].avatarUrl).toBeNull();
+    expect(
+      toMentionCandidates([member({ avatarUrl: undefined })])[0].avatarUrl,
+    ).toBeNull();
   });
 });
 
@@ -113,14 +132,14 @@ describe('useChatMentionables 取名单', () => {
   it('单聊不问群成员（没有点名语义，也就没有这次请求）', () => {
     const { result } = renderHook(() => useChatMentionables(privateSession));
 
-    expect(result.current).toEqual([]);
+    expect(result.current).toEqual(EMPTY_RESULT);
     expect(mockedDetail).not.toHaveBeenCalled();
   });
 
   it('未选中会话时不请求任何东西', () => {
     const { result } = renderHook(() => useChatMentionables(null));
 
-    expect(result.current).toEqual([]);
+    expect(result.current).toEqual(EMPTY_RESULT);
     expect(mockedDetail).not.toHaveBeenCalled();
   });
 
@@ -134,9 +153,32 @@ describe('useChatMentionables 取名单', () => {
 
     const { result } = renderHook(() => useChatMentionables(groupSession));
 
-    await waitFor(() => expect(result.current).toHaveLength(2));
+    await waitFor(() => expect(result.current.mentionables).toHaveLength(2));
     expect(mockedDetail).toHaveBeenCalledWith('900000000000000777');
-    expect(result.current.map((item) => item.displayName)).toEqual(['张三', '李四']);
+    expect(result.current.mentionables.map((item) => item.displayName)).toEqual(
+      ['张三', '李四'],
+    );
+  });
+
+  it('@所有人 能力只透传服务端下发值：群主为 true', async () => {
+    mockedDetail.mockResolvedValue(
+      detailOf([member({ displayName: '张三' })], true),
+    );
+
+    const { result } = renderHook(() => useChatMentionables(groupSession));
+
+    await waitFor(() => expect(result.current.canMentionAll).toBe(true));
+  });
+
+  it('非群主（服务端说不）恒为 false：前端不按身份自己推断', async () => {
+    mockedDetail.mockResolvedValue(
+      detailOf([member({ displayName: '张三' })], false),
+    );
+
+    const { result } = renderHook(() => useChatMentionables(groupSession));
+
+    await waitFor(() => expect(result.current.mentionables).toHaveLength(1));
+    expect(result.current.canMentionAll).toBe(false);
   });
 
   it('同一个群切走再切回只拉一次（列表来回切是最高频的操作）', async () => {
@@ -146,30 +188,32 @@ describe('useChatMentionables 取名单', () => {
       ({ session }: { session: ChatSession }) => useChatMentionables(session),
       { initialProps: { session: groupSession } },
     );
-    await waitFor(() => expect(result.current).toHaveLength(1));
+    await waitFor(() => expect(result.current.mentionables).toHaveLength(1));
 
     rerender({ session: privateSession });
-    expect(result.current).toEqual([]);
+    expect(result.current).toEqual(EMPTY_RESULT);
     rerender({ session: groupSession });
-    await waitFor(() => expect(result.current).toHaveLength(1));
+    await waitFor(() => expect(result.current.mentionables).toHaveLength(1));
 
     expect(mockedDetail).toHaveBeenCalledTimes(1);
   });
 
-  it('拉不到成员时静默给空名单（不弹错误、不影响发送）', async () => {
+  it('拉不到成员时静默给空结果（不弹错误、不给一个必然失败的 @所有人 入口）', async () => {
     mockedDetail.mockRejectedValue(new Error('1040 群已解散'));
 
     const { result } = renderHook(() => useChatMentionables(groupSession));
 
     await waitFor(() => expect(mockedDetail).toHaveBeenCalled());
-    expect(result.current).toEqual([]);
+    expect(result.current).toEqual(EMPTY_RESULT);
   });
 
   it('切群时不会先把上一个群的名单画给新会话（宁可晚一拍也不给错名单）', async () => {
     let resolveSecond: ((value: ChatGroupDetail) => void) | undefined;
     mockedDetail.mockImplementation((groupId: string) => {
       if (groupId === '900000000000000777') {
-        return Promise.resolve(detailOf([member({ userId: '1', displayName: '张三' })]));
+        return Promise.resolve(
+          detailOf([member({ userId: '1', displayName: '张三' })]),
+        );
       }
       return new Promise<ChatGroupDetail>((resolve) => {
         resolveSecond = resolve;
@@ -184,23 +228,28 @@ describe('useChatMentionables 取名单', () => {
       ({ session }: { session: ChatSession }) => useChatMentionables(session),
       { initialProps: { session: groupSession } },
     );
-    await waitFor(() => expect(result.current).toHaveLength(1));
+    await waitFor(() => expect(result.current.mentionables).toHaveLength(1));
 
     // 切到第二个群：它的成员还没回来，此刻绝不能仍然显示张三
     rerender({ session: otherGroup });
-    expect(result.current).toEqual([]);
+    expect(result.current).toEqual(EMPTY_RESULT);
 
     await act(async () => {
       resolveSecond?.(detailOf([member({ userId: '2', displayName: '李四' })]));
     });
-    expect(result.current.map((item) => item.displayName)).toEqual(['李四']);
+    expect(result.current.mentionables.map((item) => item.displayName)).toEqual(
+      ['李四'],
+    );
   });
 
   it('两个群各自缓存：来回切都命中已有名单，不再发请求', async () => {
     mockedDetail.mockImplementation((groupId: string) =>
       Promise.resolve(
         detailOf([
-          member({ userId: groupId, displayName: groupId === '900000000000000777' ? '张三' : '李四' }),
+          member({
+            userId: groupId,
+            displayName: groupId === '900000000000000777' ? '张三' : '李四',
+          }),
         ]),
       ),
     );
@@ -213,13 +262,17 @@ describe('useChatMentionables 取名单', () => {
       ({ session }: { session: ChatSession }) => useChatMentionables(session),
       { initialProps: { session: groupSession } },
     );
-    await waitFor(() => expect(result.current[0]?.displayName).toBe('张三'));
+    await waitFor(() =>
+      expect(result.current.mentionables[0]?.displayName).toBe('张三'),
+    );
 
     rerender({ session: otherGroup });
-    await waitFor(() => expect(result.current[0]?.displayName).toBe('李四'));
+    await waitFor(() =>
+      expect(result.current.mentionables[0]?.displayName).toBe('李四'),
+    );
 
     rerender({ session: groupSession });
-    expect(result.current[0]?.displayName).toBe('张三');
+    expect(result.current.mentionables[0]?.displayName).toBe('张三');
     expect(mockedDetail).toHaveBeenCalledTimes(2);
   });
 });

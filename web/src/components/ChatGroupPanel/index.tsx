@@ -40,6 +40,7 @@ import {
   Select,
   Space,
   Spin,
+  Switch,
   Tag,
   Typography,
 } from 'antd';
@@ -57,12 +58,17 @@ import {
   removeChatGroupMember,
   renameChatGroup,
   resolveChatTarget,
+  updateGroupNotifyPreference,
 } from '@/services/chat/api';
 import { CHAT_PERM } from '@/services/chat/perm';
 import {
   CHAT_GROUP_ROLE,
+  isFlagOn,
+  NOTIFY_FLAG,
+  toFlag,
   type ChatGroupDetail,
   type ChatGroupMember,
+  type ChatGroupNotifyPreference,
   type ChatTarget,
 } from '@/services/chat/types';
 import {
@@ -79,6 +85,19 @@ const MAX_GROUP_NAME = 64;
 
 /** 邀请选人的检索条数（够挑人即可，上限校验在服务端）。 */
 const USER_SEARCH_PAGE_SIZE = 20;
+
+/**
+ * 没有偏好行时的界面初值（新建群 / 刚被拉进群，服务端还没为「我」落过偏好）。
+ *
+ * <p>与 {@code shouldRemindMessage} 的「偏好缺失按提醒处理」是同一口径：
+ * 界面显示「免打扰关 + 两类提及都提醒」，与实际的出声行为完全一致。
+ * 若这里显示成「全部关闭」，用户会以为提示音被关掉了，然后去拨一个本来就没开的开关。</p>
+ */
+const DEFAULT_NOTIFY_PREFERENCE: Required<ChatGroupNotifyPreference> = {
+  muteStatus: NOTIFY_FLAG.OFF,
+  notifyOnMention: NOTIFY_FLAG.ON,
+  notifyOnMentionAll: NOTIFY_FLAG.ON,
+};
 
 const useStyles = createStyles(({ token, css }) => ({
   body: css`
@@ -150,6 +169,25 @@ function formatJoinTime(value: string | null | undefined): string {
   return parsed.isValid() ? parsed.format('YYYY-MM-DD HH:mm') : raw;
 }
 
+/**
+ * 服务端偏好 → 界面三分量（缺失 / {@code null} 一律取 {@link DEFAULT_NOTIFY_PREFERENCE}）。
+ *
+ * <p>逐字段兜底而不是整体覆盖：后端可能只回其中一两个字段（历史行 / 后续新增字段），
+ * 整体覆盖会让「没下发的那一个」变成 `undefined`，`Switch` 的 `checked` 就成了假值——
+ * 即悄悄把「提醒」显示成「不提醒」。</p>
+ */
+function toNotifyPreference(
+  preference: ChatGroupNotifyPreference | null | undefined,
+): Required<ChatGroupNotifyPreference> {
+  return {
+    muteStatus: preference?.muteStatus ?? DEFAULT_NOTIFY_PREFERENCE.muteStatus,
+    notifyOnMention:
+      preference?.notifyOnMention ?? DEFAULT_NOTIFY_PREFERENCE.notifyOnMention,
+    notifyOnMentionAll:
+      preference?.notifyOnMentionAll ?? DEFAULT_NOTIFY_PREFERENCE.notifyOnMentionAll,
+  };
+}
+
 /** 群配置面板入参。 */
 export interface ChatGroupPanelProps {
   /** 面板是否展开。 */
@@ -185,6 +223,11 @@ const ChatGroupPanel: React.FC<ChatGroupPanelProps> = ({
   const [failed, setFailed] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [savingName, setSavingName] = useState(false);
+  /** 我的消息提醒偏好（三个开关）。与 detail 分开存：它是「我」的属性，可以独立于群资料被改。 */
+  const [pref, setPref] = useState<Required<ChatGroupNotifyPreference>>(
+    DEFAULT_NOTIFY_PREFERENCE,
+  );
+  const [savingPref, setSavingPref] = useState(false);
 
   // —— 邀请 ——
   const [selected, setSelected] = useState<ChatTarget[]>([]);
@@ -204,6 +247,9 @@ const ChatGroupPanel: React.FC<ChatGroupPanelProps> = ({
       const next = await fetchChatGroupDetail(id);
       setDetail(next);
       setNameDraft(next.name);
+      // 偏好随群详情一起下发，不额外发一次请求：少一次往返，也不可能出现
+      // 「群资料是新的、开关是旧的」这种两个请求交错出来的拼装状态
+      setPref(toNotifyPreference(next.notifyPreference));
     } catch {
       // 失败原因（1012 已不在群 / 1037 群不存在）由请求层给出，这里只切错误态
       setDetail(null);
@@ -223,6 +269,9 @@ const ChatGroupPanel: React.FC<ChatGroupPanelProps> = ({
     setUsers([]);
     setDetail(null);
     setFailed(false);
+    // 先回默认值再拉：否则换群时会短暂沿用上一个群的开关状态，
+    // 用户在这一瞬间拨动就会把 A 群的偏好写到 B 群上
+    setPref(DEFAULT_NOTIFY_PREFERENCE);
     void load(groupId);
   }, [open, groupId, load]);
 
@@ -235,6 +284,39 @@ const ChatGroupPanel: React.FC<ChatGroupPanelProps> = ({
     },
     [onUpdated],
   );
+
+  /**
+   * 提交我的消息提醒偏好（三个开关<b>整体覆盖</b>）。
+   *
+   * <p>与后端口径一致地整体提交：三个开关在界面上是同时存在的一份状态，
+   * 逐字段提交会让「拨 A 开关的请求在路上、B 开关的旧值又写回去」这类交错
+   * 产生界面与库不一致；整体覆盖天然幂等，重试与多端并发都以最后一次为准。</p>
+   *
+   * <p><b>乐观更新 + 失败回退</b>：拨开关是高频轻量动作，等一个 RTT 才动会明显「粘手」；
+   * 失败时回退到失败前的值而不是回读服务端，是因为这里是「三个字段一起写」，
+   * 回退到已知的旧值即可收敛，回读反而多一次往返且结果相同。</p>
+   */
+  const submitPref = async (next: Required<ChatGroupNotifyPreference>) => {
+    if (!detail || savingPref) {
+      return;
+    }
+    const previous = pref;
+    setPref(next);
+    setSavingPref(true);
+    try {
+      const saved = await updateGroupNotifyPreference(detail.id, next);
+      setPref(toNotifyPreference(saved));
+      // 把新偏好一并交给调用方（会话列表与提示音索引都读它），
+      // 其余群资料原样带过去——这里只改了偏好，不该顺手「刷新」群名与人数
+      onUpdated?.({ ...detail, notifyPreference: saved });
+    } catch {
+      // 1012 已不在群 / 网络失败：开关不能「拨了又弹回去」却不留任何解释，
+      // 请求层已弹过具体原因，这里负责把界面拉回失败前的事实
+      setPref(previous);
+    } finally {
+      setSavingPref(false);
+    }
+  };
 
   /** 已在群成员 ID：邀请时用于排除，避免把注定被跳过的 ID 发出去。 */
   const memberIds = useMemo(
@@ -628,6 +710,69 @@ const ChatGroupPanel: React.FC<ChatGroupPanelProps> = ({
     );
   };
 
+  /**
+   * 我的消息提醒设置（免打扰 + 两类提及）。
+   *
+   * <p>两类提及开关在免打扰关闭时<b>置灰而不是隐藏</b>：它们此时确实不生效
+   * （所有消息都会提醒），但偏好本身要能被预先设置好；隐藏会让用户以为
+   * 「这个群根本没有 @ 提醒这个设置」，置灰 + 一句说明才说得清「开了免打扰才轮到它们说话」。
+   * 置灰同时避免了「关了 @我提醒却看不出任何变化」这种无反馈的写入。</p>
+   */
+  const renderNotifySection = () => {
+    const muted = isFlagOn(pref.muteStatus);
+    return (
+      <div>
+        <div className={styles.sectionTitle}>
+          {intl.formatMessage({ id: 'chat.group.notify.title' })}
+        </div>
+        <Space direction="vertical" size={6} style={{ display: 'flex' }}>
+          <Space size={8}>
+            <Switch
+              size="small"
+              checked={muted}
+              loading={savingPref}
+              onChange={(checked) =>
+                void submitPref({ ...pref, muteStatus: toFlag(checked) })
+              }
+            />
+            <Text>{intl.formatMessage({ id: 'chat.group.notify.mute' })}</Text>
+          </Space>
+          <Space size={8}>
+            <Switch
+              size="small"
+              checked={isFlagOn(pref.notifyOnMention)}
+              disabled={!muted || savingPref}
+              onChange={(checked) =>
+                void submitPref({ ...pref, notifyOnMention: toFlag(checked) })
+              }
+            />
+            <Text type={muted ? undefined : 'secondary'}>
+              {intl.formatMessage({ id: 'chat.group.notify.mention' })}
+            </Text>
+          </Space>
+          <Space size={8}>
+            <Switch
+              size="small"
+              checked={isFlagOn(pref.notifyOnMentionAll)}
+              disabled={!muted || savingPref}
+              onChange={(checked) =>
+                void submitPref({ ...pref, notifyOnMentionAll: toFlag(checked) })
+              }
+            />
+            <Text type={muted ? undefined : 'secondary'}>
+              {intl.formatMessage({ id: 'chat.group.notify.mentionAll' })}
+            </Text>
+          </Space>
+          <Text className={styles.hint}>
+            {intl.formatMessage({
+              id: muted ? 'chat.group.notify.muteHint' : 'chat.group.notify.mentionHint',
+            })}
+          </Text>
+        </Space>
+      </div>
+    );
+  };
+
   const renderDangerZone = () => {
     if (!detail || (!canQuit && !canDissolve)) {
       return null;
@@ -723,6 +868,8 @@ const ChatGroupPanel: React.FC<ChatGroupPanelProps> = ({
             )}
           </Text>
         </div>
+
+        {renderNotifySection()}
 
         <div>
           <div className={styles.sectionTitle}>

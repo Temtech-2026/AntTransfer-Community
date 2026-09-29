@@ -83,14 +83,17 @@ export default {
   'system.userForm.placeholder.password': '8~64 位',
   'system.userForm.placeholder.dept': '未分配',
   'system.userForm.placeholder.roleIds': '不分配角色',
-  'system.userForm.extra.deptEdit': '改动部门即视为调岗：会回收该用户「审批获得」的全部生效授权',
+  'system.userForm.extra.deptEdit':
+    '改动部门即视为调岗：会回收该用户「审批获得」的全部生效授权',
   'system.userForm.extra.deptCreate': '留空 = 未分配部门',
-  'system.userForm.extra.emailEdit': '留空 = 不修改（后端保守策略，邮箱无法被清空）',
+  'system.userForm.extra.emailEdit':
+    '留空 = 不修改（后端保守策略，邮箱无法被清空）',
   'system.userForm.extra.mobileEdit': '留空 = 不修改',
   'system.userForm.extra.roleIds':
     '可不分配。数据范围非「全部」时只能分配自己已持有的角色（需 {perm}）。',
   'system.userForm.rule.usernameRequired': '请输入登录账号',
-  'system.userForm.rule.usernamePattern': '须为 3~64 位字母/数字/下划线/点/横线',
+  'system.userForm.rule.usernamePattern':
+    '须为 3~64 位字母/数字/下划线/点/横线',
   'system.userForm.rule.passwordRequired': '请输入初始口令',
   'system.userForm.rule.passwordLength': '口令长度须为 8~64 位',
   'system.userForm.rule.nicknameRequired': '请输入昵称',
@@ -107,7 +110,8 @@ export default {
   'system.resetPassword.title': '重置口令 · {name}',
   'system.resetPassword.ok': '确认重置',
   'system.resetPassword.alert.title': '重置后该用户全部在途会话立即失效',
-  'system.resetPassword.alert.desc': '用户需用新口令重新登录；管理员无法查看原口令（库中只存散列）。',
+  'system.resetPassword.alert.desc':
+    '用户需用新口令重新登录；管理员无法查看原口令（库中只存散列）。',
   'system.resetPassword.field.newPassword': '新口令',
   'system.resetPassword.field.confirmPassword': '确认新口令',
   'system.resetPassword.placeholder.password': '8~64 位',
@@ -120,14 +124,16 @@ export default {
   // 分配角色抽屉
   'system.assignRole.title': '分配角色 · {name}',
   'system.assignRole.alert.protected.title': '受保护账号',
-  'system.assignRole.alert.protected.desc': '必须保留超级管理员角色；摘除会被服务端拒绝。',
+  'system.assignRole.alert.protected.desc':
+    '必须保留超级管理员角色；摘除会被服务端拒绝。',
   'system.assignRole.alert.mode.title': '整集替换 + 至少保留一个角色',
   'system.assignRole.alert.mode.desc':
     '提交后以本次勾选为准（非增量）。后端要求角色集合非空，故至少勾选一个。',
   'system.assignRole.searchPlaceholder': '按角色名 / 编码过滤',
   'system.assignRole.empty.noOptions': '没有可分配的角色（可能因数据范围受限）',
   'system.assignRole.empty.noMatch': '没有匹配的角色',
-  'system.assignRole.atLeastOne': '至少勾选一个角色：后端对角色集合做了非空校验。',
+  'system.assignRole.atLeastOne':
+    '至少勾选一个角色：后端对角色集合做了非空校验。',
   'system.assignRole.message.done': '角色已更新',
 
   // 角色管理页
@@ -147,7 +153,8 @@ export default {
   'system.role.action.assignPerm': '分配权限',
   'system.role.action.create': '新建角色',
   'system.role.confirm.deleteTitle': '确认删除该角色？',
-  'system.role.confirm.deleteDesc': '内置角色、有关联权限或仍被用户持有的角色会被服务端拒绝。',
+  'system.role.confirm.deleteDesc':
+    '内置角色、有关联权限或仍被用户持有的角色会被服务端拒绝。',
   'system.role.message.deleted': '已删除角色 {name}',
 
   // 角色新建 / 编辑弹窗
@@ -162,9 +169,11 @@ export default {
   'system.roleForm.placeholder.code': '例如 DEPT_ADMIN',
   'system.roleForm.extra.codeEdit': '编码为角色的对外标识，创建后不可修改',
   'system.roleForm.extra.dataScopeBuiltIn': '内置角色的数据范围不可修改',
-  'system.roleForm.extra.dataScopeMax': '不得超过你自身的数据范围（当前：{scope}）',
+  'system.roleForm.extra.dataScopeMax':
+    '不得超过你自身的数据范围（当前：{scope}）',
   'system.roleForm.rule.codeRequired': '请输入角色编码',
-  'system.roleForm.rule.codePattern': '须为大写字母开头，仅含大写字母/数字/下划线',
+  'system.roleForm.rule.codePattern':
+    '须为大写字母开头，仅含大写字母/数字/下划线',
   'system.roleForm.rule.nameRequired': '请输入角色名称',
   'system.roleForm.rule.nameMax': '不超过 64 字符',
   'system.roleForm.rule.dataScopeRequired': '请选择数据范围',
@@ -194,7 +203,8 @@ export default {
   'system.rolePerm.selected': '已选 {selected} / 共 {total} 个权限点',
   'system.rolePerm.parentNote': '（父节点计入 = 可见入口）',
   'system.rolePerm.empty': '权限点目录为空',
-  'system.rolePerm.message.mustKeep': '超级管理员角色必须保留这些权限点：{codes}',
+  'system.rolePerm.message.mustKeep':
+    '超级管理员角色必须保留这些权限点：{codes}',
   'system.rolePerm.message.done': '角色权限已更新',
 
   // 菜单 / 权限点目录（只读）
@@ -213,7 +223,8 @@ export default {
   'system.menu.stat.scope': '数据范围节点',
   'system.menu.headerTitle': '权限点树',
   'system.menu.searchPlaceholder': '按名称 / 编码过滤',
-  'system.menu.empty.noPerm': '缺少权限：需要 system:role:list 或 system:role:assign-perm',
+  'system.menu.empty.noPerm':
+    '缺少权限：需要 system:role:list 或 system:role:assign-perm',
 
   // 群组管理（占位说明）
   'system.group.title': '群组管理',

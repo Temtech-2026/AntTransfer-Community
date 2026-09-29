@@ -1,0 +1,33 @@
+export default {
+  'app.setting.pagestyle': '전체 스타일 설정',
+  'app.setting.pagestyle.dark': '어두운 메뉴 스타일',
+  'app.setting.pagestyle.light': '밝은 메뉴 스타일',
+  'app.setting.content-width': '콘텐츠 영역 너비',
+  'app.setting.content-width.fixed': '고정 너비',
+  'app.setting.content-width.fluid': '유동',
+  'app.setting.themecolor': '테마 색상',
+  'app.setting.themecolor.dust': '더스크',
+  'app.setting.themecolor.volcano': '볼케이노',
+  'app.setting.themecolor.sunset': '선셋',
+  'app.setting.themecolor.cyan': '시안',
+  'app.setting.themecolor.green': '오로라 그린',
+  'app.setting.themecolor.daybreak': '데이브레이크 블루(기본)',
+  'app.setting.themecolor.geekblue': '긱 블루',
+  'app.setting.themecolor.purple': '퍼플',
+  'app.setting.navigationmode': '내비게이션 모드',
+  'app.setting.sidemenu': '사이드 메뉴 레이아웃',
+  'app.setting.topmenu': '상단 메뉴 레이아웃',
+  'app.setting.fixedheader': '헤더 고정',
+  'app.setting.fixedsidebar': '사이드 메뉴 고정',
+  'app.setting.fixedsidebar.hint':
+    '사이드 메뉴 레이아웃에서 설정할 수 있습니다',
+  'app.setting.hideheader': '스크롤 시 헤더 숨기기',
+  'app.setting.hideheader.hint': '헤더를 고정했을 때 설정할 수 있습니다',
+  'app.setting.othersettings': '기타 설정',
+  'app.setting.weakmode': '색약 모드',
+  'app.setting.copy': '설정 복사',
+  'app.setting.copyinfo':
+    '복사되었습니다. config/defaultSettings.js에서 기본 설정을 교체하세요',
+  'app.setting.production.hint':
+    '설정 패널은 개발 환경에서 미리보기용으로만 표시되며 프로덕션에서는 나타나지 않습니다. 복사한 뒤 설정 파일을 직접 수정하세요',
+};

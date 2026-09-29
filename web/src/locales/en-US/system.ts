@@ -65,7 +65,8 @@ export default {
   'system.user.avatar.hint': 'PNG / JPEG / GIF / WebP, up to {max}',
   'system.user.avatar.updated': 'Avatar updated',
   'system.user.avatar.tooLarge': 'Image must not exceed {max}',
-  'system.user.avatar.typeInvalid': 'Only PNG / JPEG / GIF / WebP images are supported',
+  'system.user.avatar.typeInvalid':
+    'Only PNG / JPEG / GIF / WebP images are supported',
 
   // User create / edit modal
   'system.userForm.title.edit': 'Edit user · {name}',
@@ -121,7 +122,8 @@ export default {
   'system.resetPassword.placeholder.password': '8-64 characters',
   'system.resetPassword.rule.newRequired': 'Please enter the new password',
   'system.resetPassword.rule.length': 'Password must be 8-64 characters',
-  'system.resetPassword.rule.confirmRequired': 'Please enter the new password again',
+  'system.resetPassword.rule.confirmRequired':
+    'Please enter the new password again',
   'system.resetPassword.rule.mismatch': 'The two passwords do not match',
   'system.resetPassword.message.done':
     'Password reset; all active sessions of this user have been revoked',
@@ -131,7 +133,8 @@ export default {
   'system.assignRole.alert.protected.title': 'Protected account',
   'system.assignRole.alert.protected.desc':
     'The super administrator role must be kept; removing it will be rejected by the server.',
-  'system.assignRole.alert.mode.title': 'Full replacement + keep at least one role',
+  'system.assignRole.alert.mode.title':
+    'Full replacement + keep at least one role',
   'system.assignRole.alert.mode.desc':
     'The submitted set replaces the previous one (not incremental). The server requires a non-empty role set, so select at least one.',
   'system.assignRole.searchPlaceholder': 'Filter by role name / code',
@@ -174,8 +177,9 @@ export default {
   'system.roleForm.field.dataScope': 'Data scope',
   'system.roleForm.placeholder.code': 'e.g. DEPT_ADMIN',
   'system.roleForm.extra.codeEdit':
-    'The code is the role\'s external identifier and cannot be changed after creation',
-  'system.roleForm.extra.dataScopeBuiltIn': 'The data scope of a built-in role cannot be changed',
+    "The code is the role's external identifier and cannot be changed after creation",
+  'system.roleForm.extra.dataScopeBuiltIn':
+    'The data scope of a built-in role cannot be changed',
   'system.roleForm.extra.dataScopeMax':
     'Must not exceed your own data scope (current: {scope})',
   'system.roleForm.rule.codeRequired': 'Please enter the role code',
@@ -189,13 +193,15 @@ export default {
 
   // Role permission drawer
   'system.rolePerm.title': 'Assign permissions · {name}',
-  'system.rolePerm.alert.locked.title': "The auditor role's permission set is locked",
+  'system.rolePerm.alert.locked.title':
+    "The auditor role's permission set is locked",
   'system.rolePerm.alert.locked.desc':
-    'The service layer rejects any change to this role\'s permission set (1021); this drawer is read-only.',
+    "The service layer rejects any change to this role's permission set (1021); this drawer is read-only.",
   'system.rolePerm.alert.readOnly.title': 'Read-only',
   'system.rolePerm.alert.readOnly.desc':
     'You do not have the role-assignment permission point (system:role:assign-perm); you can only view the current permission matrix.',
-  'system.rolePerm.alert.selfLock.title': 'Anti-self-lock: three permission points cannot be removed',
+  'system.rolePerm.alert.selfLock.title':
+    'Anti-self-lock: three permission points cannot be removed',
   'system.rolePerm.alert.selfLock.desc':
     'You must keep {codes}, otherwise nobody will be able to manage permissions again and the server will reject the change.',
   'system.rolePerm.alert.narrow.title':
@@ -243,12 +249,14 @@ export default {
   'system.group.alert.desc':
     'The tables sys_group / sys_group_member already exist, but the server has no corresponding management controller or permission points. To avoid offering entries that are bound to fail, no create/update/delete operations are provided and no mock data is rendered.',
   'system.group.section.current.title': 'Current state',
-  'system.group.section.current.subtitle': 'Tables, server entities and permission points',
+  'system.group.section.current.subtitle':
+    'Tables, server entities and permission points',
   'system.group.section.endpoints.title': 'Endpoints needed',
   'system.group.section.endpoints.subtitle': 'Backlog checklist',
   'system.group.desc.table': 'Tables',
   'system.group.desc.entity': 'Server entity',
-  'system.group.entity.note': 'Used only inside the collaboration domain (access checks), no external CRUD',
+  'system.group.entity.note':
+    'Used only inside the collaboration domain (access checks), no external CRUD',
   'system.group.desc.perm': 'Permission points',
   'system.group.perm.none':
     'No system:group:* permission points (V9 defines only system:user:* and system:role:*)',

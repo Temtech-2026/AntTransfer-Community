@@ -4,18 +4,25 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { testFormatMessage } from '@/locales/testTranslate';
 
-import { RECENT_EMOJI_KEY } from './composer';
+import {
+  EMPTY_MENTION_SELECTION,
+  type MentionSelection,
+  RECENT_EMOJI_KEY,
+} from './composer';
 
 import ChatComposer from './index';
 
 vi.mock('@umijs/max', async () => {
-  const { testFormatMessage: translate } = await import('@/locales/testTranslate');
+  const { testFormatMessage: translate } = await import(
+    '@/locales/testTranslate'
+  );
   return {
     useIntl: () => ({
       formatMessage: (
         descriptor: { id: string; values?: Record<string, unknown> },
         values?: Record<string, unknown>,
-      ) => translate({ id: descriptor.id, values: values ?? descriptor.values }),
+      ) =>
+        translate({ id: descriptor.id, values: values ?? descriptor.values }),
     }),
   };
 });
@@ -52,7 +59,8 @@ function Harness({
   );
 }
 
-const textarea = () => screen.getByPlaceholderText(PLACEHOLDER) as HTMLTextAreaElement;
+const textarea = () =>
+  screen.getByPlaceholderText(PLACEHOLDER) as HTMLTextAreaElement;
 const sendButton = () => screen.getByRole('button', { name: SEND_LABEL });
 const emojiToggle = () => screen.getByRole('button', { name: EMOJI_LABEL });
 
@@ -155,7 +163,9 @@ describe('ChatComposer 表情', () => {
     render(<Harness onSend={vi.fn()} />);
     openEmojiPanel();
     // 刻意跳过「表情」组首页的表情（😷 属于该组），改点「手势」组的 👍
-    fireEvent.click(screen.getByRole('tab', { name: t('chat.composer.group.gestures') }));
+    fireEvent.click(
+      screen.getByRole('tab', { name: t('chat.composer.group.gestures') }),
+    );
     fireEvent.click(screen.getByRole('button', { name: '👍' }));
     expect(textarea().value).toBe('👍');
   });
@@ -164,7 +174,9 @@ describe('ChatComposer 表情', () => {
     render(<Harness onSend={vi.fn()} />);
     // 此前没有记录：面板里不该有「最近使用」页签
     openEmojiPanel();
-    expect(screen.queryByRole('tab', { name: RECENT_TAB })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('tab', { name: RECENT_TAB }),
+    ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '😀' }));
     expect(screen.getByRole('tab', { name: RECENT_TAB })).toBeInTheDocument();
@@ -222,13 +234,13 @@ const ZHANG_SAN = { userId: '1', displayName: '张三' };
 const LI_SI = { userId: '2', displayName: '李四' };
 const MENTIONABLES = [ZHANG_SAN, LI_SI];
 
-/** 提及场景的夹具：正文与「已上报的提及 ID」都由外部持有，才观察得到上报结果 */
+/** 提及场景的夹具：正文与「已上报的提及选择」都由外部持有，才观察得到上报结果 */
 function MentionHarness({
   onSend = vi.fn(),
   onMentionChange = vi.fn(),
 }: {
   onSend?: () => void;
-  onMentionChange?: (userIds: string[]) => void;
+  onMentionChange?: (selection: MentionSelection) => void;
 }) {
   const [value, setValue] = useState('');
   return (
@@ -245,10 +257,13 @@ function MentionHarness({
 }
 
 const mentionToggle = () => screen.getByRole('button', { name: MENTION_LABEL });
-const mentionPanel = () => screen.getByRole('listbox', { name: MENTION_PANEL_LABEL });
+const mentionPanel = () =>
+  screen.getByRole('listbox', { name: MENTION_PANEL_LABEL });
 /** 候选的无障碍名就是昵称（面板把装饰性的头像首字符挡在无障碍名之外） */
 const mentionOptions = () =>
-  screen.queryAllByRole('option').map((item) => item.getAttribute('aria-label'));
+  screen
+    .queryAllByRole('option')
+    .map((item) => item.getAttribute('aria-label'));
 
 /** 打字：change 之后把光标放到末尾，再 keyUp 触发「光标前有没有 @」的重算 */
 function typeText(next: string) {
@@ -264,7 +279,9 @@ describe('ChatComposer 提及', () => {
 
   it('没有候选成员时不给 @ 入口（单聊没有点名语义）', () => {
     render(<Harness onSend={vi.fn()} />);
-    expect(screen.queryByRole('button', { name: MENTION_LABEL })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: MENTION_LABEL }),
+    ).not.toBeInTheDocument();
   });
 
   it('有候选成员时出现 @ 入口，点击即落下 @ 并展开候选', () => {
@@ -296,8 +313,11 @@ describe('ChatComposer 提及', () => {
     fireEvent.click(screen.getByRole('option', { name: /张三/ }));
 
     expect(textarea().value).toBe('@张三 ');
-    // 正文里的 @昵称 是给人看的，服务端认的是这份 ID 列表
-    expect(onMentionChange).toHaveBeenLastCalledWith(['1']);
+    // 正文里的 @昵称 是给人看的，服务端认的是这份 ID 列表（未 @所有人）
+    expect(onMentionChange).toHaveBeenLastCalledWith({
+      userIds: ['1'],
+      mentionAll: false,
+    });
     // 选完就收起，面板不该继续挡着消息流
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
   });
@@ -311,32 +331,41 @@ describe('ChatComposer 提及', () => {
     fireEvent.keyDown(textarea(), { key: 'Enter' });
 
     expect(textarea().value).toBe('@李四 ');
-    expect(onMentionChange).toHaveBeenLastCalledWith(['2']);
+    expect(onMentionChange).toHaveBeenLastCalledWith({
+      userIds: ['2'],
+      mentionAll: false,
+    });
   });
 
   it('输入法组合中的回车让给输入法：既不选人也不发送', () => {
     const onSend = vi.fn();
     const onMentionChange = vi.fn();
-    render(<MentionHarness onSend={onSend} onMentionChange={onMentionChange} />);
+    render(
+      <MentionHarness onSend={onSend} onMentionChange={onMentionChange} />,
+    );
 
     typeText('@张');
     fireEvent.keyDown(textarea(), { key: 'Enter', keyCode: 229 });
 
     expect(textarea().value).toBe('@张');
+    // 没选中任何人 = 提及仍是空，连一次上报都不该有（空提及与「无提及」是同一件事）
     expect(onMentionChange).not.toHaveBeenCalled();
     expect(onSend).not.toHaveBeenCalled();
   });
 
-  it('把 @昵称 从正文里删掉后这条提及随之失效（上报空名单）', () => {
+  it('把 @昵称 从正文里删掉后这条提及随之失效（上报空选择）', () => {
     const onMentionChange = vi.fn();
     render(<MentionHarness onMentionChange={onMentionChange} />);
 
     typeText('@');
     fireEvent.click(screen.getByRole('option', { name: /张三/ }));
-    expect(onMentionChange).toHaveBeenLastCalledWith(['1']);
+    expect(onMentionChange).toHaveBeenLastCalledWith({
+      userIds: ['1'],
+      mentionAll: false,
+    });
 
     typeText('');
-    expect(onMentionChange).toHaveBeenLastCalledWith([]);
+    expect(onMentionChange).toHaveBeenLastCalledWith(EMPTY_MENTION_SELECTION);
   });
 
   it('只删掉 @ 符号也失效：服务端认的是被点名，不是正文里出现过这个名字', () => {
@@ -346,7 +375,7 @@ describe('ChatComposer 提及', () => {
     typeText('@');
     fireEvent.click(screen.getByRole('option', { name: /张三/ }));
     typeText('张三 ');
-    expect(onMentionChange).toHaveBeenLastCalledWith([]);
+    expect(onMentionChange).toHaveBeenLastCalledWith(EMPTY_MENTION_SELECTION);
   });
 
   it('按 Esc 收起候选，正文不动', () => {

@@ -46,6 +46,14 @@ export default {
   // 与上面三态共用同一行：对方正在打字时，这条信息比静态状态更即时
   'chat.typing': '对方正在输入…',
 
+  // 本端连接质量（聊天页页头常驻）：与上面的「对端状态」是两件事——
+  // 一个说我与服务器的通道，一个说对方在不在。同样不能只靠颜色
+  'chat.connection.open': '实时连接正常',
+  'chat.connection.connecting': '正在连接…',
+  'chat.connection.reconnecting': '正在重连…',
+  'chat.connection.closed': '连接已断开',
+  'chat.connection.idle': '未连接',
+
   'chat.stream.placeholder.title': '选择左侧会话开始聊天',
   'chat.stream.placeholder.desc': '会话记录实时同步，断线期间的也在重连后补收',
   'chat.stream.empty.title': '还没有消息',
@@ -143,7 +151,8 @@ export default {
   'chat.group.invite.noCandidate': '没有匹配的可用账号',
   'chat.group.invite.hint': '还可邀请 {count} 人（上限 {max} 人）',
   'chat.group.invite.full': '群成员已达上限（{max} 人），不能再邀请',
-  'chat.group.invite.limit': '最多再邀请 {count} 人（上限 {max} 人），请减少邀请人数',
+  'chat.group.invite.limit':
+    '最多再邀请 {count} 人（上限 {max} 人），请减少邀请人数',
   'chat.group.dangerZone': '危险操作',
   'chat.group.quit': '退出群聊',
   'chat.group.quitConfirmTitle': '退出该群聊？',
@@ -250,4 +259,14 @@ export default {
   'chat.drawer.mineAvatar': '我',
   'chat.drawer.fileFallback': '[文件] {content}',
   'chat.drawer.send': '发送',
+  // 群会话：成员人数与消息提醒（群设置面板里的三项开关）
+  'chat.group.memberCount': '{count} 人',
+  'chat.composer.mentionAll': '所有人',
+  'chat.group.notify.title': '消息提醒',
+  'chat.group.notify.mute': '消息免打扰',
+  'chat.group.notify.mention': '有人 @ 我时提醒',
+  'chat.group.notify.mentionAll': '群主 @ 所有人时提醒',
+  'chat.group.notify.muteHint': '本群消息不再出声，是否提醒只看下面两项。',
+  'chat.group.notify.mentionHint':
+    '本群消息正常提醒；下面两项在开启免打扰后才生效。',
 } as const;

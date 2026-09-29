@@ -15,7 +15,7 @@
 import { Avatar } from 'antd';
 import { createStyles } from 'antd-style';
 
-import type { MentionCandidate } from './composer';
+import { isMentionAllId, type MentionCandidate } from './composer';
 
 const useStyles = createStyles(({ token }) => ({
   /** 面板外框：与表情面板同一形态（贴输入框下沿、带阴影），用户不必学两套视觉。 */
@@ -65,6 +65,18 @@ const useStyles = createStyles(({ token }) => ({
     fontSize: token.fontSize,
     whiteSpace: 'nowrap',
     textOverflow: 'ellipsis',
+  },
+
+  /**
+   * 「@所有人」的头像：用主色底 + 「@」字符，与成员的真实头像在一列里立刻区分开。
+   *
+   * <p>不取名字首字（会显示成「所」，像某个成员）、也不用图标（`@ant-design/icons` 里没有 `At`，
+   * 找一个「大概像」的图标反而要靠猜）：`@` 就是提及本身的语义符号。</p>
+   */
+  mentionAllAvatar: {
+    background: token.colorPrimary,
+    fontSize: 14,
+    fontWeight: 600,
   },
 
   /** 无匹配成员时的占位：面板不消失，否则用户会以为「@ 功能坏了」。 */
@@ -126,9 +138,20 @@ const MentionPanel = ({
               onMouseEnter={() => onHover(index)}
               onClick={() => onPick(member)}
             >
-              <Avatar size={24} src={member.avatarUrl ?? undefined}>
-                {member.displayName.slice(0, 1)}
-              </Avatar>
+              {/*
+                「@所有人」是伪候选：没有头像，用「@」字符占位而不是取名字首字。
+                取首字会得到「所」，在一列人名里看起来就是某个叫「所…」的成员，
+                与它「作用于全群」的含义完全不搭。
+              */}
+              {isMentionAllId(member.userId) ? (
+                <Avatar size={24} className={styles.mentionAllAvatar}>
+                  @
+                </Avatar>
+              ) : (
+                <Avatar size={24} src={member.avatarUrl ?? undefined}>
+                  {member.displayName.slice(0, 1)}
+                </Avatar>
+              )}
               <span className={styles.name}>{member.displayName}</span>
             </button>
           ))}

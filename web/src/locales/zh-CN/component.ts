@@ -22,8 +22,10 @@ export default {
   'component.globalSearch.placeholder': '搜索文件名 / 标签，回车定位到文件',
   'component.globalSearch.ariaLabel': '全局搜索',
   'component.globalSearch.scopeAria': '搜索范围说明',
-  'component.globalSearch.scopeTitle': '搜索范围：文件名、标签（跳转文件工作台）。',
-  'component.globalSearch.scopeEe': '文件内容全文检索需要内容提取与索引，属 EE 能力。',
+  'component.globalSearch.scopeTitle':
+    '搜索范围：文件名、标签（跳转文件工作台）。',
+  'component.globalSearch.scopeEe':
+    '文件内容全文检索需要内容提取与索引，属 EE 能力。',
 
   // 顶栏使用文档入口
   'component.docLink.title': '使用文档',
@@ -61,7 +63,8 @@ export default {
   'component.avatar.changePassword.newPlaceholder': '请输入新密码',
   'component.avatar.changePassword.newRequired': '请输入新密码',
   'component.avatar.changePassword.newLength': '密码长度需为 8-64 位',
-  'component.avatar.changePassword.newPattern': '密码须同时包含字母和数字，且不含空格',
+  'component.avatar.changePassword.newPattern':
+    '密码须同时包含字母和数字，且不含空格',
   'component.avatar.changePassword.policyHint': '8-64 位，须同时包含字母和数字',
   'component.avatar.changePassword.confirm': '确认新密码',
   'component.avatar.changePassword.confirmPlaceholder': '请再次输入新密码',
@@ -88,7 +91,8 @@ export default {
   'component.org.current': '当前部署',
   'component.org.create': '新建组织 / 团队',
   'component.org.switch': '切换到其他组织',
-  'component.org.eeHint': '组织间数据完全隔离（多组织、席位售卖）属 EE 能力；CE 版为单组织自托管部署。',
+  'component.org.eeHint':
+    '组织间数据完全隔离（多组织、席位售卖）属 EE 能力；CE 版为单组织自托管部署。',
   'component.org.tooltip': '当前组织：{name}',
 
   // 拖拽 / 点选文件区
@@ -107,7 +111,8 @@ export default {
   'component.chunkUpload.progress.prechecking': '正在检测是否可秒传…',
   'component.chunkUpload.progress.querying': '正在获取已上传分片…',
   'component.chunkUpload.progress.merging': '正在合并分片…',
-  'component.chunkUpload.progress.paused': '已暂停（已完成 {received}/{total} 片）',
+  'component.chunkUpload.progress.paused':
+    '已暂停（已完成 {received}/{total} 片）',
   'component.chunkUpload.progress.failed': '上传失败',
   'component.chunkUpload.progress.uploading': '{received}/{total} 片 · {speed}',
   'component.chunkUpload.progress.retried': ' · 已重试 {count} 次',
@@ -153,4 +158,29 @@ export default {
   'component.transfer.status.error': '失败',
   'component.transfer.status.success': '已完成',
   'component.transfer.status.canceled': '已取消',
+  // 新消息提示音（嵌在个人信息里；音色名与开关同属一块，故共用 notifySound 前缀）
+  'component.avatar.notifySound.title': '新消息提示音',
+  'component.avatar.notifySound.enabled': '收到新消息时播放提示音',
+  'component.avatar.notifySound.presetLabel': '音色',
+  'component.avatar.notifySound.preset.default': '默认',
+  'component.avatar.notifySound.preset.chime': '清脆',
+  'component.avatar.notifySound.preset.bubble': '气泡',
+  'component.avatar.notifySound.preset.custom': '自定义',
+  'component.avatar.notifySound.upload': '上传音频',
+  'component.avatar.notifySound.replace': '更换音频',
+  'component.avatar.notifySound.clear': '删除',
+  'component.avatar.notifySound.preview': '试听',
+  'component.avatar.notifySound.uploaded': '已上传，音色已切换为自定义',
+  'component.avatar.notifySound.cleared': '已删除自定义提示音',
+  'component.avatar.notifySound.loadFailed': '提示音设置加载失败',
+  'component.avatar.notifySound.typeInvalid':
+    '仅支持 MP3 / WAV / OGG 格式的音频',
+  'component.avatar.notifySound.tooLarge': '音频大小不能超过 {max}',
+  'component.avatar.notifySound.previewBlocked':
+    '浏览器拦截了自动播放，请先点击页面任意位置再试听',
+  'component.avatar.notifySound.customEmpty': '还没有上传自定义音频',
+  'component.avatar.notifySound.customMeta':
+    '当前音频：{name}（{size}，{duration}）',
+  'component.avatar.notifySound.hint':
+    '支持 MP3 / WAV / OGG，不超过 {maxSize}，时长不超过 {maxDuration}',
 } as const;

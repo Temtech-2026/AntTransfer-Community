@@ -22,6 +22,7 @@ export { default as GlobalUploadProgress } from './GlobalUploadProgress';
 export { default as PageSkeleton } from './PageSkeleton';
 export { default as ProfileSync } from './ProfileSync';
 export { default as NotificationBell } from './NotificationBell';
+export { default as NotifySoundAlert } from './NotifySoundAlert';
 export { default as OfflineBanner } from './OfflineBanner';
 export { default as OrgSwitcher } from './OrgSwitcher';
 export { default as SiderFooter } from './SiderFooter';

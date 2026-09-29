@@ -3,12 +3,14 @@ export default {
   // Empty state
   'common.empty.noData': 'No data',
   'common.empty.noResult.title': 'No matching results',
-  'common.empty.noResult.desc': 'Try adjusting the filters or clearing the keyword',
+  'common.empty.noResult.desc':
+    'Try adjusting the filters or clearing the keyword',
   'common.empty.error.title': 'Failed to load',
   'common.empty.error.desc': 'Network or service error, please retry later',
   'common.empty.error.action': 'Reload',
   'common.empty.denied.title': 'Access denied',
-  'common.empty.denied.desc': 'Your account lacks this permission, contact an administrator',
+  'common.empty.denied.desc':
+    'Your account lacks this permission, contact an administrator',
 
   // Danger confirmation
   'common.danger.title': 'Please confirm',

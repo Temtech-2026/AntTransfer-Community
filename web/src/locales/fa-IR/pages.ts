@@ -26,7 +26,8 @@ export default {
   'pages.login.loginWith': 'وارد شوید با :',
   'pages.login.registerAccount': 'ثبت نام',
   'pages.welcome.link': 'خوش آمدید',
-  'pages.welcome.celebrationTitle': 'به AntTransfer Community Edition خوش آمدید',
+  'pages.welcome.celebrationTitle':
+    'به AntTransfer Community Edition خوش آمدید',
   'pages.welcome.alertMessage': 'اجزای سنگین تر سریعتر و قوی تر آزاد شده اند.',
   /* ===== صفحه خوش‌آمدگویی (pages/Welcome.tsx) ===== */
   'pages.welcome.header.title': 'AntTransfer CE',

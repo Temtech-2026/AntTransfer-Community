@@ -46,11 +46,16 @@ import ChatAttachmentPicker from '@/components/ChatAttachmentPicker';
 import ChatFileCard from '@/components/ChatFileCard';
 import ChatGroupPanel from '@/components/ChatGroupPanel';
 import ChatComposer from '@/components/ChatComposer';
+import {
+  EMPTY_MENTION_SELECTION,
+  type MentionSelection,
+} from '@/components/ChatComposer/composer';
 import ChatMessageMenu from '@/components/ChatMessageMenu';
 import ChatMessageQuote from '@/components/ChatMessageQuote';
 import ChatPeerPanel from '@/components/ChatPeerPanel';
 import ChatPeerStatus from '@/components/ChatPeerStatus';
 import ChatQuoteBar from '@/components/ChatQuoteBar';
+import ConnectionQuality from '@/components/ConnectionQuality';
 import UserAvatar from '@/components/UserAvatar';
 import useChatAttachmentDraft from '@/hooks/useChatAttachmentDraft';
 import useChatMentionables from '@/hooks/useChatMentionables';
@@ -78,6 +83,10 @@ import {
   mergeMessage,
   sortConversations,
 } from '@/services/chat/messages';
+import {
+  setConversationNotifyPreferences,
+  setGroupNotifyPreference,
+} from '@/services/chat/notifyPreference';
 import {
   applyPeerAliasChange,
   applyPeerAliasOverride,
@@ -148,6 +157,22 @@ const useStyles = createStyles(({ token, css }) => ({
     border-bottom: 1px solid ${token.colorSplit};
   `,
   /**
+   * 本端连接质量条：标题行下方常驻一行。
+   *
+   * <p><b>为什么不并进 `head`：</b>抽屉只有 380px，`head` 右侧已经排了最多 5 个图标按钮
+   * （返回 / 群设置 / 对端资料 / 刷新 / 关闭），再塞一段连接文字会把会话名挤到只剩两三个字。
+   * 另起一行后标题仍独占一行，位置也与 `/chat` 页「页头常驻」对齐——两处是同一条信息、
+   * 同一个组件。</p>
+   *
+   * <p><b>为什么不再画一条底线：</b>`head` 自己的 `border-bottom` 已经分隔了「头部」与「内容」，
+   * 这里再画一条会把一行字夹成独立横条，在窄抽屉里格外碍眼。</p>
+   */
+  statusBar: css`
+    display: flex;
+    align-items: center;
+    padding: 0 12px 6px;
+  `,
+  /**
    * 标题 + 对端状态：两行堆叠，状态在会话名下方。
    *
    * <p>抽屉只有 380px 宽，把「在线 / 正在输入…」并排放在标题右侧，长会话名会被挤成两三个字。
@@ -159,12 +184,30 @@ const useStyles = createStyles(({ token, css }) => ({
     flex-direction: column;
     min-width: 0;
   `,
+  /**
+   * 会话名 + 群成员人数：同一行，人数不被压缩。
+   *
+   * <p>人数用 `flex: none`、会话名承担省略号：抽屉只有 380px，窄屏上被截断的应当是名字的尾部
+   * ——把「12 人」挤成「1…」比截断群名更让人困惑。</p>
+   */
+  headTitleRow: css`
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  `,
   headTitle: css`
     min-width: 0;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
     font-weight: 600;
+  `,
+  headMemberCount: css`
+    flex: none;
+    color: ${token.colorTextTertiary};
+    font-size: ${token.fontSizeSM}px;
+    font-weight: 400;
   `,
   list: css`
     flex: 1;
@@ -404,12 +447,13 @@ const ChatDrawer: React.FC = () => {
     buildMessage,
   } = useChatAttachmentDraft();
   /**
-   * 本次正文里仍然有效的 {@code @} 提及对象，唯一写入方是输入框的
-   * {@code onMentionChange}（口径与 `/chat` 页一致，见该页状态注释）。
+   * 本次正文里仍然有效的 {@code @} 提及（被点名的人 + 是否 {@code @}所有人），
+   * 唯一写入方是输入框的 {@code onMentionChange}
+   * （口径与 `/chat` 页一致，见该页状态注释）。
    */
-  const [mentionUserIds, setMentionUserIds] = useState<string[]>([]);
-  // 可 @ 的群成员：单聊 / 未选中会话时是空名单，输入框据此不显示 @ 入口
-  const mentionables = useChatMentionables(active);
+  const [mention, setMention] = useState<MentionSelection>(EMPTY_MENTION_SELECTION);
+  // 可 @ 的群成员与 @所有人 能力：单聊 / 未选中会话时是空结果，输入框据此不显示 @ 入口
+  const { mentionables, canMentionAll } = useChatMentionables(active);
 
   const streamRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<ChatSession | null>(null);
@@ -433,9 +477,14 @@ const ChatDrawer: React.FC = () => {
   const loadConversations = useCallback(async () => {
     setListLoading(true);
     try {
-      const list = await fetchConversations(CONVERSATION_LIMIT);
-      // 排序交给共用规则（按最后一条消息 ID 倒序），不依赖服务端返回顺序
-      setConversations(sortConversations(list));
+      const list = sortConversations(
+        await fetchConversations(CONVERSATION_LIMIT),
+      );
+      setConversations(list);
+      // 与 `/chat` 页同一笔：把免打扰 / 提及偏好灌进全局索引（提示音在全局读它）。
+      // 抽屉很可能是我「唯一打开过」的聊天入口——只填页面那条路的话，
+      // 从没进过 /chat 页的用户会发现自己设的免打扰完全不起作用
+      setConversationNotifyPreferences(list);
     } catch (_error) {
       // 请求层已统一提示；这里兜住异常，抽屉不至于白屏
     } finally {
@@ -444,9 +493,10 @@ const ChatDrawer: React.FC = () => {
   }, []);
 
   /**
-   * 群资料变更（改名 / 邀请 / 移除）后同步会话标题与列表项。
+   * 群资料变更（改名 / 邀请 / 移除 / 改提醒偏好）后同步会话标题、列表项与偏好索引。
    *
-   * <p>口径与 `/chat` 页一致：标题与列表项同源渲染，只改一处会让同一屏里出现两个群名。</p>
+   * <p>口径与 `/chat` 页一致：标题与列表项同源渲染，只改一处会让同一屏里出现两个群名；
+   * 人数与偏好也要一起带上，否则标题旁的人数会停在旧值。</p>
    */
   const applyGroupUpdate = useCallback((detail: ChatGroupDetail) => {
     setActive((prev) =>
@@ -457,10 +507,17 @@ const ChatDrawer: React.FC = () => {
     setConversations((prev) =>
       prev.map((item) =>
         item.chatScope === ChatScope.GROUP && item.targetId === detail.id
-          ? { ...item, targetName: detail.name }
+          ? {
+              ...item,
+              targetName: detail.name,
+              memberCount: detail.memberCount ?? item.memberCount,
+              notifyPreference: detail.notifyPreference ?? item.notifyPreference,
+            }
           : item,
       ),
     );
+    // 提示音索引单点更新：抽屉里改的免打扰不该等下次拉列表才生效
+    setGroupNotifyPreference(detail.id, detail.notifyPreference);
   }, []);
 
   /**
@@ -524,8 +581,13 @@ const ChatDrawer: React.FC = () => {
     }
   }, [panel.chatOpen, panel.attachment]);
 
-  // 实时帧：只处理抽屉展开期间的帧；未展开时未读由通知铃铛与 /chat 页负责
-  useWebSocket({
+  /**
+   * 实时帧：只处理抽屉展开期间的帧；未展开时未读由通知铃铛与 /chat 页负责。
+   *
+   * <p>这里同时取 `status`：抽屉没有页头可用，本端连接质量只能自己常驻一行
+   * （见下方 `statusBar`），而它唯一的事实源就是这条订阅。</p>
+   */
+  const { status } = useWebSocket({
     onMessage: (msg) => {
       if (!chatOpenRef.current) {
         return;
@@ -629,7 +691,13 @@ const ChatDrawer: React.FC = () => {
     try {
       // 幂等键与授权建立都在共用草稿机里（含仅预览传 0、群聊不建授权等规则）
       const sent = await sendChatMessage(
-        await buildMessage(active, text, quote?.clientMsgId, mentionUserIds),
+        await buildMessage(
+          active,
+          text,
+          quote?.clientMsgId,
+          mention.userIds,
+          mention.mentionAll,
+        ),
       );
       // 同上：响应与 WS 回推帧几乎同时到达，去重交给 mergeMessage（同时认 id 与 clientMsgId）
       setMessages((prev) => mergeMessage(prev, sent));
@@ -709,6 +777,23 @@ const ChatDrawer: React.FC = () => {
    */
   const peerUserId =
     active?.chatScope === ChatScope.PRIVATE ? activeDisplay?.targetId : undefined;
+
+  /**
+   * 当前群会话的成员人数（单聊 / 会话列表视图恒为 `null`）。
+   *
+   * <p>取数走 {@link viewConversations}（人数随会话列表下发，`active` 里没有这个字段），
+   * 拿不到时不显示那一段——显示「0 人」会被读成群被解散（口径见 `/chat` 页同名派生值）。</p>
+   */
+  const activeMemberCount = useMemo(() => {
+    if (active?.chatScope !== ChatScope.GROUP) {
+      return null;
+    }
+    const matched = viewConversations.find(
+      (item) =>
+        item.chatScope === ChatScope.GROUP && item.targetId === active.targetId,
+    );
+    return matched?.memberCount ?? null;
+  }, [active, viewConversations]);
 
   const activeTitle = activeDisplay
     ? conversationTitle(activeDisplay)
@@ -869,7 +954,18 @@ const ChatDrawer: React.FC = () => {
             <UserOutlined />
           )}
           <span className={styles.headMain}>
-            <span className={styles.headTitle}>{activeTitle}</span>
+            <span className={styles.headTitleRow}>
+              <span className={styles.headTitle}>{activeTitle}</span>
+              {/* 群成员人数：与 /chat 页同一处信息、同一份来源（见 activeMemberCount） */}
+              {activeMemberCount != null ? (
+                <span className={styles.headMemberCount}>
+                  {intl.formatMessage(
+                    { id: 'chat.group.memberCount' },
+                    { count: activeMemberCount },
+                  )}
+                </span>
+              ) : null}
+            </span>
             {/*
               对端状态：会话列表视图（active 为空）不渲染——那里的标题是面板名「消息」，
               挂一个状态点会被读成「消息这个人」的状态
@@ -919,6 +1015,16 @@ const ChatDrawer: React.FC = () => {
             aria-label={intl.formatMessage({ id: 'chat.drawer.close' })}
             onClick={closeDrawer}
           />
+        </div>
+
+        {/*
+          本端连接质量：抽屉没有页头，只能在标题行下方常驻一行。
+          与会话头里的对端状态（ChatPeerStatus）不是一回事——那边说「对方在不在」，
+          这边说「我与服务器的通道好不好」，两者取值相互独立，所以不并排、各占一行。
+          消息发不出去时用户此刻正看着抽屉，这里没有提示就只能干等。
+        */}
+        <div className={styles.statusBar}>
+          <ConnectionQuality status={status} />
         </div>
 
         {!active && (
@@ -1147,7 +1253,16 @@ const ChatDrawer: React.FC = () => {
               autoSize={{ minRows: 1, maxRows: 4 }}
               /* 群成员名单为空（单聊 / 未选中会话）时输入框自然不显示 @ 入口 */
               mentionables={mentionables}
-              onMentionChange={setMentionUserIds}
+              /*
+                @所有人 入口只在服务端下发的群能力为 true（群主）时出现，口径与 /chat 页一致；
+                能力判定的权威在服务端，前端显隐只是不给出一个点下去必然失败的选项
+              */
+              mentionAllLabel={
+                canMentionAll
+                  ? intl.formatMessage({ id: 'chat.composer.mentionAll' })
+                  : undefined
+              }
+              onMentionChange={setMention}
               placeholder={intl.formatMessage({
                 id: attachment
                   ? 'chat.attach.placeholder'

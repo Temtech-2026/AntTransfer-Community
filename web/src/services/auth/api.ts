@@ -5,11 +5,17 @@
  * 这里只负责「路径 + 参数 + 令牌落盘」三件事。</p>
  */
 
-import { requestData, uploadBinary } from '@/services/request';
+import { downloadBinary, requestData, uploadBinary } from '@/services/request';
 import { tokenStore } from '@/utils/token';
 
 import { AUTH_ENDPOINTS } from './endpoints';
-import type { AuthUserSummary, ChangePasswordRequest, TokenResponse } from './types';
+import type {
+  AuthUserSummary,
+  ChangePasswordRequest,
+  NotifySetting,
+  TokenResponse,
+  UpdateNotifySettingPayload,
+} from './types';
 
 /**
  * 账号密码登录，成功后立即落盘双令牌。
@@ -100,4 +106,77 @@ export function uploadMyAvatar(file: File): Promise<AuthUserSummary> {
   // 字段名固定 file：与后端 @RequestPart("file") 逐字一致
   form.append('file', file);
   return uploadBinary<AuthUserSummary>(AUTH_ENDPOINTS.myAvatar, form);
+}
+
+/**
+ * 读本人消息提醒设置（开关 + 音色 + 自定义音频信息 + 服务端下发的音频上限）。
+ *
+ * <p><b>不静默</b>：它是设置面板的主数据，读不到就没有可渲染的开关状态。
+ * 由调用方呈现错误态并给重试入口，比全局 toast 更贴近「这一块没加载出来」的事实；
+ * 但也不设 `silent`，避免面板空着却毫无提示。</p>
+ */
+export function fetchMyNotifySetting(): Promise<NotifySetting> {
+  return requestData<NotifySetting>(AUTH_ENDPOINTS.myNotifySetting, {
+    method: 'GET',
+  });
+}
+
+/**
+ * 整体覆盖本人的提示音开关与音色（不触碰自定义音频）。
+ *
+ * <p>每次提交都必须带上当前音色（含 {@code custom}）：交接口径是整体覆盖，
+ * 只传开关会让音色字段缺失而被服务端 400——那不是「保持原样」，是「没交代清楚」。</p>
+ *
+ * <p><b>不静默</b>：拨开关是用户的主动动作，失败必须明确反馈，
+ * 否则开关会「拨了又弹回去」却没人说明原因。</p>
+ */
+export function updateMyNotifySetting(
+  payload: UpdateNotifySettingPayload,
+): Promise<NotifySetting> {
+  return requestData<NotifySetting>(AUTH_ENDPOINTS.myNotifySetting, {
+    method: 'PUT',
+    data: payload,
+  });
+}
+
+/**
+ * 上传自定义提示音（multipart，<b>上传即生效并自动把音色切到 custom</b>）。
+ *
+ * <p>与头像上传同路数（XHR 直发 + 401 静默刷新重放），**不设置 `Content-Type`**：
+ * boundary 必须由浏览器生成。返回的是变更后的完整设置，调用方据此就地回填，
+ * 不再补一次 GET（避免「上传成功但面板还是旧状态」的中间态）。</p>
+ *
+ * <p>准入判定（大小 / 时长 / 格式）的<b>权威在服务端</b>（4029~4032）；
+ * 前端的 {@code checkNotifySoundFile} 只是为了少一次往返。</p>
+ */
+export function uploadMyNotifySound(file: File): Promise<NotifySetting> {
+  const form = new FormData();
+  // 字段名固定 file：与后端 @RequestPart("file") 逐字一致
+  form.append('file', file);
+  return uploadBinary<NotifySetting>(AUTH_ENDPOINTS.myNotifySound, form);
+}
+
+/**
+ * 清空自定义提示音（音色回落为内置默认音，仍会回完整设置）。
+ *
+ * <p>语义是「删除这段音频」而不是「切换音色」：调用方在用户点「删除」时用，
+ * 不要在切换内置音色时顺手调用——换音色不该把用户上传的文件一并丢掉。</p>
+ */
+export function clearMyNotifySound(): Promise<NotifySetting> {
+  return requestData<NotifySetting>(AUTH_ENDPOINTS.myNotifySound, {
+    method: 'DELETE',
+  });
+}
+
+/**
+ * 取自定义提示音的音频字节（需带令牌，故不能用 `<audio src>` 直连）。
+ *
+ * <p><b>静默</b>：播放是后台行为，用户没有提交任何东西。取不到时（含 4033 尚未设置）
+ * 由播放器回落到内置音，<b>绝不该因此弹一个错误提示</b>——「我没设过自定义铃声」
+ * 不是一个需要用户处理的故障。</p>
+ *
+ * @returns 音频 Blob（调用方负责 `URL.createObjectURL` 并在用完后释放）
+ */
+export function fetchMyNotifySound(): Promise<Blob> {
+  return downloadBinary(AUTH_ENDPOINTS.myNotifySoundContent, { silent: true });
 }

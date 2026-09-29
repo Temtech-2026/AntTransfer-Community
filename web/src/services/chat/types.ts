@@ -19,9 +19,10 @@ import {
   ChatScope,
   isChatNotify,
   isSelfSentMessage,
+  MentionType,
   MessageType,
-  RecallStatus,
   type NotifyMessage,
+  RecallStatus,
 } from '@/services/notify';
 
 import type { ChatPresenceStatus } from '@/services/ws/protocol';
@@ -96,6 +97,81 @@ export interface Conversation {
    * <p>取值为 0 是常态（绝大多数会话没有人 @ 我），渲染层据此决定是否上强调样式。</p>
    */
   mentionUnreadCount: number;
+  /**
+   * 群聊成员数（含群主）——会话标题旁展示的人数。
+   *
+   * <p><b>单聊恒为 {@code null}</b>（由 {@link targetName} 回答「对方是谁」，人数没有语义）。
+   * 仅当「我仍是该群成员」时才有值；已退群 / 被移除后前端拿不到成员关系，此时为 {@code null}，
+   * 界面不渲染人数（该会话本就已无法继续发言）。</p>
+   */
+  memberCount?: number | null;
+  /**
+   * 我在该群的消息提醒偏好（免打扰 + 两类提及开关）；单聊恒为 {@code null}。
+   *
+   * <p><b>为什么随会话一起下发：</b>用户可能一直停留在会话列表而不打开群设置，
+   * 此时收到新消息仍要按同一份偏好决定是否出声——偏好随会话一起下发，
+   * 前端无需为了「要不要响」额外发一次请求（裁决口径见 {@link shouldRemindMessage}）。</p>
+   */
+  notifyPreference?: ChatGroupNotifyPreference | null;
+}
+
+/**
+ * 收到一条会话消息时，<b>我这边是否应该出声 / 弹提醒</b>的唯一裁决口径。
+ *
+ * <p>规则（与后端 {@link ChatGroupNotifyPreference} 的注释一一对应）：</p>
+ * <ol>
+ *   <li>自己发的消息 → 永不提醒（写扩散会把自己那一行也推回来）；</li>
+ *   <li>单聊、或群聊未开免打扰 → 提醒；</li>
+ *   <li>群聊已开免打扰 → 只有命中提及档位且对应开关为开才提醒：
+ *       {@link MentionType.ME} 看 {@code notifyOnMention}；{@link MentionType.ALL} 看
+ *       {@code notifyOnMentionAll}；</li>
+ *   <li>偏好缺失（老接口 / 已退群 / 刚进群还没拉到列表）→ <b>按提醒处理</b>：
+ *       默认值的语义就是「免打扰关、提醒开」，而「该响却没响」会让用户漏掉消息，
+ *       比「不该响却响了」更糟（且后者用户可自己开免打扰根治）。</li>
+ * </ol>
+ *
+ * <p><b>为什么必须放在纯函数里而不是写在组件中：</b>这套裁决同时被全局提示音、
+ * 以及（未来的）系统通知 / 震动共用；散落成多份就会各自演化，
+ * 出现「列表角标按免打扰、提示音却不按」这类难以察觉的不一致。</p>
+ *
+ * @param params.chatScope       消息所属会话范围（1-单聊 2-群聊）
+ * @param params.mentionType     本条消息对我的提及档位（见 {@link MentionType}）
+ * @param params.preference      我在这条会话对应群里的提醒偏好（单聊 / 未知传 null）
+ * @param params.selfSent        本条消息是否我发的（{@link isSelfSentMessage}）
+ * @returns 是否应当出声
+ */
+export function shouldRemindMessage(params: {
+  chatScope: number;
+  mentionType?: number | null;
+  preference?: ChatGroupNotifyPreference | null;
+  selfSent: boolean;
+}): boolean {
+  const { chatScope, mentionType, preference, selfSent } = params;
+  if (selfSent) {
+    return false;
+  }
+  // 单聊没有免打扰这一概念
+  if (chatScope !== ChatScope.GROUP) {
+    return true;
+  }
+  // 偏好缺失按默认值（免打扰关 → 提醒）处理，宁可多响不要漏
+  if (!isFlagOn(preference?.muteStatus)) {
+    return true;
+  }
+  const type = mentionType ?? MentionType.NONE;
+  if (type === MentionType.ALL) {
+    return (
+      preference?.notifyOnMentionAll == null ||
+      isFlagOn(preference.notifyOnMentionAll)
+    );
+  }
+  if (type === MentionType.ME) {
+    return (
+      preference?.notifyOnMention == null ||
+      isFlagOn(preference.notifyOnMention)
+    );
+  }
+  return false;
 }
 
 /**
@@ -193,6 +269,52 @@ export interface ChatGroupMember {
 }
 
 /**
+ * 开关的存储刻度（镜像后端 {@code GroupMember.MUTE_x / NOTIFY_x}）。
+ *
+ * <p>免打扰与两类提及提醒用的是同一套 {@code 0-关 1-开} 刻度，故共用一个常量表，
+ * 不按开关各写一份。渲染成 `Switch` 的布尔时统一经 {@link isFlagOn} / {@link toFlag}，
+ * 避免「某处写 `=== 1`、另一处写 `? true : false`」的散落转换。</p>
+ */
+export const NOTIFY_FLAG = {
+  OFF: 0,
+  ON: 1,
+} as const;
+
+/** {@code 0/1} 刻度 → 布尔（{@code null} / 缺失一律按「关」）。 */
+export function isFlagOn(flag?: number | null): boolean {
+  return flag === NOTIFY_FLAG.ON;
+}
+
+/** 布尔 → {@code 0/1} 刻度（提交给服务端用）。 */
+export function toFlag(on: boolean): number {
+  return on ? NOTIFY_FLAG.ON : NOTIFY_FLAG.OFF;
+}
+
+/**
+ * 「<b>我</b>在这个群里的消息提醒偏好」（对齐后端 `ChatGroupNotifyPreferenceVO`）。
+ *
+ * <p><b>是「我」的而不是群的</b>：免打扰与提及提醒是 (我, 这个群) 这条成员关系的私有属性。
+ * 群主不能替成员关掉手机上的提示音，成员也不该被一个「群级开关」一刀切。</p>
+ *
+ * <p><b>三档如何决定「要不要出声」</b>（{@link shouldRemindMessage} 是唯一裁决口径）：</p>
+ * <ol>
+ *   <li>{@code muteStatus = 0}（免打扰关）→ 该群所有新消息都提醒；</li>
+ *   <li>{@code muteStatus = 1}（免打扰开）→ 仅当本条消息的提及档位命中且对应开关为 1 时才提醒：
+ *       {@code @我}（{@link MentionType.ME}）看 {@code notifyOnMention}；
+ *       {@code @所有人}（{@link MentionType.ALL}）看 {@code notifyOnMentionAll}；</li>
+ *   <li>都不命中 → 消息照常送达，但不出声、不弹提醒。</li>
+ * </ol>
+ */
+export interface ChatGroupNotifyPreference {
+  /** 消息免打扰：0-关（默认） 1-开（见 {@link NOTIFY_FLAG}）。 */
+  muteStatus?: number | null;
+  /** 有人 {@code @} 我时是否提醒：0-关 1-开（默认 1）。 */
+  notifyOnMention?: number | null;
+  /** 群主 {@code @} 所有人时是否提醒：0-关 1-开（默认 1）。 */
+  notifyOnMentionAll?: number | null;
+}
+
+/**
  * 「<b>我</b>在这个群里能做什么」（对齐后端 `ChatGroupAbilityVO`）。
  *
  * <p><b>为什么用服务端下发的布尔而不是前端自己算：</b>前端登录态没有可信的用户主键
@@ -214,6 +336,15 @@ export interface ChatGroupAbility {
   canDissolve: boolean;
   /** 能否退出该群（群主恒为 false：群主退群会造出无主群）。 */
   canQuit: boolean;
+  /**
+   * 能否在本群 {@code @所有人}（<b>仅群主</b>）。
+   *
+   * <p>为什么只给群主：{@code @所有人} 是一次性给全体成员推提醒的「面向全群的打扰权」，
+   * 比改群名更重，且本身不可撤销——一旦发出，全体成员的设备就已收到提醒。
+   * 前端据此决定 {@code @} 面板里是否出现「所有人」一项；服务端仍以 1042 独立强校验，
+   * 不依赖本布尔（本地判定只是体验，不是门禁）。</p>
+   */
+  canMentionAll: boolean;
 }
 
 /**
@@ -236,6 +367,14 @@ export interface ChatGroupDetail {
   ability: ChatGroupAbility;
   /** 成员名单（按成员行 ID 升序，群主恒为第一行）。 */
   members: ChatGroupMember[];
+  /**
+   * 我在该群的消息提醒偏好（面板的三个开关直接绑定它）。
+   *
+   * <p>查看者必是该群成员（非成员在服务端就被 1012 拦下），故恒有值；
+   * 因此面板<b>不需要</b>为「读我自己的偏好」再单独发一次请求，也就不会出现
+   * 「面板先渲染成默认值、随后闪一下变成真实值」的双态跳变。</p>
+   */
+  notifyPreference?: ChatGroupNotifyPreference | null;
 }
 
 /**
@@ -317,6 +456,18 @@ export interface ChatSendPayload {
    * <p>ID 一律字符串过线（19 位雪花 ID 超出 JS 安全整数范围），不得 `Number()` 归一。</p>
    */
   mentionUserIds?: string[] | null;
+  /**
+   * {@code @所有人}（选填，默认 false，仅群聊有意义）。
+   *
+   * <p><b>只有群主可以置 true</b>，其余身份服务端一律以 `1042`（403）拒绝。
+   * {@code @所有人} 不是「装饰性标记」而是<b>范围声明</b>：一发出就给全体成员的设备推提醒，
+   * 是不可撤销的打扰（用户可能正在开会、睡觉）。因此服务端不会像
+   * {@link mentionUserIds} 那样静默剔除，而是明确失败——静默降级会让普通成员
+   * 看到消息照常发出、在心里默认「全群都被提醒到了」。</p>
+   *
+   * <p>与 {@link mentionUserIds} 可共存：叠加时服务端以 {@code @所有人}（档位 2）为准。</p>
+   */
+  mentionAll?: boolean;
 }
 
 /** 会话键：`scope:targetId`。用作 React key 与 Map 键。 */
@@ -658,7 +809,10 @@ export interface MessageSenderLabels {
  */
 export function messageSenderLabel(
   userId: string | null | undefined,
-  message: Pick<NotifyMessage, 'senderUserId' | 'recipientUserId' | 'chatScope'>,
+  message: Pick<
+    NotifyMessage,
+    'senderUserId' | 'recipientUserId' | 'chatScope'
+  >,
   labels: MessageSenderLabels,
 ): string {
   const senderId = message.senderUserId ?? '';
@@ -666,14 +820,14 @@ export function messageSenderLabel(
   const mine = isMine(message);
   if (!target) {
     // 两端都缺 ID 的脏数据：不臆造「用户 #」，能确定的最少信息只有方向
-    return mine ? labels.mine : labels.peer ?? '';
+    return mine ? labels.mine : (labels.peer ?? '');
   }
   if (target === senderId) {
-    return mine ? labels.mine : labels.peer ?? labels.unknown(target);
+    return mine ? labels.mine : (labels.peer ?? labels.unknown(target));
   }
   // 不是本条消息的发送人：单聊里只可能是另一个人
   if (message.chatScope === ChatScope.PRIVATE) {
-    return mine ? labels.peer ?? labels.unknown(target) : labels.mine;
+    return mine ? (labels.peer ?? labels.unknown(target)) : labels.mine;
   }
   return labels.unknown(target);
 }

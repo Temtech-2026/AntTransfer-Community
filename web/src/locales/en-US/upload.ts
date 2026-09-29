@@ -11,7 +11,8 @@ export default {
   'upload.chunkTooltip': 'Chunk {index}',
   'upload.retried': 'Automatically retried {count} times',
   'upload.empty': 'No upload tasks',
-  'upload.summary': 'In progress {uploading} · Completed {finished} · Total {total}',
+  'upload.summary':
+    'In progress {uploading} · Completed {finished} · Total {total}',
 
   // Task status
   'upload.status.pending': 'Queued',

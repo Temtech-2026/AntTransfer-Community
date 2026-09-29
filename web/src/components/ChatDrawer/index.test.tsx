@@ -38,7 +38,7 @@ import {
   type NotifyMessage,
 } from '@/services/notify';
 import { resetShellPanel, setChatOpen } from '@/services/ui/panelHub';
-import { ChatPresenceStatus, wsStore } from '@/services/ws';
+import { ChatPresenceStatus, type WsStatus, wsStore } from '@/services/ws';
 
 import ChatDrawer from './index';
 
@@ -101,12 +101,14 @@ vi.mock('@/services/ws', async (importOriginal) => {
 // 在线状态 + 输入态），后注册的那次会把前一次的回调挤掉
 const wsHolder = vi.hoisted(() => ({
   options: null as null | Record<string, unknown>,
+  /** 连接状态：默认已连上；要验证异常文案的用例可临时改写（beforeEach 会复位）。 */
+  status: 'open' as WsStatus,
 }));
 
 vi.mock('@/hooks/useWebSocket', () => {
   const fake = (options: Record<string, unknown>) => {
     wsHolder.options = { ...wsHolder.options, ...options };
-    return { status: 'open', reconnectNow: vi.fn() };
+    return { status: wsHolder.status, reconnectNow: vi.fn() };
   };
   return { default: fake, useWebSocket: fake };
 });
@@ -187,6 +189,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetShellPanel();
   setChatOpen(true);
+  wsHolder.status = 'open';
   vi.mocked(fetchConversations).mockResolvedValue([conversation]);
   vi.mocked(fetchChatHistory).mockResolvedValue([incoming]);
   vi.mocked(markChatRead).mockResolvedValue(undefined as never);
@@ -737,5 +740,72 @@ describe('ChatDrawer 头像', () => {
     expect(avatars()).toEqual([]);
     // 首字符仍在（列表与气泡各一处）：兜底不是「什么都不画」
     expect(screen.getAllByText('系').length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * 抽屉的本端连接质量 · 常驻与「不谎报」。
+ *
+ * <p>抽屉没有页头可用，这条信息只能在标题行下方自己常驻一行（`/chat` 页在页头，
+ * 两处同组件、同文案）。三条口径：</p>
+ * <ol>
+ *   <li><b>列表视图与详情态都要常驻</b>：通道好不好与「有没有选中会话」无关，
+ *       只在详情态显示等于让用户先在列表里干等；</li>
+ *   <li><b>不与会话头的对端状态并排</b>：那边说「对方在不在」，两者可以一个异常一个正常，
+ *       挤成一行就会被读成同一件事；</li>
+ *   <li><b>`idle` 不谎报</b>：抽屉刚展开、握手还没开始时是「未连接」而不是「连接已断开」，
+ *       否则每次打开抽屉都会先闪一下假故障。</li>
+ * </ol>
+ */
+describe('ChatDrawer 本端连接质量', () => {
+  /** 展开抽屉并等会话列表就位（列表视图）。 */
+  async function renderDrawer() {
+    render(
+      <App>
+        <ChatDrawer />
+      </App>,
+    );
+    await screen.findByRole('button', {
+      name: t('chat.drawer.openConversation', { name: PEER_NAME }),
+    });
+  }
+
+  /** 点进单聊会话（详情态）。 */
+  async function enterConversation() {
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: t('chat.drawer.openConversation', { name: PEER_NAME }),
+      }),
+    );
+  }
+
+  it('列表视图就常驻显示，不必先点进会话', async () => {
+    await renderDrawer();
+
+    expect(screen.getByText(t('chat.connection.open'))).toBeInTheDocument();
+  });
+
+  it('详情态同样常驻：进会话后不会消失', async () => {
+    await renderDrawer();
+    await enterConversation();
+
+    expect(screen.getByText(t('chat.connection.open'))).toBeInTheDocument();
+  });
+
+  it('断线重连中：抽屉里直接改文案，用户不用切到 /chat 页去看', async () => {
+    wsHolder.status = 'reconnecting';
+    await renderDrawer();
+
+    expect(
+      screen.getByText(t('chat.connection.reconnecting')),
+    ).toBeInTheDocument();
+  });
+
+  it('idle（刚展开、握手尚未开始）不谎报故障：是「未连接」而不是「连接已断开」', async () => {
+    wsHolder.status = 'idle';
+    await renderDrawer();
+
+    expect(screen.getByText(t('chat.connection.idle'))).toBeInTheDocument();
+    expect(screen.queryByText(t('chat.connection.closed'))).toBeNull();
   });
 });
