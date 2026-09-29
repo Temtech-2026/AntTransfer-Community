@@ -20,6 +20,18 @@
 # ---------- 阶段一：构建 ----------
 FROM maven:3.9.16-eclipse-temurin-21 AS builder
 
+# ===================== 版本元数据（构建期注入） =====================
+# 为什么必须由外部传入：.dockerignore 排除了 .git/，构建上下文里没有版本库，
+# 镜像内无法自行 `git rev-parse HEAD`。故由构建命令经 --build-arg 传入
+# （compose 侧见根 docker-compose.yml 的 server.build.args），
+# 一路带到两个可查位置：
+#   ① 应用内的 META-INF/build-info.properties → GET /api/actuator/info
+#   ② 运行阶段的 OCI 镜像标签 → docker image inspect anttransfer/server:latest
+# 未传时回落 unknown：宁可显示 unknown，也不静默沿用上一次构建的版本号
+# （那会让「查到的版本」指向错误提交，比没有版本号更危险）。
+ARG GIT_COMMIT=unknown
+ARG GIT_BRANCH=unknown
+
 WORKDIR /app
 
 # 复制全部源码（多模块工程；target/ 与前端 node_modules/ 已由 .dockerignore 排除）
@@ -44,10 +56,28 @@ RUN set -eux; \
 
 # ② 编译并打包（跳过测试）；spring-boot-maven-plugin 仅在 at-bootstrap 生效
 #    -ntp：关闭下载进度条，日志只保留关键行（依赖已预热，额外下载应接近 0）
-RUN mvn -B -ntp -DskipTests package
+#    -Dgit.commit / -Dgit.branch：喂给 build-info goal 的 additionalProperties，
+#      写入 META-INF/build-info.properties（键为 build.commitId / build.branch），
+#      最终由 GET /api/actuator/info 回显；父 pom 中两者的默认值为 unknown
+RUN mvn -B -ntp -DskipTests package \
+        -Dgit.commit="${GIT_COMMIT}" \
+        -Dgit.branch="${GIT_BRANCH}"
 
 # ---------- 阶段二：运行 ----------
 FROM eclipse-temurin:21-jre
+
+# 构建期 ARG 不跨阶段继承，运行阶段必须重新声明，否则 LABEL 取到空值
+ARG GIT_COMMIT=unknown
+ARG GIT_BRANCH=unknown
+
+# OCI 标准标签：不启容器、不调接口即可读出「本镜像由哪个提交构建」。
+# 查询：docker image inspect anttransfer/server:latest \
+#         --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'
+# 回滚留底镜像（prev-*）同样带此标签，回滚后能立刻确认退回到了哪个提交。
+LABEL org.opencontainers.image.title="AntTransfer CE server" \
+      org.opencontainers.image.version="1.0.0-SNAPSHOT" \
+      org.opencontainers.image.revision="${GIT_COMMIT}" \
+      org.opencontainers.image.ref.name="${GIT_BRANCH}"
 
 WORKDIR /app
 

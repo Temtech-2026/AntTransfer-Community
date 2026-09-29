@@ -7,6 +7,177 @@
 
 ### ✨ Added（新增）
 
+- 🔔 **群消息提醒偏好（免打扰 / @我 / @所有人）与「@所有人」发送（2026-09-30）**：
+  此前群里只有一种提醒方式——**所有消息都响**，成员无法对某个群单独降噪（只能退群或忍着）；
+  同时群内无法 `@` 全体成员，群主发通知只能指望成员自觉逐条看。本轮一次补齐：
+  - **SQL**：`sql/V20__chat_mention_all_and_group_notify_preference.sql`——`sys_group_member` 增
+    `mute_status` / `notify_on_mention` / `notify_on_mention_all`（统一 `0-关 / 1-开` 刻度，
+    默认 `0 / 1 / 1`，即「免打扰关、两类提及都提醒」）；`sys_notify_message` 增 `mention_type`
+    （`0` 无 / `1` @我 / `2` @所有人），原 `mentioned` 布尔降为 `mention_type` 的投影列，历史查询不变。
+  - **后端**：新增 `ChatGroupNotifyPreferenceDTO/VO` 与
+    `GET|PUT /api/v1/chat/groups/{groupId}/notify-preference`（整体覆盖式 `PUT`，三字段缺一即 400）；
+    `POST /api/v1/chat/messages` 增 `mentionAll`；`ConversationVO` 增 `memberCount` 与
+    `notifyPreference`（偏好随会话列表整批下发，**避免「为了决定要不要响」每条消息都多发一次请求**）。
+  - **新错误码 1042 `CHAT_MENTION_ALL_OWNER_REQUIRED`（403 / 策略 D）**：非群主 `@所有人` 明确失败。
+    此处与逐人点名的口径**刻意相反**——`mentionUserIds` 对非法项静默剔除（装饰性标记，
+    不该连坐整条消息），而 `@所有人` 是「一发出即给全体成员设备推提醒」的**范围声明**；
+    静默会让成员误以为全群都被提醒到了，故**一行都不落库**。校验放在幂等回查**之前**：
+    越权重放与越权首发同得 1042，不因「上次恰好成功」而被洗白。与 1041 分开是因为 1041 说
+    「这个动作只有群主能做」，1042 说「你在群里发言、@ 个别人照常，只是 `@所有人` 这档打扰权你没有」——
+    复用会让成员以为自己连发言权都没了。
+  - **前端**：`services/chat/notifyPreference.ts` 做 `(scope, targetId)` 进程内偏好索引
+    （会话列表整批灌入 + 群设置面板单点更新；**换人登录必须清空**，键里不含用户维度）；
+    `shouldRemindMessage` 收敛为「该不该响」的**唯一裁决点**，四档口径：自己发的永不提醒 /
+    单聊恒提醒 / 群聊未免打扰全提醒 / 已免打扰只看命中档位的开关，且**偏好缺失一律按「照常提醒」**。
+  - **回归**：`ChatServiceMentionAllTest`、`ChatGroupNotifyPreferenceTest`、`ChatConversationGroupFieldsTest`；
+    前端 `types.test.ts` / `messages.test.ts` / `useChatMentionables.test.tsx`。
+  - **文档**：`docs/api/README.md`（at-collaboration 模块行 + §5 表 + §7 裁决口径）、
+    `docs/api/error-codes.md`（1042 全表 / 重试语义 / HTTP 附录）。
+
+- 🔊 **新消息提示音：三个内置合成音 + 自定义音频上传（2026-09-30）**：
+  此前新消息只有角标与列表未读，**页面上没有声音**——用户停在文件页 / 审批页时会整段时间漏掉消息。
+  - **SQL**：`sql/V21__user_notify_sound_setting.sql`——新增 `sys_user_notify_setting`
+    （`sound_enabled` 默认 1、`sound_preset` 默认 `default`、`custom_sound_*` 四列存 key / 名称 / 大小 / 时长）。
+  - **后端**：`UserNotifySetting` + `SelfNotifySettingService`，四个端点
+    `GET|PUT /api/v1/users/me/notify-setting`、`POST|DELETE .../sound` 与 `GET .../sound/content`
+    （**须登录**、`private, no-cache` + 强 `ETag`，刻意不开放匿名——与头像**相反**：头像要出现在
+    他人名单里，提示音只在本人已登录的会话里播放）；`AudioTypes` 做容器魔数识别与时长解析
+    （仅 MP3 Layer III / WAV / OGG），`NotificationSoundStoragePort` 定下 **≤ 1 MiB、≤ 10 秒**且
+    **由服务端实测**（不采信前端上报），`LocalNotificationSoundStorage` 落盘走「先写临时再原子改名、
+    提交后才删旧文件」。
+  - **新错误码 4029~4033（策略 E）**：过大 413 / 过长 400 / 容器不允许 415 / **无法解析 400**
+    （拒绝而不是按 0 秒放行，「无法验证」不等于「满足上限」）/ 尚未设置 404
+    （前端**不弹错**、静默回落内置音）。
+  - **前端**：`services/notify/soundPlan.ts` 是纯决策层（设置 → 怎么响），三个内置音色用
+    `OscillatorNode` **现场合成**（零资源、跨端一致，总时长均 ≤ 400ms）；`soundPlayer.ts` 负责
+    `primeNotifySound` 借全局手势解锁自动播放与 Blob URL 生命周期；`components/NotifySoundAlert/`
+    是挂在**登录态布局**上的无 UI 组件（**刻意不挂聊天页**——否则「在文件页收到消息」会彻底无声，
+    而这恰恰是提示音最该起作用的场景）；`components/RightContent/NotifySoundSetting.tsx` 是设置面板。
+  - **本地预检只判格式与大小、不判时长**：时长要真正解码，为提前 200ms 报错而解一次 1 MiB 不划算；
+    如实把不确定性留给服务端（4030），而不是拿「大小 ÷ 码率」估一个假时长去拦合法文件。
+
+- 👥 **会话列表补群成员人数、聊天页补本端连接质量弱提示（2026-09-30）**：
+  - `ConversationVO.memberCount`（群聊含群主的人数；**单聊恒为 `null`**——由 `targetName` 回答
+    「对方是谁」，人数没有语义；已退群 / 被移除后同样为 `null`，前端不渲染人数，该会话本就已无法继续发言）。
+  - `components/ConnectionQuality/`：聊天页页头的常驻弱提示，只说「我与服务器的实时通道好不好」。
+    **刻意与会话标题旁的 `ChatPeerStatus` 分开**——后者说的是「对方在不在线」，两者相互独立
+    （我断网时对方仍可能在线），并排会让用户把「我的连接质量」读成「对方是否在线」；
+    圆点始终配文字（不靠颜色单独表意），`idle` 不画错误色（握手尚未开始的那一帧不能谎报断线）。
+
+- 🛡️ **语言包新增源码级护栏：同一文件内顶层 key 不得重复（2026-09-30）**：
+  本轮补齐语言包时，7 个语言包被**整块贴了两遍**，产生 **80 个 TS1117**，
+  却一路躲过了全部 vitest 用例与 `biome`——因为 `export default { a, a }` 在运行时只留一个键，
+  任何基于 `Object.keys()` 的检查（含 `i18n-parity.test.ts` 里那条「无重复 key」）都**恒为真**。
+  新增 `src/locales/i18n-source.test.ts` 直接读源码、按文件内最小缩进取顶层 key 去重；
+  并带一条兜底断言（一个 key 都没扫到即判失败），避免缩进口径失效后变成假阳性。
+  **验证**：`node scripts/run-vitest.mjs run` → **77 文件 / 1090 用例全通过**；
+  `npx tsc --noEmit` → 0 错误；`mvnw.cmd -B test` → BUILD SUCCESS。
+
+- 🌍 **新增法文 / 俄文 / 西班牙文（fr-FR / ru-RU / es-ES）语言包与切换支持（2026-09-29）**：
+  继韩文、日文之后，把另外三种企业客户高频语言按同一口径提升为一等语言；三者此前在
+  `web/src/locales` 下**连骨架目录都不存在**（脚手架只留了 zh-TW / pt-BR / id-ID / fa-IR / bn-BD），
+  业务文案只能回退成原始 key。本轮一次补齐：
+  - **语言包**：`web/src/locales/{fr-FR,ru-RU,es-ES}/` 各 21 个命名空间（`common` / `exception` /
+    `globalHeader` / `layout` / `workbench` / `network` / `auth` / `settingDrawer` / `settings` /
+    `message` / `menu` / `pages` / `approval` / `audit` / `permissionMap` / `shares` / `component` /
+    `upload` / `chat` / `file` / `system`），**逐键**对齐 zh-CN（含 `system` 236 键、`file` 200 键、
+    `chat` 194 键，合计约 1000 键 / 语言）。术语全包统一（机敏级别 = `niveau de confidentialité` /
+    `уровень конфиденциальности` / `nivel de confidencialidad`，权限、审批、部门、回收站、水印、
+    外部共享、提取码等同理）；**不译技术 token**——权限码（`system:role:assign-perm`）、错误码
+    （`403` / `1003` / `1021`）、API 路径（`GET /api/v1/permission-points`）、表名（`sys_group`）、
+    扩展名、反引号内标识符一律原样保留。
+  - **语言归一化**（`web/src/utils/locale.ts`）：`SUPPORTED` 扩为 7 种
+    （zh-CN / ko-KR / ja-JP / fr-FR / ru-RU / es-ES / en-US）。ko 落地时引入的**同语系前缀回退**
+    自动覆盖三种新语言——`fr` / `fr-CA` → fr-FR、`ru` → ru-RU、`es` / `es-419` → es-ES；
+    未登记语言（`pt-BR` / `zh-TW` / `fa-IR`…）仍回落 en-US。
+  - **切换器**（`LangDropdown`）：补 `dayjs/locale/{fr,ru,es}`（日期/时间格式随语言本地化）与
+    `🇫🇷 Français` / `🇷🇺 Русский` / `🇪🇸 Español` 自称标签。
+  - **聚合入口**：`web/src/locales/{fr-FR,ru-RU,es-ES}.ts` 新建，按与 zh-CN 完全相同的 21 段展开
+    顺序（含 `navBar.lang` / `layout.user.link.*` / `app.preview.down.block` 5 个根级键的本地化）。
+  - **回归护栏**：`i18n-parity.test.ts` 由「zh-CN ↔ en-US / ja-JP / ko-KR」扩为
+    「zh-CN ↔ en-US / es-ES / fr-FR / ja-JP / ko-KR / ru-RU」七方键集合比对（保留跨命名空间键冲突
+    检查）；`welcome-i18n.test.ts` / `menu-i18n.test.ts` 的比对面同步扩到 fr-FR / ru-RU / es-ES。
+  - **验证**：`node scripts/run-vitest.mjs run` → 75 文件 / 1057 用例全通过；`npx tsc --noEmit` 无错误；
+    `npm run build` 通过；另用一次性校验（21 命名空间 × 3 语言的缺失 / 多余 / 空值 / 哨兵残留 /
+    中日韩字符泄漏差集，64 用例）确认后删除该临时文件。
+  - **文档同步**：`docs/prd/README.md` §7「国际化」指标改写为
+    `zh-CN / ko-KR / ja-JP / fr-FR / ru-RU / es-ES / en-US`。
+  - **分工说明**：三语语言包由三个独立子任务并行产出（各自独占一个语言目录），框架层、聚合入口、
+    护栏测试与文档由主任务统一收口，避免同名文件并发改写。
+
+- 🇯🇵 **新增日文（ja-JP）语言包与切换支持（2026-09-29）**：
+  `web/src/locales/ja-JP/` 下只有敏捷脚手架自带的 7 个命名空间（`component` / `globalHeader` / `menu` /
+  `network` / `pages` / `settingDrawer` / `settings`），且**键集合是上游示例页的**（如 `menu.register`、
+  `component.tagSelect`），与本项目自建键并不对应——业务页面的文案取不到值，只能回退成原始 key。
+  本轮按「文案 100% 走 i18n 资源、切换即时生效」的既有口径，把 ja-JP 提升为一等语言：
+  - **语言包**：`web/src/locales/ja-JP/` 补齐到 21 个命名空间（`common` / `exception` / `globalHeader` /
+    `layout` / `workbench` / `network` / `auth` / `settingDrawer` / `settings` / `message` / `menu` / `pages` /
+    `approval` / `audit` / `permissionMap` / `shares` / `component` / `upload` / `chat` / `file` / `system`），
+    **逐键**对齐 zh-CN（含 `system` 236 键、`file` 200 键、`chat` 194 键）——脚手架遗留的上游键按项目口径
+    重写而非叠加（`menu.register*` / `menu.editor.*` 等本仓库零引用的示例键不保留）；`component` / `network` /
+    `pages` / `settings` / `menu` 等已有文件因键集合不一致被整体替换。聚合入口 `web/src/locales/ja-JP.ts`
+    重写为 21 个命名空间的展开顺序，与 zh-CN / ko-KR 一致。Umi i18n 插件自动扫描 `src/locales/*.ts`，
+    `config/config.ts` 无需改动。
+  - **语言归一化**（`web/src/utils/locale.ts`）：`SUPPORTED` 加入 `ja-JP`。`resolveUiLocale` 已有的
+    **同语系前缀回退**（ko 落地时引入）自动覆盖日文——浏览器只上报 `ja` 时收敛到 `ja-JP`；
+    未登记语言仍回落到 en-US（原「`ja-JP` → en-US」的用例已改用 `pt-BR` 表达同一意图）。
+  - **切换器**（`LangDropdown`）：补 `dayjs/locale/ja` 与 `🇯🇵 日本語` 标签，日期/时间格式随语言本地化。
+  - **回归护栏**：`i18n-parity.test.ts` 由「zh-CN ↔ en-US / ko-KR」扩为「zh-CN ↔ en-US / ko-KR / ja-JP」
+    四方键集合比对（保留跨命名空间键冲突检查）；`app.test.tsx` 新增 `ja` → `ja-JP` 归一化用例，
+    并断言 `ja-JP` 精确命中受支持集合时**不再写回**，避免「碰巧被前缀匹配救回来」。
+  - **验证**：`node scripts/run-vitest.mjs run` → 75 文件 / 949 用例全通过；`npx tsc --noEmit` 无错误；
+    `npm run build` 通过；另用一次性键位校验（21 命名空间的缺失/多余/未翻译键差集）确认逐键对齐后删除该临时文件。
+  - **文档同步**：`docs/prd/README.md` §7「国际化」指标改写为 `zh-CN / ko-KR / ja-JP / en-US`。
+
+- 🇰🇷 **新增韩文（ko-KR）语言包与切换支持（2026-09-29）**：
+  此前的 i18n 资源只落 `zh-CN` / `en-US`，`LangDropdown` 也只列这两种，韩文用户拿不到任何界面文案。
+  本轮按「文案 100% 走 i18n 资源、切换即时生效」的既有口径补齐第三种语言：
+  - **语言包**：新增 `web/src/locales/ko-KR/` 下 21 个命名空间文件（`common` / `exception` / `globalHeader` /
+    `layout` / `workbench` / `network` / `auth` / `settingDrawer` / `settings` / `message` / `menu` / `pages` /
+    `approval` / `audit` / `permissionMap` / `shares` / `component` / `upload` / `chat` / `file` / `system`）
+    与聚合入口 `web/src/locales/ko-KR.ts`，**逐键**对齐 zh-CN（含 `system` 这类 200+ 键的大命名空间）。
+    Umi i18n 插件自动扫描 `src/locales/*.ts`，`config/config.ts` 无需改动。
+  - **语言归一化**（`web/src/utils/locale.ts`）：`SUPPORTED` 加入 `ko-KR`，并给 `resolveUiLocale` / `normalizeLocale`
+    补上**同语系前缀回退**——浏览器只上报 `ko`、或上报 `ko-KP` / `ko_KR` 时一律收敛到 `ko-KR`。
+    原逻辑以「zh 语系 → zh-CN，其余一律 en-US」收尾，韩文会被误判成「不支持的语言」而回落英文，
+    用户看到的就是「切了韩文界面还是英文」；现在回退只在**确实没有同语系语言包**时才触发。
+  - **切换器**（`LangDropdown`）：补 `dayjs/locale/ko` 与 `🇰🇷 한국어` 标签，日期/时间格式随语言本地化。
+  - **回归护栏**：`i18n-parity.test.ts` 由「zh-CN ↔ en-US」扩为「zh-CN ↔ en-US / ko-KR」三方键集合比对
+    （并保留跨命名空间键冲突检查）；`menu-i18n.test.ts` / `welcome-i18n.test.ts` 纳入 ko-KR；
+    `app.test.tsx` 新增 `ko` / `ko-KP` → `ko-KR` 的归一化用例，钉死「不得回落 en-US」。
+  - **验证**：`node scripts/run-vitest.mjs run` → 75 文件 / 916 用例全通过；`npx tsc --noEmit`、`npx biome lint`
+    无新增告警；`npm run build` 通过。
+  - **文档同步**：`docs/prd/README.md` §7「国际化」指标改写为 `zh-CN / ko-KR / en-US`。
+
+- 🔎 **版本可查：镜像标签 / `/api/actuator/info` / 前端 `version.json` 三处落点（2026-09-29）**：
+  起因是一次发版后的真实困境——「线上跑的到底是哪个提交」只能靠<b>间接推断</b>（源码包解压时保留的
+  commit 时间、镜像构建时间、容器启动时间、Flyway 迁移时间），任何一环被覆盖（同标签重建镜像、
+  手工替换 jar、只传前端产物）就失去证据，而且这些时间戳**永远变不回提交号**。
+  现改为三处显式落点，各管一种查询场景：
+  - **镜像标签**（`Dockerfile` 的 `ARG` + `LABEL`，参数由根 `docker-compose.yml` 的 `server.build.args` 透传）：
+    写入 `org.opencontainers.image.revision`（提交号）与 `org.opencontainers.image.ref.name`（分支）。
+    `docker image inspect anttransfer/server:latest --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'`
+    即可读出，**无需启动容器**；回滚留底镜像（`prev-*`）同样带标签，回滚后能立刻确认退回到了哪个提交。
+    构建前需 `export GIT_COMMIT=$(git rev-parse HEAD)`（`GIT_BRANCH` 同理）；未导出则回落 `unknown`
+    ——`.dockerignore` 排除了 `.git/`，构建上下文里没有版本库，镜像内无从自行获取，只能外部注入；
+    宁可显示 unknown，也不静默沿用上一次构建的提交号（那会让「查到的版本」指向错误提交，比没有更危险）。
+  - **应用内**（`spring-boot-maven-plugin` 的 `build-info` goal + 新增 `spring-boot-starter-actuator` 依赖）：
+    父 pom 新增 `git.commit` / `git.branch` 属性（默认 `unknown`，可被 `-D` 覆盖），由 `build-info` 写入
+    `META-INF/build-info.properties` 的 `build.commitId` / `build.branch`，经 `GET /api/actuator/info`
+    回显 `{version, commitId, branch, time}`。构建期 `Dockerfile` 以 `-Dgit.commit="${GIT_COMMIT}"` 注入。
+  - **前端**（新增 `web/scripts/gen-version.mjs`，由 `npm run build` 串联在 `max build` 之后）：
+    产出 `dist/version.json`（`commit` / `commitShort` / `branch` / `buildTime` / `commitTime`），
+    `curl -s http://<host>/version.json` 即得；脚本在无 git 环境（tarball / 浅克隆）下回落 `unknown`
+    且**不阻断构建**——版本标签是诊断信息，不该成为发布失败的成因。
+    nginx 配置模板为它单列 `location = /version.json`（`no-store` + `=404`，避免缺文件时静默回退成 HTML）。
+  - **安全边界（本轮必须守住的一条）**：actuator 暴露面**按端点白名单**收窄，不做通配——
+    `management.endpoints.web.exposure.include: health,info`，且 `health.show-details: never`
+    （不返回数据源地址 / 磁盘路径 / 组件版本等明细）。两个探针端点进
+    `SecurityConfig.BUILT_IN_PERMIT_ALL`（调用方是负载均衡 / 容器编排 / 发布脚本，天然没有登录态与 token），
+    并新增契约测试 `actuatorProbes_mustNotBePermittedByWildcard` 钉死「不得退化成 `/actuator/**` 通配」：
+    通配会顺带交出 `/actuator/env`（含 `AUTH_ACCESS_TOKEN_SECRET`）、`configprops`、`beans`，
+    以及最危险的 `heapdump`——一次 GET 就能把整个堆转储下载下来。
+
 - 💬 **会话对端备注：给单聊对端起一个「我这边记得住的名字」（2026-09-29）**：
   对齐微信 / QQ 的**备注**能力。本系统没有好友 / 联系人关系（私聊是「按登录账号搜索 → 直接发起」），
   因此备注被定义为**单方面私有的「会话对端备注」**，而不是账号级昵称。
@@ -915,6 +1086,17 @@
     [`AT-DIFF-todos.md`](docs/development/AT-DIFF-todos.md) 新增 **AT-DIFF-11** 与 **GAP-10**。
 
 ### 🔄 Changed（变更）
+
+- 🧹 **回滚留底约定由「保留最近一次」改为「保留最近两份」（2026-09-29）**：
+  `docs/deployment/发版与回滚手册.md` 第六章原写「确认稳定运行几天后，只保留最近一次」，
+  但落地后一轮维护就攒到四份（其中三份是同一小时内的连续备份），且该约定本身自相矛盾：
+  只留一份时，一旦真的退回上一版、随后又发现问题还想再退或再观察一轮，第二份已经不在了。
+  现改为**保留最近两份**（当前版本 + 上一版本），并给出可逐一对照的命令：
+  `ls -1d /home/ubuntu/anttransfer.bak.* | sort | tail -n 2` 是保留项、
+  `| head -n -2` 是待删项，核对无误后再 `rm -rf`；镜像 `prev-*` 同样保留最近两个，
+  并重申**禁止** `docker image prune -a`——它会连留底镜像一起删掉，回滚手段当场失效。
+  线上已按新约定清理：删除 `anttransfer.bak.2026-09-29-0251`、`-0252`，
+  保留 `-0255`、`-1710`；现网 `/home/ubuntu/anttransfer` 与运行中的容器均未受影响。
 
 - 🎨 **品牌主色由满饱和青绿 `#00d68f` 调为同色相柔和绿 `#2fb188`**（`web/src/theme/tokens.ts`）：
   **色相 161° 不变**，只把饱和度 100% → 58%、亮度 50% → 44%——原色在白顶栏与实心按钮上偏刺眼，

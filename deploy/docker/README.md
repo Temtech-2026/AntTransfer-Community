@@ -17,7 +17,16 @@
 
 ```bash
 # 本地构建
-docker build -t anttransfer/server:latest .
+# GIT_COMMIT / GIT_BRANCH：烙进镜像标签（org.opencontainers.image.revision）与应用内
+#   build-info（GET /api/actuator/info 的 build.commitId）。.dockerignore 排除了 .git/，
+#   构建上下文里没有版本库，不传就只能回落 unknown——查到的"版本"也就失去意义。
+docker build -t anttransfer/server:latest \
+  --build-arg GIT_COMMIT="$(git rev-parse HEAD)" \
+  --build-arg GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD)" .
+
+# 不启容器即可核对镜像版本
+docker image inspect anttransfer/server:latest \
+  --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'
 
 # 运行（需外部 MySQL/Redis，变量见 docs/deployment/README.md）
 docker run --rm -p 8080:8080 \

@@ -69,6 +69,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # 版本元数据：.dockerignore 排除了 .git/，构建上下文里没有版本库，镜像内取不到提交号，
+      # 只能从这里注入。构建前先导出（建议固化进部署脚本 / CI，别依赖手打）：
+      #   export GIT_COMMIT=$(git rev-parse HEAD)
+      #   export GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+      # 未导出时回落 unknown —— 宁可显示 unknown，也不会误报成某个具体提交。
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+        GIT_BRANCH: ${GIT_BRANCH:-unknown}
     image: anttransfer/server:latest
     container_name: at-server
     restart: unless-stopped

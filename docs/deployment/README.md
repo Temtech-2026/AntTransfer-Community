@@ -71,7 +71,12 @@ java -Xms256m -Xmx512m -jar server/at-bootstrap/target/at-bootstrap-1.0.0-SNAPSH
 docker compose up -d --build        # 可选变量见 .env.example
 
 # 仅构建并运行后端镜像（外部已备好 MySQL/Redis）
-docker build -t anttransfer/server:latest .
+# GIT_COMMIT / GIT_BRANCH：把提交号烙进镜像标签与应用内 build-info，
+#   供 `docker image inspect` 与 `GET /api/actuator/info` 查询线上版本。
+#   .dockerignore 排除了 .git/，构建上下文里没有版本库，不传就只能回落 unknown。
+docker build -t anttransfer/server:latest \
+  --build-arg GIT_COMMIT="$(git rev-parse HEAD)" \
+  --build-arg GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD)" .
 docker run -d --name at-server -p 8080:8080 \
   -e SPRING_PROFILES_ACTIVE=prod \
   -e DB_URL='jdbc:mysql://<mysql-host>:3306/anttransfer?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true' \
@@ -114,10 +119,20 @@ docker run -d --name at-server -p 8080:8080 \
 3. 🗄️ 数据库连接串使用专用低权账号（不要用 `root`）；Redis 已绑定回环，
    如需密码再加 `requirepass` 并同步 `REDIS_PASSWORD`；
 4. 💾 `files-data` / `staging-data` 两个卷已挂载且纳入备份，重建容器不丢文件；
-5. 🚀 首次启动观察 Flyway 迁移是否成功，确认 `server/at-bootstrap/target` 产物为最新提交；
+5. 🚀 首次启动观察 Flyway 迁移是否成功，并**核对线上版本**（别再用镜像/文件时间戳去推断）：
+   `curl -s http://127.0.0.1:8080/api/actuator/info` 返回的 `build.commitId` 应等于本次发版提交号；
+   `docker image inspect anttransfer/server:latest --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'`
+   应给出同一个值；前端则查 `curl -s http://<host>/version.json`。
+   任一为 `unknown` 即说明构建时没有传 `GIT_COMMIT`（见发版手册 3.1 的 4.5 步）；
 6. 🌐 反向代理（Nginx/网关）透传 `/api/`（含 `/api/ws/notify` 的 WebSocket Upgrade，
    上传体积上限 ≥ 80MB），并按需开启 HTTPS 与限流；
 7. 📣 **通知链路冒烟**：跑完一次上传合并 → 创建者收到传输完成站内信（`notifyType 8`）；用外发链接核销一次 →
    创建者收到取件回执（`notifyType 9`）且**待办角标不变**（该类型计入未读、**不进待办**）；
 8. 🗄️ **保留期任务核验**：确认 `at:chat:retention-lock` 只被一个实例持有、清理日志显示按 ≥ 30 天执行。
    **多实例部署时必查该键**——否则每个实例都会各自跑一遍全量清理。
+9. 🩺 **探针暴露面核对**（对外放行前必做）：`GET /api/actuator/info`、`GET /api/actuator/health`
+   应为 **200**（负载均衡 / 容器编排 / 发布脚本在无凭证上下文调用它们），
+   而 `/api/actuator/env`、`/api/actuator/configprops`、`/api/actuator/beans`、
+   `/api/actuator/heapdump` 必须为 **401**。若这些通得过，说明有人把
+   `management.endpoints.web.exposure.include` 改成了 `*`，或把免登录白名单写成了 `/actuator/**`
+   ——`heapdump` 是完整堆转储下载，一次 GET 即可取走内存中的令牌与用户数据。
