@@ -44,6 +44,12 @@ import java.time.LocalDateTime;
  * @param targetAvatarUrl  会话头像：单聊=对端头像<b>对外地址</b>（可能为 null=对端没设过头像）；
  *                         群聊<b>恒为 null</b>——口径与 {@code targetName} 逐字一致：群名都还没取，
  *                         更谈不上群头像，前端一律用会话名首字符画兜底圆
+ * @param peerAlias        <b>我给这个对端设的备注</b>（见 {@code sys_chat_peer_alias}）；
+ *                         {@code null}=我没给他设过备注。它<b>不覆盖</b> {@code targetName}：
+ *                         展示优先级由前端拼（备注 &gt; targetName &gt; 「用户 #id」），
+ *                         这样「张伟（财务）」与「张伟」两个名字都在手边——资料卡要显示真名，
+ *                         会话列表要显示备注，合成一个字段就再也分不开了。
+ *                         群聊<b>恒为 null</b>：备注是「人对他人的私有称呼」，群名不是同一个东西
  * @param lastMessageId    最后一条消息 ID（前端据此去重实时帧 / 作翻页游标）
  * @param lastContent      最后一条消息正文（列表摘要，前端自行截断）
  * @param lastMessageType  最后一条消息体类型（见 {@code MessageType}，前端据此渲染「[文件]」等摘要）
@@ -65,6 +71,7 @@ public record ConversationVO(
         Long targetId,
         String targetName,
         String targetAvatarUrl,
+        String peerAlias,
         @JsonSerialize(using = ToStringSerializer.class)
         Long lastMessageId,
         String lastContent,

@@ -45,6 +45,13 @@ IDE 提示（任选其一）：
 > **GAP-08 已于 2026-09-29 关闭**（站内轻 IM 的 @ 提及 + 消息保留 ≥ 30 天两项全量收口，
 > 含 `sql/V18__chat_mention_and_retention.sql`；详见文末该条），本节剩余未关闭项为
 > GAP-04 ~ GAP-07 / GAP-09 / GAP-10。
+>
+> **RACE-01** 为 2026-09-29 修复「会话对端备注」并发缺陷（`ChatService#setPeerAlias`，真 MySQL
+> 压测暴露）时，对全仓 `catch (DuplicateKeyException` 做同形扫描新识别的登记项。它**既不是口径差异、
+> 也不是功能缺口**，而是**代码内部的自相矛盾**：注释承诺「撞键后回查既有行即收敛」，
+> 而该承诺在 MySQL 默认 REPEATABLE READ 下不成立。登记在文末「🐞 并发正确性登记（RACE-01）」，
+> 同为不落 `TODO` 标记的登记项（grep 计数仍为 3 处）。
+> 同日完成排查与修复（4 处，11 个真库并发用例转绿），详见文末该节。
 
 > 发布门禁建议：进入版本收尾前，将「TODO[AT-DIFF- 为 0」纳入 checklist
 > （对应 docs/deployment/README.md 上线清单），防止带未裁决口径发版。
@@ -525,3 +532,61 @@ IDE 提示（任选其一）：
   ④ 同步 §1 前缀表与 PRD §4 / §4.1 的表述。
 - **触发时机**：个人中心 / 用户体验完善期；建议与「群成员展示名口径」相关需求一并做
   （两者共用同一份展示名回落规则，分两次做必然出现两套口径）。
+
+---
+
+## 🐞 并发正确性登记（RACE-01）
+
+> **来源**：2026-09-29 修复「会话对端备注」并发缺陷时，对全仓 `catch (DuplicateKeyException` 做的
+> 一次同形扫描。与 AT-DIFF / GAP 的区别：AT-DIFF 记「外部计划书 vs 已冻结契约的口径差异」，
+> GAP 记「PRD §4 要求的动作代码里还没有」；本节记的是**代码内部的自相矛盾**——注释承诺的收敛路径
+> 在 MySQL 默认隔离级别下不成立。故同样不落 `TODO[AT-DIFF-]` 标记，只在本文档登记。
+>
+> **状态**：✅ **已于 2026-09-29 关闭**——4 处全部修复，11 个真库并发用例转绿
+> （`ChatSendIdempotencyE2eIntegrationTest` 5 个 + `FileContentRaceE2eIntegrationTest` 6 个）。
+> 本节保留为「已识别 → 已验证 → 已修复」的完整记录，供后续加固时作判例。
+
+### RACE-01（已关闭）：「撞键后回查既有行」在 REPEATABLE READ 下读不到对手刚提交的行
+
+- **机理**：`insert` **之前**已有一条 `select`（幂等前置查询），本事务的快照即建立于此刻；
+  而对手的事务此时尚未提交。撞键后再用**同一个快照**回查，读到的仍是「没有这一行」，
+  于是回查返回 `null`，重复键被原样抛给用户——而「连点保存 / 弱网重发 / 双端同发」
+  恰恰就是这条兜底路径存在的唯一理由。MySQL 下单条语句失败不会中止事务（这一点各处注释写对了），
+  漏掉的是**快照可见性**这一半。
+- **与「会话对端备注」那处的区别**：备注最终改用**当前读**收敛（`UPDATE ... WHERE`，并按其影响行数
+  判定真伪）。下列 4 处**不能照搬**该处的另一半做法（去掉 `@Transactional`）——
+  它们的事务还承载「写扩散 N 行」「文件行 + 引用计数」的原子性，一旦拆开就会出现半截数据。
+- **清单与落地修法**（4 处同形：显式事务 + `insert` 前已查询 + `catch` 内回查为空则抛）：
+
+| # | 位置 | 事务 | insert 前的前置查询 | 落地修法 |
+| --- | --- | --- | --- | --- |
+| 1 | `at-collaboration` `ChatService#send` | `@Transactional` | `findExisting`（幂等前置） | 回查改走**当前读**：新增 `findExistingForShare`（`limit 1 for share`） |
+| 2 | `at-file` `ChatAttachmentService#create` | `@Transactional(rollbackFor)` | `findBySenderAndClientMsgKey` | 回读改走**当前读**：新增 `findBySenderAndClientMsgKeyForShare` |
+| 3 | `at-file` `FileNodeService#registerStoredContent` | `@Transactional(rollbackFor)` | `findByContent` | 回查改走**只读独立事务**：`readFreshFileObject`（`REQUIRES_NEW` + `readOnly`） |
+| 4 | `at-file` `FileNodeService#acquireContentReference` | `@Transactional(rollbackFor)` | `findByContent` | 同 3（共用 `readFreshFileObject`） |
+
+- **为什么 1 / 2 与 3 / 4 修法不同（修复过程中踩到的第二个坑）**：最初 4 处统一改成当前读
+  （`for share`），#1 / #2 转绿，#3 / #4 却变成**死锁**——真库实测
+  `Deadlock found when trying to get lock`，卡在 `update sys_file set ref_count = ref_count + 1`。
+  根因是**锁升级**：`for share` 在对手行上留下共享锁，而 #3 / #4 的撞键分支**之后还要对同一行
+  做 `ref_count + 1`（排他锁）**，多个并发输家同时升级即互相等待。改用 `for update` 不解决问题
+  （同一枚共享锁照样要升级），把回查挪进 `REQUIRES_NEW` 只读事务才是出路——**不持锁**，
+  既拿到新快照、又不与各自的计数写入纠缠，且只读不改数据，不破坏调用方的原子性
+  （`FileVersionService#createVersion` 就处在更大的写事务里）。反过来看，`for share` 之所以在
+  #1 / #2 成立，正是因为那两处撞键后**只读不写**（返回既有 VO），不存在升级。
+  > 一般规律：**撞键兜底若在同一事务内还要写这一行，就不能用任何加锁读**，只能换新事务拿新快照；
+  > 若只读，`for share` 足够。
+- **已核对、不属此列**（同样扫到但写法本就正确，勿在后续加固中误改）：
+  - `TagService#create`（118）撞键**直接报同名冲突**，本就不回查——用户要的就是这个冲突；
+  - `ShareLinkService`（426）/ `TransferTaskService`（384）撞的是随机 token / 任务单号，
+  走**换号重试**，不依赖「回查能看到对手的行」。
+- **影响**：**非数据损坏**——幂等键真实存在于库里，客户端重试第二次会命中前置查询而成功；
+  但会让「弱网重发 / 双端同发」偶发失败，与 4 处注释里承诺的幂等语义直接矛盾
+  （其中 `ChatService#send` 的注释原话是「可安全回查既有消息并返回」）。
+- **验证方式（已落地）**：两个「真 MySQL（Testcontainers）+ 真 Redis」的端到端用例类，
+  断言「并发下无任何请求失败且终态唯一」，而不是只断言「抛出了重复键」：
+  - `ChatSendIdempotencyE2eIntegrationTest`：16 线程同 `clientMsgId`（3 轮）断言无失败 + 恰好 2 行；
+    另含**隔离级别机理探针**（两条真实连接证明 RR 下普通回查看不到快照之后提交的行、而 `for share`
+    看得到）与**顺序重发对照组**（说明该缺陷为何长期不可见）；
+  - `FileContentRaceE2eIntegrationTest`：秒传登记 / 内容引用 / 附件授权各 8 线程 × 2 轮，
+    断言无失败 + `sys_file` 一行 + `ref_count` 如实累加 + `sys_chat_attachment` 一行。

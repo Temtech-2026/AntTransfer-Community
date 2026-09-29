@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildFileCardContent, parseFileCardContent } from './fileCard';
+import {
+  buildFileCardContent,
+  fileCardDisplayText,
+  parseFileCardContent,
+} from './fileCard';
 
 describe('buildFileCardContent', () => {
   it('不带条目 ID 时就是「名字（大小）」，与旧口径逐字节一致', () => {
@@ -131,5 +135,48 @@ describe('parseFileCardContent', () => {
     expect(parseFileCardContent('a.pdf（1 KB）\n#foo:1')).toBeNull();
     expect(parseFileCardContent('a.pdf（1 KB）\n#att:abc')).toBeNull();
     expect(parseFileCardContent('a.pdf（1 KB）\n#att:')).toBeNull();
+  });
+});
+
+describe('fileCardDisplayText', () => {
+  it('剥掉 #file: 与 #att: 两条尾注，只剩展示用的「名字（尺寸）」', () => {
+    expect(
+      fileCardDisplayText(
+        '季度报告.pdf（2.4 MB）\n#file:2102453724332388354\n#att:2104826682342342657',
+      ),
+    ).toBe('季度报告.pdf（2.4 MB）');
+  });
+
+  it('只有 #file: 的历史快照同样剥得掉', () => {
+    expect(
+      fileCardDisplayText('季度报告.pdf（2.4 MB）\n#file:1949000000000000001'),
+    ).toBe('季度报告.pdf（2.4 MB）');
+  });
+
+  it('已经不含尾注的正文是幂等的（再剥一次不变）', () => {
+    expect(fileCardDisplayText('季度报告.pdf（2.4 MB）')).toBe(
+      '季度报告.pdf（2.4 MB）',
+    );
+  });
+
+  it('不像卡片的正文原样返回，不猜着删用户写下的 #file:', () => {
+    expect(fileCardDisplayText('这段正文里提到了 #file:1')).toBe(
+      '这段正文里提到了 #file:1',
+    );
+    // 首行没有尺寸括号：整段按普通文本渲染，尾注行也不能当机器标记处理
+    expect(fileCardDisplayText('讨论一下\n#file:1')).toBe('讨论一下\n#file:1');
+    // 尾注 ID 不是纯数字（半截标记 / 用户写的伪标记）时同样不动
+    expect(fileCardDisplayText('a.pdf（1 KB）\n#file:abc')).toBe(
+      'a.pdf（1 KB）\n#file:abc',
+    );
+    expect(fileCardDisplayText('a.pdf（1 KB）\n#att:')).toBe(
+      'a.pdf（1 KB）\n#att:',
+    );
+  });
+
+  it('空值给空串，调用方可以直接画进引用块', () => {
+    expect(fileCardDisplayText(null)).toBe('');
+    expect(fileCardDisplayText(undefined)).toBe('');
+    expect(fileCardDisplayText('')).toBe('');
   });
 });

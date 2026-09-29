@@ -17,8 +17,10 @@ package com.anttransfer.collaboration.service;
 
 import com.anttransfer.collaboration.config.NotifyProperties;
 import com.anttransfer.collaboration.model.dto.ChatSendDTO;
+import com.anttransfer.collaboration.model.entity.ChatPeerAlias;
 import com.anttransfer.collaboration.model.entity.NotifyMessage;
 import com.anttransfer.collaboration.model.entity.SysGroup;
+import com.anttransfer.collaboration.model.vo.ChatPeerVO;
 import com.anttransfer.collaboration.model.vo.ChatPresenceVO;
 import com.anttransfer.collaboration.model.vo.ChatReaderVO;
 import com.anttransfer.collaboration.model.vo.ChatRecallVO;
@@ -26,12 +28,14 @@ import com.anttransfer.collaboration.model.vo.ChatTargetVO;
 import com.anttransfer.collaboration.model.vo.ChatTypingVO;
 import com.anttransfer.collaboration.model.vo.ConversationVO;
 import com.anttransfer.collaboration.model.vo.NotifyMessageVO;
+import com.anttransfer.collaboration.repository.ChatPeerAliasMapper;
 import com.anttransfer.collaboration.repository.ChatReadRow;
 import com.anttransfer.collaboration.repository.ConversationSummary;
 import com.anttransfer.collaboration.repository.GroupMemberMapper;
 import com.anttransfer.collaboration.repository.NotifyMessageMapper;
 import com.anttransfer.collaboration.repository.SysGroupMapper;
 import com.anttransfer.collaboration.support.AfterCommitExecutor;
+import com.anttransfer.collaboration.support.ChatFileCardText;
 import com.anttransfer.collaboration.ws.WsBroadcaster;
 import com.anttransfer.collaboration.ws.WsFrame;
 import com.anttransfer.collaboration.ws.WsPresenceService;
@@ -123,6 +127,8 @@ public class ChatService {
     private final NotifyMessageMapper notifyMessageMapper;
     private final GroupMemberMapper groupMemberMapper;
     private final SysGroupMapper sysGroupMapper;
+    /** 会话对端备注（{@code sys_chat_peer_alias}）：只影响「我看到的对方名字」，不碰账号昵称。 */
+    private final ChatPeerAliasMapper chatPeerAliasMapper;
     private final UserLookupPort userLookupPort;
     private final WsBroadcaster wsBroadcaster;
     private final WsPresenceService wsPresenceService;
@@ -133,6 +139,7 @@ public class ChatService {
     public ChatService(NotifyMessageMapper notifyMessageMapper,
                        GroupMemberMapper groupMemberMapper,
                        SysGroupMapper sysGroupMapper,
+                       ChatPeerAliasMapper chatPeerAliasMapper,
                        UserLookupPort userLookupPort,
                        WsBroadcaster wsBroadcaster,
                        WsPresenceService wsPresenceService,
@@ -142,6 +149,7 @@ public class ChatService {
         this.notifyMessageMapper = notifyMessageMapper;
         this.groupMemberMapper = groupMemberMapper;
         this.sysGroupMapper = sysGroupMapper;
+        this.chatPeerAliasMapper = chatPeerAliasMapper;
         this.userLookupPort = userLookupPort;
         this.wsBroadcaster = wsBroadcaster;
         this.wsPresenceService = wsPresenceService;
@@ -199,8 +207,10 @@ public class ChatService {
             }
         } catch (DuplicateKeyException e) {
             // 并发重试：唯一索引 (sender, recipient, client_msg_id) 拦下第二条。
-            // MySQL 下单语句失败不中止事务，可安全回查既有消息并返回。
-            NotifyMessage replay = findExisting(senderId, scope, dto.targetId(), dto.clientMsgId());
+            // MySQL 下单语句失败不中止事务——但**回查必须走当前读**：上面那次幂等前置查询已把
+            // 本事务的快照钉在「对手提交之前」，沿用同一快照回查会稳定读到「没有这一行」，
+            // 兜底因此形同虚设，重复键被原样抛给用户（弱网重发 / 双端同发正是它存在的唯一理由）。
+            NotifyMessage replay = findExistingForShare(senderId, scope, dto.targetId(), dto.clientMsgId());
             if (replay != null) {
                 log.info("会话消息并发重复发送，已按幂等返回既有消息：sender={}, clientMsgId={}",
                         senderId, dto.clientMsgId());
@@ -426,6 +436,19 @@ public class ChatService {
                 ? Map.of()
                 : userLookupPort.findContacts(peerIds);
 
+        // 「我给对端起的名字」与 contacts 共用同一批 peerIds、一次批量取回：逐条查会变成 N+1。
+        // 只有单聊入这趟查询——群聊的 target 是群 ID，不进「人对人」的备注语义。
+        // 逻辑删除由 Wrapper 自动带上（deleted=0），所以取消过备注的对端不会命中。
+        Map<Long, String> peerAliases = peerIds.isEmpty()
+                ? Map.of()
+                : chatPeerAliasMapper.selectList(Wrappers.lambdaQuery(ChatPeerAlias.class)
+                        .eq(ChatPeerAlias::getOwnerUserId, userId)
+                        .in(ChatPeerAlias::getPeerUserId, peerIds))
+                .stream()
+                .filter(row -> row.getAlias() != null && !row.getAlias().isBlank())
+                .collect(Collectors.toMap(ChatPeerAlias::getPeerUserId,
+                        ChatPeerAlias::getAlias, (first, ignored) -> first));
+
         Set<Long> groupIds = summaries.stream()
                 .filter(summary -> !isPrivateChat(summary.getChatScope()))
                 .map(ConversationSummary::getChatTargetId)
@@ -453,6 +476,7 @@ public class ChatService {
                     summary.getChatTargetId(),
                     resolveTargetName(summary, contacts, groupNames),
                     resolveTargetAvatar(summary, contacts),
+                    peerAliases.get(summary.getChatTargetId()),
                     summary.getLastMessageId(),
                     last.getContent(),
                     last.getMessageType(),
@@ -463,6 +487,114 @@ public class ChatService {
                     summary.getMentionUnreadCount() == null ? 0L : summary.getMentionUnreadCount()));
         }
         return conversations;
+    }
+
+    /**
+     * 设置 / 修改「我给某个对端起的名字」（会话对端备注）。
+     *
+     * <p><b>为什么不落在账号上：</b>备注是 {@code (我, 他)} 这条关系的属性，不是账号属性。
+     * 写进 {@code sys_user} 就成了「我改备注 → 所有人都看到新名字」，那是在改别人的数据；
+     * 而一人对多人的备注本就塞不进账号表的一个列。所以本表只存 owner 视角的行，
+     * 对端既看不到、也无从查询。</p>
+     *
+     * <p><b>为什么不校验「必须已有会话」：</b>系统里没有好友关系，私聊是「按账号搜索 → 直接发起」
+     * （见 {@link #resolvePrivateTarget}）。要求先聊过才能备注，会让「先加个备注再去聊」失败，
+     * 而备注本身并不依赖任何会话状态。对端校验只回答一个问题：这个账号现在可用吗。</p>
+     *
+     * <p><b>并发与幂等：</b>唯一键 {@code uk_owner_peer} 拦下重复行，于是「先查 → 复活 / 新建」
+     * 在并发首次设置时可能撞键；撞了就按 {@code (我, 他)} 直接 UPDATE 收敛，一次即定，
+     * 对外仍表现为「设成这个值」。此处刻意不复用上面那次查询的结果：REPEATABLE READ 下
+     * 回查读的是同一个旧快照，看不到对手刚提交的行（见
+     * {@code ChatPeerAliasMapper#reviveByOwnerPeer}）。重复提交同一个备注名幂等，不产生新行
+     * （取消过的行走复活路径，见 {@code ChatPeerAliasMapper#revive}）。</p>
+     *
+     * @param userId 当前登录人（备注归属者，取自登录态，不从入参取）
+     * @param peerId 被备注的用户 ID
+     * @param alias  备注名（请求体已校验非空；此处再 trim，首尾空格不该被存进展示名）
+     * @return 本次操作后的状态
+     */
+    // 刻意不套 @Transactional：本方法只有单条写语句，而并发「insert 撞键 → 改走更新」若共处一个
+    // 显式事务，多个请求会同时持有重复键放出的共享锁再抢写锁，MySQL 直接判死锁牺牲其中一个
+    // （真 MySQL 并发用例曾复现 DeadlockLoserDataAccessException）。每条语句各自成事务后，
+    // 共享锁随语句结束即释放，剩余冲突退化成同一行的写锁排队。终态的正确性由唯一键 +
+    // 条件更新保证，不依赖跨语句事务。
+    public ChatPeerVO setPeerAlias(Long userId, Long peerId, String alias) {
+        String trimmed = alias == null ? "" : alias.trim();
+        if (trimmed.isEmpty()) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "备注不能为空");
+        }
+        requireAliasTarget(userId, peerId);
+
+        ChatPeerAlias existing = chatPeerAliasMapper.selectAny(userId, peerId);
+        if (existing != null) {
+            // 可能是一行「取消过」（deleted=1）的旧记录：复活它而不是插新行，否则必撞唯一键
+            chatPeerAliasMapper.revive(existing.getId(), trimmed, userId);
+            return new ChatPeerVO(peerId, trimmed);
+        }
+
+        ChatPeerAlias row = new ChatPeerAlias();
+        row.setOwnerUserId(userId);
+        row.setPeerUserId(peerId);
+        row.setAlias(trimmed);
+        row.setCreateBy(userId);
+        row.setUpdateBy(userId);
+        try {
+            chatPeerAliasMapper.insert(row);
+        } catch (DuplicateKeyException e) {
+            // 并发首次设置（连点保存 / 弱网重发）：唯一键拦下了第二行，改走同一条更新路径收敛。
+            // 这里只能按 (owner, peer) 直接 UPDATE，不能「回查 id 再 revive」：MySQL 默认隔离级别
+            // 是 REPEATABLE READ，本事务的快照建立于上面那次 selectAny（当时对手还没提交），
+            // 撞键后用同一个快照回查，读到的仍是「没有这一行」——重复键就原样抛给用户了
+            // （真 MySQL 并发用例 ChatPeerAliasE2eIntegrationTest 曾复现）。UPDATE 是当前读，
+            // 能看到对手已提交的那一行。详见 ChatPeerAliasMapper#reviveByOwnerPeer。
+            if (chatPeerAliasMapper.reviveByOwnerPeer(userId, peerId, trimmed, userId) == 0) {
+                // 影响 0 行：对手最终回滚了，冲突另有原因——如实上抛，不假装成功
+                throw e;
+            }
+        }
+        return new ChatPeerVO(peerId, trimmed);
+    }
+
+    /**
+     * 取消备注——回到「看到对方的真实昵称」。
+     *
+     * <p><b>为什么是逻辑删除而不是真删：</b>与公共字段口径一致；且该行随后会被
+     * {@link #setPeerAlias} 复活（唯一键不含 {@code deleted}，理由见 V19 迁移注释）。
+     * <b>幂等</b>：本来就没设备注时同样返回成功——重试、多端并发取消都不该报错，
+     * 因为「取消」的期望终态已经达成。</p>
+     *
+     * @param userId 当前登录人
+     * @param peerId 被备注的用户 ID
+     * @return 本次操作后的状态（{@code alias} 恒为 null）
+     */
+    @Transactional
+    public ChatPeerVO clearPeerAlias(Long userId, Long peerId) {
+        if (peerId == null) {
+            throw new BusinessException(ErrorCode.PARAM_MISSING, "缺少对端用户 ID");
+        }
+        chatPeerAliasMapper.delete(Wrappers.lambdaQuery(ChatPeerAlias.class)
+                .eq(ChatPeerAlias::getOwnerUserId, userId)
+                .eq(ChatPeerAlias::getPeerUserId, peerId));
+        return new ChatPeerVO(peerId, null);
+    }
+
+    /**
+     * 校验「被备注的人」是一个合法对端。
+     *
+     * <p>与发消息的目标校验<b>同码</b>（{@code 1013}）：给自己设备注没有意义（自己不会出现在
+     * 自己的会话列表里），给不存在 / 已注销 / 已停用的账号设备注，则会在会话列表里留下一条
+     * 永远点不开的名字。两者都属于「会话目标无效」，合用一个码可免掉前端为同一类问题写两套分支。</p>
+     */
+    private void requireAliasTarget(Long userId, Long peerId) {
+        if (peerId == null) {
+            throw new BusinessException(ErrorCode.PARAM_MISSING, "缺少对端用户 ID");
+        }
+        if (peerId.equals(userId)) {
+            throw new BusinessException(ErrorCode.CHAT_TARGET_INVALID, "不能给自己设备注");
+        }
+        if (!userLookupPort.existsActiveUser(peerId)) {
+            throw new BusinessException(ErrorCode.CHAT_TARGET_INVALID, "被备注的账号不存在或不可用");
+        }
     }
 
     /* ------------------------------------------------------------------ 内部实现 */
@@ -896,23 +1028,30 @@ public class ChatService {
         }
         row.setQuoteClientMsgId(quoted.getClientMsgId());
         row.setQuoteSenderUserId(quoted.getSenderUserId());
-        row.setQuoteContent(snapshot(quoted.getContent()));
+        row.setQuoteContent(snapshot(quoted.getMessageType(), quoted.getContent()));
     }
 
     /**
-     * 截取引用正文快照（按<b>码点</b>而不是 {@code char}）。
+     * 截取引用正文快照。
      *
-     * <p>直接 {@code substring(0, 200)} 会把 emoji 之类的代理对从中间切开，留下一个孤立代理——
-     * 存入 utf8mb4 列时可能变成乱码或直接写入失败；本系统消息正文允许表情，故按码点截。</p>
+     * <p><b>先剥尾注、再截断：</b>文件消息的正文末尾挂着 {@code #file:} / {@code #att:} 尾注
+     * （口径见 {@link ChatFileCardText}），那是给卡片点击用的机器可读信息。快照是要直接
+     * 画进引用块的文本，剥晚了不只是把这串雪花 ID 露给用户，还会白吃掉 200 码点的配额，
+     * 把真正的正文挤出快照。</p>
+     *
+     * <p>截断按<b>码点</b>而不是 {@code char}：直接 {@code substring(0, 200)} 会把 emoji 之类的
+     * 代理对从中间切开，留下一个孤立代理——存入 utf8mb4 列时可能变成乱码或直接写入失败；
+     * 本系统消息正文允许表情，故按码点截。</p>
      */
-    private static String snapshot(String content) {
-        if (content == null) {
+    private static String snapshot(Integer messageType, String content) {
+        String display = ChatFileCardText.displayText(messageType, content);
+        if (display == null) {
             return "";
         }
-        if (content.codePointCount(0, content.length()) <= QUOTE_SNAPSHOT_MAX) {
-            return content;
+        if (display.codePointCount(0, display.length()) <= QUOTE_SNAPSHOT_MAX) {
+            return display;
         }
-        return content.substring(0, content.offsetByCodePoints(0, QUOTE_SNAPSHOT_MAX));
+        return display.substring(0, display.offsetByCodePoints(0, QUOTE_SNAPSHOT_MAX));
     }
 
     /**
@@ -939,6 +1078,33 @@ public class ChatService {
                 .eq(NotifyMessage::getChatTargetId, targetId)
                 .eq(NotifyMessage::getClientMsgId, clientMsgId)
                 .last("limit 1");
+        return notifyMessageMapper.selectOne(wrapper);
+    }
+
+    /**
+     * 幂等回查的<b>当前读</b>版本——仅供并发撞键分支使用。
+     *
+     * <p><b>为什么不能复用 {@link #findExisting}：</b>普通 {@code select} 是一致性读，其快照在
+     * {@code insert} 之前那次前置幂等查询时就已建立，而对手的事务是在那之后才提交的。撞键后再用
+     * 同一快照回查，读到的仍然是「没有这一行」，兜底分支于是永远走不通。
+     * {@code for share} 是当前读，不受旧快照约束（真库佐证见
+     * {@code ChatSendIdempotencyE2eIntegrationTest} 的隔离级别机理探针）。</p>
+     *
+     * <p><b>为什么是 {@code for share} 而不是 {@code for update}：</b>撞键的 {@code insert} 本身
+     * 已在冲突行上留下共享锁，{@code for update} 会把它升级为排他锁；多个并发重发方同时升级
+     * 就会互相等待，把「重发」问题变成死锁问题。共享锁之间相容，且本查询只读不写。</p>
+     *
+     * <p>查询维度与 {@link #findExisting} 保持一致（不含 {@code recipient}）：一条逻辑消息的多行
+     * 共享同一组 {@code (sender, scope, target, clientMsgId)}，任取一行都代表它。</p>
+     */
+    private NotifyMessage findExistingForShare(Long senderId, int scope, Long targetId, String clientMsgId) {
+        LambdaQueryWrapper<NotifyMessage> wrapper = Wrappers.lambdaQuery(NotifyMessage.class)
+                .eq(NotifyMessage::getSenderUserId, senderId)
+                .eq(NotifyMessage::getChatScope, scope)
+                .eq(NotifyMessage::getChatTargetId, targetId)
+                .eq(NotifyMessage::getClientMsgId, clientMsgId)
+                // 「单行 + 当前读」必须写在同一个 last 里：拆成两段会生成非法 SQL
+                .last("limit 1 for share");
         return notifyMessageMapper.selectOne(wrapper);
     }
 

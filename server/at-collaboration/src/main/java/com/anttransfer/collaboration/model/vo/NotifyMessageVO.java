@@ -157,7 +157,7 @@ public record NotifyMessageVO(
                 message.getBizId(),
                 message.getReadStatus(),
                 message.getReadTime(),
-                message.isMentioned(),
+                message.isRecipientMentioned(),
                 message.getRecallStatus(),
                 message.getRecallTime(),
                 message.getQuoteClientMsgId(),

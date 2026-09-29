@@ -42,6 +42,19 @@ export const CHAT_ENDPOINTS = {
   resolveTarget: '/api/v1/chat/targets/resolve',
 
   /**
+   * 对端备注（`PUT` 设置 / 修改，`DELETE` 取消）：同一路径两种方法。
+   *
+   * <p><b>为什么备注挂在 `/contacts/{peerId}` 之下而不是账号路径上：</b>备注是
+   * {@code (我, 他)} 这一行的私有属性，不是账号昵称——它只改变「我看到的他叫什么」，
+   * 对方与其他任何人的界面都不受影响，也不写 {@code sys_user}。
+   * 挂在账号路径（如 `/users/{id}/alias`）会让人误以为改的是那个账号。</p>
+   *
+   * <p><b>为什么是函数而不是常量字符串：</b>同 {@link CHAT_ENDPOINTS.group}——
+   * 路径里带 19 位雪花用户 ID，一旦经 `Number()` 归一就会备注到另一个人头上。</p>
+   */
+  peerAlias: (peerId: string): string => `/api/v1/chat/contacts/${peerId}/alias`,
+
+  /**
    * 订阅对端在线状态，并同时取回其当前值（单聊）。
    *
    * <p>「订阅」与「读取」合并成一次往返：打开会话时必须先拿到当前状态才能画点，

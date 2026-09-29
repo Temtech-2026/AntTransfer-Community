@@ -26,6 +26,7 @@ describe('CHAT_ENDPOINTS', () => {
       CHAT_ENDPOINTS.groupMembers('1'),
       CHAT_ENDPOINTS.groupMember('1', '2'),
       CHAT_ENDPOINTS.groupQuit('1'),
+      CHAT_ENDPOINTS.peerAlias('1'),
     );
     for (const path of paths) {
       expect(path.startsWith('/api/v1/chat/')).toBe(true);
@@ -64,6 +65,20 @@ describe('CHAT_ENDPOINTS', () => {
 
   it('单聊目标解析是独立端点（非管理员发起会话的唯一入口）', () => {
     expect(CHAT_ENDPOINTS.resolveTarget).toBe('/api/v1/chat/targets/resolve');
+  });
+
+  it('备注挂在 /contacts/{peerId} 之下：备注是「我对他」的私有属性，不是账号名', () => {
+    expect(CHAT_ENDPOINTS.peerAlias('202')).toBe(
+      '/api/v1/chat/contacts/202/alias',
+    );
+  });
+
+  it('备注端点里的用户 ID 原样拼接：统一成一个数就备注到另一个人头上了', () => {
+    const snowflake = '1949000000000000001';
+    expect(CHAT_ENDPOINTS.peerAlias(snowflake)).toBe(
+      `/api/v1/chat/contacts/${snowflake}/alias`,
+    );
+    expect(CHAT_ENDPOINTS.peerAlias(snowflake)).not.toContain('e+');
   });
 });
 

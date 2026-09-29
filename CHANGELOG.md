@@ -7,6 +7,71 @@
 
 ### ✨ Added（新增）
 
+- 💬 **会话对端备注：给单聊对端起一个「我这边记得住的名字」（2026-09-29）**：
+  对齐微信 / QQ 的**备注**能力。本系统没有好友 / 联系人关系（私聊是「按登录账号搜索 → 直接发起」），
+  因此备注被定义为**单方面私有的「会话对端备注」**，而不是账号级昵称。
+  新增 `sql/V19__chat_peer_alias.sql`（`sys_chat_peer_alias`：`owner_user_id` / `peer_user_id` / `alias`，
+  唯一键 `uk_owner_peer`）。
+  - **语义边界（本轮最重要的一条）**：备注是 `(我, 他)` 这一行的**私有属性**，
+    **只影响我看到的展示名**——不写 `sys_user`、不广播、对方与其他任何人的界面都不变。
+    因此接口挂在 `/api/v1/chat/contacts/{peerId}/alias` 而不是账号路径上：
+    挂 `/users/{id}/alias` 会让人读成「改那个账号」。
+    展示链统一裁决为 **备注 → 真实昵称 → 「用户 #id」**，会话列表 VO 新增 `peerAlias` 而
+    **保留** `targetName`（昵称仍是对方真实名，资料卡要**并列**显示两者，用户才能确认「备注没改到对方」）。
+  - **接口**：`PUT /api/v1/chat/contacts/{peerId}/alias`（设置 / 修改，入参 `{alias}`，裁空白、上限 32 字）、
+    `DELETE /api/v1/chat/contacts/{peerId}/alias`（取消，**幂等**：本就没设备注同样回成功）。
+    两者回 `ChatPeerVO{peerId, alias}`（操作后的状态，前端据此就地生效、**不必重拉会话列表**）、
+    带 `@RateLimit`（60s / 30 次）、**不挂权限点**——归属者恒为登录人，不存在「替别人设备注」的入参面。
+    「目标是自己 / 不存在 / 已停用」**统一回 1013**（与 `/targets/resolve` 同一把尺子，
+    不区分「不存在 / 已注销」，以免沦为账号存在性枚举器）。空白回 2002、超长回 2001。
+  - **两个数据层坑**：① 唯一键 `uk_owner_peer` **不含 `deleted`**，而取消备注是逻辑删除 →
+    取消后再设必须**复活旧行**而不是插入新行（`selectAny` 绕过逻辑删除回查 + `revive`）；
+    ② 取消走**逻辑删除**（沿用全库 `deleted` 口径：业务数据只置标记、不物理抹除，
+    「他什么时候被我备注过、又什么时候取消」是可追溯的事实），与 ① 合起来才解释得通
+    「为什么必须有复活这条路，而不是删干净重插」。
+  - **两条并发口径（真 MySQL 压出来的，单测 mock 看不出来）**：
+    ① **撞键收敛必须用「当前读」，不能回查**——并发首次设置时，输家的事务快照建立在赢家提交之前
+    （MySQL 默认 REPEATABLE READ），撞键后再 `selectAny` 回查读到的仍是「没有这一行」，
+    重复键会被原样抛给用户（连点保存 / 弱网重发即可复现）。故撞键兜底改走
+    `ChatPeerAliasMapper#reviveByOwnerPeer`（`UPDATE ... WHERE (owner, peer)`，当前读），
+    并以其影响行数判定：影响 0 行说明该行真的不存在（对手回滚了），如实上抛而不假装成功。
+    这条路径**在任何隔离级别下都成立**，不依赖「回查能看到新行」这个假设。
+    ② **`setPeerAlias` 刻意不套 `@Transactional`**——`insert 撞键 → 改走更新` 若共处一个显式事务，
+    多个请求会同时持有重复键放出的**共享锁**再抢写锁，MySQL 直接判死锁牺牲其一
+    （实测 `DeadlockLoserDataAccessException`，16 线程场景必现）。本方法只有单条写语句，
+    每条语句各自成事务后共享锁随语句结束即释放，冲突退化为同一行的写锁排队；
+    终态正确性由唯一键 + 条件更新保证，**不依赖跨语句事务**。若将来要求写方法统一带事务，
+    须改为「事务内执行 + 外层捕获死锁重试」，不能直接加回注解。
+  - **一次批量取，不做 N+1**：会话列表按 `owner_user_id = 登录人 AND peer_user_id IN (本页对端)`
+    一次取回备注再回填，而不是每个会话单查一次（列表上限 50 → 原本是 50 次往返）。
+  - **前端**：新增 `services/chat/peerAlias.ts`（覆盖表 + `applyPeerAliasOverride`）与 `hooks/usePeerAlias`，
+    对齐既有头像覆盖表的 `useSyncExternalStore` 模式 —— 保存后备注**立刻生效**，
+    无需为改几个字重拉列表（否则列表会闪烁、分页与筛选状态还得一并保住）。
+    新增 `components/ChatPeerPanel`（对端资料：只读真实昵称 + 可写备注 + 「备注只对你可见」的界面口径说明），
+    由 `/chat` 页标题栏与 `ChatDrawer` 标题栏的「备注」入口打开（与群设置入口互为镜像，**群聊不出现**）。
+    `conversationTitle` 是展示链的**唯一裁决处**：列表、详情标题、消息气泡署名、头像首字全都经它取值，
+    因此不会出现「列表显示备注、详情显示昵称」的分裂。
+    登出 / 改密时清空覆盖表（备注是私有数据，残留会把上一个人的称呼展示给下一个人）。
+  - **回归证据**：后端 `at-collaboration` 新增 `ChatPeerAliasTest`（9 例：首次插入 + trim、复活不插入、
+    并发撞键当前读收敛、撞键且行不存在则上抛、自设备注拒绝、对端不可用拒绝、空白拒绝、取消幂等），
+    **模块 96 例全绿**；另新增**端到端集成测试** `ChatPeerAliasE2eIntegrationTest`
+    （at-bootstrap，Testcontainers 真 `mysql:8.4` + 真 `redis:7-alpine` + 真 HTTP 栈，**5 用例 / 13 次执行**）：
+    ① 绕过应用层直插第二行 `(我, 他)` 被 InnoDB 拒绝——证明唯一键护栏真在库里，而非只存在于 Mockito 剧本里；
+    ② 16 线程并发首设（**连跑 5 轮**）无失败、恰好 1 行、别名是某次提交的原值；
+    ③ 取消后 16 线程并发复活（**连跑 5 轮**）**行主键不变**（复用同一行）、仍 1 行、`deleted` 归 0；
+    ④ 限流走完整 HTTP：连发 30 次全 200 且别名真写入，第 31 次 **HTTP 429 + 4290**，Redis 计数真实累加；
+    ⑤ HTTP DELETE 重复调用均成功、生效行 0 而物理行仍在（逻辑删除语义）。
+    测试设计取舍：**并发用例走服务层直调、限流用例走完整 HTTP**——`@RateLimit`（60s / 30 次）
+    会先挡住并发流量，用 HTTP 压并发就测不到底层的唯一键收敛。
+    复验：`at-bootstrap` 全量 **43 例全绿**（5 个 IT 类 + 契约测试），`at-collaboration -am` **126 例全绿**；
+    同批修复 `ConversationVO` 新增 `peerAlias` 后 `PlatformIdJsonContractTest` 两处构造漏参
+    （曾使 `at-bootstrap` 测试整体无法编译，已补齐、4 例通过）。前端新增
+    `services/chat/peerAlias.test.ts`（8 例，含「`null` 要压过旧值」）、
+    `components/ChatPeerPanel/index.test.tsx`（8 例）与 `types.test.ts` / `endpoints.test.ts` / `api.test.ts`
+    增补用例，**全量 75 个测试文件 / 863 例全绿**，`biome lint` + `tsc --noEmit` 干净（均为 2026-09-29 实跑）。
+  - **文档同步**：[`docs/api/README.md` 协作域行](docs/api/README.md)（新增两个端点 + `ConversationVO.peerAlias` 口径）、
+    [`sql/README.md`](sql/README.md)（迁移清单 + V19 说明）。
+
 - 🧩 **CE/EE 差异化扩展点全量落地：7 个 SPI 建为真实接缝（2026-09-29 · [A-6 / D-2](docs/architecture/architecture.md) 收口）**：
   PRD §8 的 Won't 项此前只有「预留扩展点位置」的**设计约定**，接口在代码中零命中（`A-6`）；
   同一批接口在附录 C 与 PRD §8 之间存在**两套命名**（`D-2`）。本轮把 7 个接缝**同批建立**，
@@ -1114,6 +1179,35 @@
 
 ### 🐛 Fixed（修复）
 
+- 🧵 **四处「并发撞唯一键后回查既有行」的幂等兜底其实永远走不通**（MySQL 默认 REPEATABLE READ）：
+  `ChatService#send`（消息写扩散）、`ChatAttachmentService#create`（附件授权）、
+  `FileNodeService#registerStoredContent` / `#acquireContentReference`（内容寻址）四处同形——
+  显式事务 + `insert` 之前已有一条一致性读（幂等前置查询）+ 撞键后靠「回查既有行」收敛。
+  但快照正是在 `insert` 之前那次查询建立的，对手的行在那之后才提交，撞键后再沿用同一快照回查
+  **必然读到空**，回查因此形同虚设、重复键被原样抛给「弱网重发 / 双端同发」的用户——
+  而这正是那几段兜底存在的唯一理由（`send` 的注释原话是「可安全回查既有消息并返回」）。
+  真库复现：新增 `ChatSendIdempotencyE2eIntegrationTest`（真 MySQL + 真 Redis），
+  16 线程同一 `clientMsgId` 连跑 3 轮全部失败于
+  `Duplicate entry '1-1-…' for key 'sys_notify_message.uk_sender_recipient_client'`；
+  同一类里的**隔离级别机理探针**用两条真实连接证明根因（普通回查看不到快照之后提交的行、
+  `for share` 看得到），**顺序重发对照组**则说明该缺陷为何长期不可见（单线程只走得到干净路径）。
+  修复：#1 / #2 的回查改走**当前读**（`limit 1 for share`）；#3 / #4 改走**只读独立事务**
+  （`REQUIRES_NEW` + `readOnly`）——它们撞键后还要对同一行做 `ref_count + 1`，实测先是死锁
+  （`Deadlock found when trying to get lock`：`for share` 留下的共享锁要升级成排他锁，
+  多个并发输家互相等待），换成不持锁的新事务才既拿到新快照、又不破坏调用方原子性
+  （`FileVersionService#createVersion` 正处在更大的写事务里）。验证：新增
+  `FileContentRaceE2eIntegrationTest`（秒传登记 / 内容引用 / 附件授权各 8 线程 × 2 轮），
+  连同上述用例共 11 个真库用例全绿，断言的是「并发下无任何请求失败且终态唯一」，
+  而不是把「抛出了重复键」当成预期行为固化下来。判例与不属此列的白名单见
+  `docs/development/AT-DIFF-todos.md` 的 RACE-01（已关闭）。
+  - **全量回归（2026-09-29 实跑）**：后端 `mvnw -B test` 9 个模块**全 SUCCESS**，
+  68 个测试类 / **645 例，0 失败 0 错误 0 跳过**（含 `at-bootstrap` 的 6 个 Testcontainers 真库 IT）；
+  后端 `mvnw -B package`（含 Spring Boot repackage）通过。
+  前端 `npm test` **75 个测试文件 / 863 例全绿**，`biome lint` 408 个文件**零告警**
+  （唯一 2 条 warning 是既有的 `pages/shares/index.test.tsx` 非空断言，已把 `queryByRole + !`
+  换成 `findByRole` 等待式查询顺手消除，该文件 6 例复跑通过）、
+  `tsc --noEmit` 干净、`max build` 通过（dist 产物与各路由 html 均已生成）。
+  浏览器 E2E 未跑：`tests/e2e/` 仍是「规划中」占位目录、尚无 Playwright 工程。
 - 🖼️ **头像「传完既没提示、也不出预览」，根因不在头像功能而在二进制通道读响应体的方式**：
   `uploadBinary` 把 `xhr.responseType` 设成 `'json'`（响应体是 `Result`），而 `readBinaryBody`
   仍去读 `xhr.responseText`——规范只允许在 `responseType` 为 `'' / 'text'` 时读它，其余取值下

@@ -152,3 +152,22 @@ export function parseFileCardContent(
   }
   return card;
 }
+
+/**
+ * 取「给人看的正文」：形如文件卡片时剥掉机器可读尾注，其余原样返回。
+ *
+ * <p><b>为什么渲染层还要有这一道：</b>引用块里那段被引用的正文是服务端写入时的
+ * <b>快照</b>（`quoteContent`），不是消息本体——它既不带被引用消息的类型，
+ * 也解析不成卡片（引用块画的是纯文本）。早期写入口径抄的是<b>原始正文</b>，
+ * 那些行已经落库，改不回来；渲染时兜这一层，历史引用块才会跟着变干净。</p>
+ *
+ * <p><b>这一层刻意不看 messageType：</b>它根本拿不到类型，唯一能指望的就是
+ * {@link parseFileCardContent} 的严格形态——只有首行是 `名字（尺寸）` 且其余行
+ * 全是合法尾注时才认。用户正文里写了一行 `#file:1` 而整段不像卡片时，
+ * 这里原样放行，不猜着删。（消息本体的摘要仍走 `messageSummary`，
+ * 那里有类型，判得准。）</p>
+ */
+export function fileCardDisplayText(content: string | null | undefined): string {
+  const card = parseFileCardContent(content);
+  return card ? buildFileCardContent(card.name, card.sizeText) : (content ?? '');
+}

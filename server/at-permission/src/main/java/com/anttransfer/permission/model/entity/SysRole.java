@@ -62,8 +62,16 @@ public class SysRole extends BaseEntity {
     /** 备注 */
     private String remark;
 
-    /** 是否内置角色。 */
-    public boolean isBuiltIn() {
+    /**
+     * 是否内置角色。
+     *
+     * <p><b>为什么方法名不叫 {@code isBuiltIn()}：</b>字段 {@code builtIn} 是 {@link Integer}，
+     * Lombok 已生成 {@code getBuiltIn()}；再叠加 {@code isBuiltIn()} 会让 JavaBeans 属性
+     * {@code builtIn} 出现类型不兼容的双 getter，MyBatis 反射取值时抛
+     * {@code ReflectionException}（"Illegal overloaded getter method with ambiguous type"），
+     * 角色查询 / 更新因此直接失败。故此处刻意错开方法名，勿改回 {@code isBuiltIn}。</p>
+     */
+    public boolean isBuiltInRole() {
         return builtIn != null && builtIn == BUILT_IN;
     }
 }

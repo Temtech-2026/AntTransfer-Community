@@ -18,9 +18,11 @@ package com.anttransfer.collaboration.controller;
 import com.anttransfer.collaboration.model.dto.ChatGroupCreateDTO;
 import com.anttransfer.collaboration.model.dto.ChatGroupMemberAddDTO;
 import com.anttransfer.collaboration.model.dto.ChatGroupUpdateDTO;
+import com.anttransfer.collaboration.model.dto.ChatPeerAliasDTO;
 import com.anttransfer.collaboration.model.dto.ChatSendDTO;
 import com.anttransfer.collaboration.model.vo.ChatGroupDetailVO;
 import com.anttransfer.collaboration.model.vo.ChatGroupVO;
+import com.anttransfer.collaboration.model.vo.ChatPeerVO;
 import com.anttransfer.collaboration.model.vo.ChatPresenceVO;
 import com.anttransfer.collaboration.model.vo.ChatTargetVO;
 import com.anttransfer.collaboration.model.vo.ConversationVO;
@@ -37,6 +39,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -171,6 +174,44 @@ public class ChatController {
     @GetMapping("/conversations")
     public Result<List<ConversationVO>> conversations(@RequestParam(required = false) Integer limit) {
         return Result.ok(chatService.conversations(CurrentUserContext.currentUserId(), limit));
+    }
+
+    /**
+     * 设置 / 修改「我给某个对端起的名字」（会话对端备注）。
+     *
+     * <p><b>为什么需要这个端点：</b>会话列表里对方的名字此前唯一来源是账号昵称，而
+     * 「我怎么称呼他」是私有偏好——把同事「张伟」记成「财务-张伟」不该让所有人都跟着变
+     * （那是在改账号数据），系统里也没有别的地方能承载这种私有称呼。</p>
+     *
+     * <p><b>是写操作，但只用登录态、不挂权限点：</b>备注的归属者写死为
+     * {@code CurrentUserContext}，调用方无法替别人设备注，不存在「改到他人数据」的入参面；
+     * 它不改任何账号属性，只写 {@code (我, 他)} 这一行的私有称呼，属「登录即用」的自我配置。
+     * 滥用面由 {@code @RateLimit} 兜底（且唯一键本身就限制了一个人对一个人只有一行）。</p>
+     *
+     * @param peerId 被备注的用户 ID（单聊对端）
+     * @param dto    备注名（非空、上限 32 字；「清空备注」走 DELETE，不传空串）
+     */
+    @PutMapping("/contacts/{peerId}/alias")
+    @RateLimit(windowSeconds = 60, max = 30, key = "chat-peer-alias",
+            message = "设置备注过于频繁，请稍后再试")
+    public Result<ChatPeerVO> setPeerAlias(@PathVariable Long peerId,
+                                           @Valid @RequestBody ChatPeerAliasDTO dto) {
+        return Result.ok(chatService.setPeerAlias(CurrentUserContext.currentUserId(), peerId,
+                dto.alias()));
+    }
+
+    /**
+     * 取消备注——回到「看到对方的真实昵称」。
+     *
+     * <p><b>幂等</b>：本来就没设备注时同样返回成功（期望终态已达成），重试与多端并发取消
+     * 都不该报错。单独成一个端点而不是「PUT 一个空串」，是为了不让「清空备注」与
+     * 「手滑提交了空输入框」共用同一种入参——这两种意图的结果完全相反，服务端只能猜。</p>
+     *
+     * @param peerId 被备注的用户 ID（单聊对端）
+     */
+    @DeleteMapping("/contacts/{peerId}/alias")
+    public Result<ChatPeerVO> clearPeerAlias(@PathVariable Long peerId) {
+        return Result.ok(chatService.clearPeerAlias(CurrentUserContext.currentUserId(), peerId));
     }
 
     /**

@@ -29,6 +29,7 @@ import com.anttransfer.collaboration.config.NotifyProperties;
 import com.anttransfer.collaboration.model.vo.ChatPresenceStatus;
 import com.anttransfer.collaboration.model.vo.ChatPresenceVO;
 import com.anttransfer.collaboration.model.vo.ChatTypingVO;
+import com.anttransfer.collaboration.repository.ChatPeerAliasMapper;
 import com.anttransfer.collaboration.repository.GroupMemberMapper;
 import com.anttransfer.collaboration.repository.SysGroupMapper;
 import com.anttransfer.collaboration.repository.NotifyMessageMapper;
@@ -74,6 +75,8 @@ class ChatServiceTypingTest {
     @Mock
     private SysGroupMapper sysGroupMapper;
     @Mock
+    private ChatPeerAliasMapper chatPeerAliasMapper;
+    @Mock
     private UserLookupPort userLookupPort;
     @Mock
     private WsBroadcaster wsBroadcaster;
@@ -90,7 +93,8 @@ class ChatServiceTypingTest {
 
     @BeforeEach
     void setUp() {
-        service = new ChatService(notifyMessageMapper, groupMemberMapper, sysGroupMapper, userLookupPort,
+        service = new ChatService(notifyMessageMapper, groupMemberMapper, sysGroupMapper,
+                chatPeerAliasMapper, userLookupPort,
                 wsBroadcaster, wsPresenceService, afterCommitExecutor, properties,
                 notifyMessageService);
     }

@@ -178,8 +178,17 @@ public class NotifyMessage extends BaseEntity {
         return !isRead();
     }
 
-    /** 本行接收人是否被本条消息点名（{@code @} 提及）。 */
-    public boolean isMentioned() {
+    /**
+     * 本行接收人是否被本条消息点名（{@code @} 提及）。
+     *
+     * <p><b>为什么方法名不叫 {@code isMentioned()}：</b>字段 {@code mentioned} 是 {@link Integer}，
+     * Lombok 已按 JavaBeans 规范生成 {@code getMentioned()}。若本方法再叫 {@code isMentioned()}，
+     * 同一个属性名 {@code mentioned} 就有了两个返回类型互不可转换的 getter，
+     * MyBatis 的 {@code Reflector} 会把它判为「非法重载的 getter（类型有歧义）」并在取值时抛
+     * {@code ReflectionException}——表现为任何一次消息落库都失败成 5002「数据库访问异常」。
+     * 故此处刻意错开方法名，勿「规范化」改回 {@code isMentioned}。</p>
+     */
+    public boolean isRecipientMentioned() {
         return mentioned != null && mentioned == MENTION_YES;
     }
 }

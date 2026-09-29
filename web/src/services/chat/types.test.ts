@@ -8,6 +8,7 @@ import {
   type ConversationSummaryLabels,
   conversationInitial,
   conversationSummary,
+  conversationTitle,
   hasUnreadMention,
   messageSenderInitial,
   messageSenderLabel,
@@ -240,6 +241,126 @@ describe('resolveSessionDisplay 把会话名带进详情态', () => {
       targetAvatarUrl: PEER_AVATAR,
     };
     expect(resolveSessionDisplay(session, conversations)).toBe(session);
+  });
+});
+
+/**
+ * 备注（我给对端起的名）在展示链里的位置。
+ *
+ * <p>这里钉四件事，每一件对应一种会让人以为「备注没生效」的写法：
+ * 备注要压过真实昵称、首字要跟着备注走、群聊不能吃备注（群 targetId 是群组 ID）、
+ * 深链详情要能从列表把备注回填进来。</p>
+ *
+ * <p>「取消备注」不在这里测：详情态自带的旧值由覆盖表（`services/chat/peerAlias`）
+ * 用 `null` 压过去，回查函数只负责「补齐缺失」，不负责「推翻已有」。</p>
+ */
+describe('conversationTitle 把备注排在真实昵称之前', () => {
+  const aliased: Conversation[] = [
+    {
+      chatScope: 1,
+      targetId: '900000000000000009',
+      targetName: '系统管理员',
+      targetAvatarUrl: PEER_AVATAR,
+      peerAlias: '老张',
+      lastMessageId: '900000000000000100',
+      unreadCount: 0,
+      mentionUnreadCount: 0,
+    },
+    {
+      chatScope: 2,
+      targetId: '900000000000000009',
+      targetName: '运维支持群',
+      targetAvatarUrl: null,
+      peerAlias: null,
+      lastMessageId: '900000000000000101',
+      unreadCount: 0,
+      mentionUnreadCount: 0,
+    },
+  ];
+
+  it('有备注时显示备注——真实昵称排在其后，否则改完备注界面不变', () => {
+    expect(
+      conversationTitle({
+        chatScope: 1,
+        targetId: '900000000000000009',
+        targetName: '系统管理员',
+        peerAlias: '老张',
+      }),
+    ).toBe('老张');
+  });
+
+  it('备注是纯空白视同没设：不显示空白标题，回落真实昵称', () => {
+    expect(
+      conversationTitle({
+        chatScope: 1,
+        targetId: '900000000000000009',
+        targetName: '系统管理员',
+        peerAlias: '   ',
+      }),
+    ).toBe('系统管理员');
+  });
+
+  it('没设备注（null / 缺字段）仍是真实昵称 → 回落名', () => {
+    expect(
+      conversationTitle({
+        chatScope: 1,
+        targetId: '900000000000000009',
+        targetName: '系统管理员',
+        peerAlias: null,
+      }),
+    ).toBe('系统管理员');
+    expect(
+      conversationTitle({ chatScope: 1, targetId: '900000000000000009' }),
+    ).toBe('用户 #900000000000000009');
+  });
+
+  it('群聊不吃备注：targetId 是群组 ID，拿它当用户 ID 查备注属于跨域取值', () => {
+    expect(
+      conversationTitle({
+        chatScope: 2,
+        targetId: '900000000000000009',
+        targetName: '运维支持群',
+        // 脏数据 / 未来协议变更都可能带来这个字段，展示层必须自己拦一道
+        peerAlias: '老张',
+      }),
+    ).toBe('运维支持群');
+    expect(
+      conversationTitle({
+        chatScope: 2,
+        targetId: '900000000000000009',
+        peerAlias: '老张',
+      }),
+    ).toBe('群聊 #900000000000000009');
+  });
+
+  it('首字跟着备注走，否则列表是备注、头像是昵称', () => {
+    const session = {
+      chatScope: 1,
+      targetId: '900000000000000009',
+      targetName: '系统管理员',
+      peerAlias: '老张',
+    };
+    expect(conversationInitial(session)).toBe('老');
+  });
+
+  it('深链（只有定位键）也能从列表回填备注，不必等下一次列表刷新', () => {
+    const session = { chatScope: 1, targetId: '900000000000000009' };
+    const display = resolveSessionDisplay(session, aliased);
+    expect(display.peerAlias).toBe('老张');
+    expect(conversationTitle(display)).toBe('老张');
+  });
+
+  it('列表也没有备注时保持原引用，不让 useMemo 白重算', () => {
+    // 群聊是最好的样本：群没有头像（该字段恒为 null），因此永远走不到「自带头像就早返回」
+    // 那条路，每次重算都要回查一次——若回查后无变化还铺新对象，打开群聊会引发一串无谓重算
+    const session = {
+      chatScope: 2,
+      targetId: '900000000000000009',
+      targetName: '运维支持群',
+      targetAvatarUrl: null,
+      peerAlias: null,
+    };
+    expect(resolveSessionDisplay(session, aliased)).toBe(session);
   });
 });
 

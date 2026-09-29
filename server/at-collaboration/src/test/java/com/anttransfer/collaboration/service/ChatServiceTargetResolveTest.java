@@ -17,6 +17,7 @@ package com.anttransfer.collaboration.service;
 
 import com.anttransfer.collaboration.config.NotifyProperties;
 import com.anttransfer.collaboration.model.vo.ChatTargetVO;
+import com.anttransfer.collaboration.repository.ChatPeerAliasMapper;
 import com.anttransfer.collaboration.repository.GroupMemberMapper;
 import com.anttransfer.collaboration.repository.SysGroupMapper;
 import com.anttransfer.collaboration.repository.NotifyMessageMapper;
@@ -72,6 +73,8 @@ class ChatServiceTargetResolveTest {
     @Mock
     private SysGroupMapper sysGroupMapper;
     @Mock
+    private ChatPeerAliasMapper chatPeerAliasMapper;
+    @Mock
     private UserLookupPort userLookupPort;
     @Mock
     private WsBroadcaster wsBroadcaster;
@@ -88,7 +91,8 @@ class ChatServiceTargetResolveTest {
 
     @BeforeEach
     void setUp() {
-        service = new ChatService(notifyMessageMapper, groupMemberMapper, sysGroupMapper, userLookupPort,
+        service = new ChatService(notifyMessageMapper, groupMemberMapper, sysGroupMapper,
+                chatPeerAliasMapper, userLookupPort,
                 wsBroadcaster, wsPresenceService, afterCommitExecutor, properties, notifyMessageService);
     }
 

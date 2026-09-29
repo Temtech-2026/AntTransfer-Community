@@ -24,6 +24,7 @@
 import {
   ArrowLeftOutlined,
   CloseOutlined,
+  EditOutlined,
   ReloadOutlined,
   SettingOutlined,
   UserOutlined,
@@ -47,6 +48,7 @@ import ChatGroupPanel from '@/components/ChatGroupPanel';
 import ChatComposer from '@/components/ChatComposer';
 import ChatMessageMenu from '@/components/ChatMessageMenu';
 import ChatMessageQuote from '@/components/ChatMessageQuote';
+import ChatPeerPanel from '@/components/ChatPeerPanel';
 import ChatPeerStatus from '@/components/ChatPeerStatus';
 import ChatQuoteBar from '@/components/ChatQuoteBar';
 import UserAvatar from '@/components/UserAvatar';
@@ -54,6 +56,7 @@ import useChatAttachmentDraft from '@/hooks/useChatAttachmentDraft';
 import useChatMentionables from '@/hooks/useChatMentionables';
 import useChatPresence from '@/hooks/useChatPresence';
 import useCurrentUserAvatar from '@/hooks/useCurrentUserAvatar';
+import usePeerAliasOverrides from '@/hooks/usePeerAlias';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import {
   fetchChatHistory,
@@ -62,7 +65,10 @@ import {
   recallChatMessage,
   sendChatMessage,
 } from '@/services/chat/api';
-import { parseFileCardContent } from '@/services/chat/fileCard';
+import {
+  fileCardDisplayText,
+  parseFileCardContent,
+} from '@/services/chat/fileCard';
 import {
   applyIncomingToConversations,
   applyRecall,
@@ -72,6 +78,10 @@ import {
   mergeMessage,
   sortConversations,
 } from '@/services/chat/messages';
+import {
+  applyPeerAliasChange,
+  applyPeerAliasOverride,
+} from '@/services/chat/peerAlias';
 import { toQuoteDraft, type ChatQuoteDraft } from '@/services/chat/quote';
 import {
   applyReadReceipt,
@@ -363,6 +373,13 @@ const ChatDrawer: React.FC = () => {
    * 会出现「面板开着、已经返回列表」时说不清在配哪个群。</p>
    */
   const [groupPanelOpen, setGroupPanelOpen] = useState(false);
+  /**
+   * 对端资料面板开关（只在单聊下可开）。
+   *
+   * <p>与群设置开关同口径：只存开关，要看的对端由当前会话推出。返回会话列表时
+   * {@code active} 变空，面板随之关掉（见渲染处的 {@code open} 条件）。</p>
+   */
+  const [peerPanelOpen, setPeerPanelOpen] = useState(false);
   const [messages, setMessages] = useState<NotifyMessage[]>([]);
   const [listLoading, setListLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -408,6 +425,7 @@ const ChatDrawer: React.FC = () => {
   const closeDrawer = useCallback(() => {
     setChatOpen(false);
     setGroupPanelOpen(false);
+    setPeerPanelOpen(false);
     setAttachment(null);
     setQuote(null);
   }, []);
@@ -656,9 +674,31 @@ const ChatDrawer: React.FC = () => {
    * <p>标题与消息头像都必须从这里取值：曾经标题做了回查、头像直接拿裸定位去取首字，
    * 结果列表里的「系」一进详情就变成「用」。
    */
+  /**
+   * 我改过的对端备注（展示层叠加，口径与 `/chat` 页完全一致）。
+   *
+   * <p>保存备注不重拉列表（写接口已回吐结果），因此页面数据比真实备注旧一拍；
+   * 叠加只发生在派生层，存储态 {@link conversations} 保持「服务端给的那份」。</p>
+   */
+  const aliasOverrides = usePeerAliasOverrides();
+
+  const viewConversations = useMemo(
+    () =>
+      conversations.map((item) => applyPeerAliasOverride(item, aliasOverrides)),
+    [conversations, aliasOverrides],
+  );
+
   const activeDisplay = useMemo(
-    () => (active ? resolveSessionDisplay(active, conversations) : null),
-    [active, conversations],
+    () =>
+      active
+        ? // 再叠一次覆盖表：详情态自带的备注可能是我刚改之前的旧值
+          // （resolveSessionDisplay 只在字段缺失时回填，不覆盖已有值）
+          applyPeerAliasOverride(
+            resolveSessionDisplay(active, viewConversations),
+            aliasOverrides,
+          )
+        : null,
+    [active, viewConversations, aliasOverrides],
   );
 
   /**
@@ -851,6 +891,20 @@ const ChatDrawer: React.FC = () => {
               onClick={() => setGroupPanelOpen(true)}
             />
           ) : null}
+          {/*
+            对端资料入口与群设置入口互为镜像：备注挂的是「对方这个人」，
+            群聊没有这个主体（targetId 是群组 ID），因此只在单聊出现。
+            抽屉只有 380px，这里与群设置一样只留图标，文案由 aria-label 承担。
+          */}
+          {active?.chatScope === ChatScope.PRIVATE ? (
+            <Button
+              type="text"
+              size="small"
+              icon={<EditOutlined />}
+              aria-label={intl.formatMessage({ id: 'chat.peer.title' })}
+              onClick={() => setPeerPanelOpen(true)}
+            />
+          ) : null}
           <Button
             type="text"
             size="small"
@@ -869,18 +923,18 @@ const ChatDrawer: React.FC = () => {
 
         {!active && (
           <div className={styles.list}>
-            {listLoading && conversations.length === 0 ? (
+            {listLoading && viewConversations.length === 0 ? (
               <div style={{ padding: 24, textAlign: 'center' }}>
                 <Spin />
               </div>
-            ) : conversations.length === 0 ? (
+            ) : viewConversations.length === 0 ? (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
                 description={intl.formatMessage({ id: 'chat.drawer.emptyConversations' })}
                 style={{ marginTop: 48 }}
               />
             ) : (
-              conversations.map((conversation) => {
+              viewConversations.map((conversation) => {
                 const session: ChatSession = {
                   chatScope: conversation.chatScope,
                   targetId: conversation.targetId,
@@ -889,6 +943,9 @@ const ChatDrawer: React.FC = () => {
                   targetName: conversation.targetName,
                   // 头像同理：带上就不必等列表回查，深链时详情气泡与标题头像也不会打架
                   targetAvatarUrl: conversation.targetAvatarUrl,
+                  // 备注一并带过去：详情态的标题/署名要用它，深链时也能立刻显示「我起的名字」，
+                  // 而不是先亮真实昵称、等列表回来再改口
+                  peerAlias: conversation.peerAlias,
                 };
                 return (
                   <button
@@ -1046,7 +1103,9 @@ const ChatDrawer: React.FC = () => {
                             <span>
                               {/*
                                 引用块取服务端写入时的快照，不回查原消息：
-                                原消息随后被撤回时正文已清空，回查会让引用块一起变空白
+                                原消息随后被撤回时正文已清空，回查会让引用块一起变空白。
+                                快照过一层展示口径：被引用的是文件消息时正文末尾挂着
+                                `#file:` / `#att:` 尾注，不剥就会当成引用正文画出来
                               */}
                               {msg.quoteClientMsgId ? (
                                 <ChatMessageQuote
@@ -1055,7 +1114,7 @@ const ChatDrawer: React.FC = () => {
                                     msg,
                                     senderLabels,
                                   )}
-                                  summary={msg.quoteContent ?? ''}
+                                  summary={fileCardDisplayText(msg.quoteContent)}
                                 />
                               ) : null}
                               {msg.messageType === MessageType.FILE
@@ -1140,6 +1199,39 @@ const ChatDrawer: React.FC = () => {
         onClose={() => setGroupPanelOpen(false)}
         onUpdated={applyGroupUpdate}
         onLeft={handleGroupLeft}
+      />
+
+      {/*
+        对端资料面板：与 /chat 页共用同一个组件（口径因此不会分叉）。
+        peerId 只在单聊下给出——返回列表后（active 为空）或群会话里即使面板还开着，
+        也不会拿着群组 ID 去查用户备注（那是跨域取值）。
+      */}
+      <ChatPeerPanel
+        open={peerPanelOpen && active?.chatScope === ChatScope.PRIVATE}
+        peerId={
+          active?.chatScope === ChatScope.PRIVATE
+            ? activeDisplay?.targetId
+            : null
+        }
+        // 只读的真实昵称：仍取后端名（含回落名），备注在面板内按同一展示链叠加
+        nickname={
+          active?.chatScope === ChatScope.PRIVATE && activeDisplay
+            ? activeDisplay.targetName?.trim() ||
+              intl.formatMessage(
+                { id: 'chat.session.userFallback' },
+                { id: activeDisplay.targetId },
+              )
+            : ''
+        }
+        avatarUrl={activeDisplay?.targetAvatarUrl}
+        alias={
+          active?.chatScope === ChatScope.PRIVATE
+            ? activeDisplay?.peerAlias ?? null
+            : null
+        }
+        onClose={() => setPeerPanelOpen(false)}
+        // 写接口已回吐结果，交给覆盖表即可，不必为改几个字重拉会话列表（列表在抽屉里滚动位置也会丢）
+        onChanged={applyPeerAliasChange}
       />
     </Drawer>
   );

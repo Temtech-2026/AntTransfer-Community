@@ -194,7 +194,9 @@ describe('分享管理页 · 批量失效入口', () => {
     renderPage();
     await screen.findByText('季度报告.pdf');
 
-    fireEvent.click(buttonNamed('shares.action.revokeAll')!);
+    fireEvent.click(
+      await screen.findByRole('button', { name: buttonName('shares.action.revokeAll') }),
+    );
     fireEvent.click(
       await screen.findByRole('button', {
         name: buttonName('shares.revokeAll.confirmOk'),
@@ -212,7 +214,9 @@ describe('分享管理页 · 批量失效入口', () => {
     renderPage();
     await screen.findByText('季度报告.pdf');
 
-    fireEvent.click(buttonNamed('shares.action.revokeAll')!);
+    fireEvent.click(
+      await screen.findByRole('button', { name: buttonName('shares.action.revokeAll') }),
+    );
     fireEvent.click(
       await screen.findByRole('button', {
         name: buttonName('shares.revokeAll.confirmOk'),

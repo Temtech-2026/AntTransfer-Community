@@ -15,6 +15,7 @@ import { CHAT_ENDPOINTS } from './endpoints';
 import type {
   ChatGroup,
   ChatGroupDetail,
+  ChatPeer,
   ChatPresenceVO,
   ChatSendPayload,
   ChatTarget,
@@ -82,6 +83,49 @@ export function resolveChatTarget(query: string): Promise<ChatTarget> {
   return requestData<ChatTarget>(CHAT_ENDPOINTS.resolveTarget, {
     method: 'GET',
     params: { query },
+  });
+}
+
+/**
+ * 给单聊对端设置（或修改）备注。
+ *
+ * <p><b>备注是「我这边的称呼」，不是改昵称</b>：服务端只写 {@code (我, 他)} 那一行的私有属性，
+ * 不碰 {@code sys_user}，对方与其他人的界面都不变。因此<b>不需要任何权限点</b>——
+ * 归属者写死为登录态，调用方无法替别人设备注，也不存在「改到他人数据」的入参面。</p>
+ *
+ * <p><b>不静默</b>：这是用户主动提交的动作，失败必须说清原因——
+ * 1013「账号不存在或不可用」（含给自己设备注），以及参数为空白。</p>
+ *
+ * <p>返回值就是操作后的状态（{@code alias} 为写入值），调用方据此更新本地覆盖表，
+ * 界面立刻变，不必重拉会话列表。</p>
+ *
+ * @param peerId 对端用户 ID（19 位雪花 ID 字符串，禁止 `Number()` 归一）
+ * @param alias  备注名（服务端会裁掉首尾空白并拒绝空白值；长度上限 32 字）
+ */
+export function setPeerAlias(
+  peerId: string,
+  alias: string,
+): Promise<ChatPeer> {
+  return requestData<ChatPeer>(CHAT_ENDPOINTS.peerAlias(peerId), {
+    method: 'PUT',
+    data: { alias },
+  });
+}
+
+/**
+ * 取消对端备注——回到「看到对方的真实昵称」。
+ *
+ * <p><b>幂等</b>：本来就没设备注时同样返回成功（期望终态已达成），重试与多端并发取消都不报错，
+ * 因此调用方不必先查一次「现在有没有备注」。</p>
+ *
+ * <p>单独一个端点而不是「PUT 一个空串」：那会让「主动取消」与「手滑提交了空输入框」
+ * 共用同一种入参，而这两件事的意图相反，服务端只能猜。</p>
+ *
+ * @param peerId 对端用户 ID（19 位雪花 ID 字符串，禁止 `Number()` 归一）
+ */
+export function clearPeerAlias(peerId: string): Promise<ChatPeer> {
+  return requestData<ChatPeer>(CHAT_ENDPOINTS.peerAlias(peerId), {
+    method: 'DELETE',
   });
 }
 

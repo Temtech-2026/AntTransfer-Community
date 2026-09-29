@@ -164,8 +164,10 @@ public class ChatAttachmentService {
         try {
             chatAttachmentMapper.insert(attachment);
         } catch (DuplicateKeyException e) {
-            // 并发重发：唯一键挡住第二次插入。回读既有行返回，保持幂等语义（而不是把 500 抛给用户）
-            ChatAttachment raced = findBySenderAndClientMsgKey(senderUserId, clientMsgKey);
+            // 并发重发：唯一键挡住第二次插入。回读既有行返回，保持幂等语义（而不是把 500 抛给用户）。
+            // 回读必须走当前读：普通查询的快照建立于上面那次幂等预检，对手的行是在那之后才提交的，
+            // 沿用同一快照会读到空（同类说明见 ChatService#findExistingForShare）。
+            ChatAttachment raced = findBySenderAndClientMsgKeyForShare(senderUserId, clientMsgKey);
             if (raced != null) {
                 return toVO(raced);
             }
@@ -515,6 +517,23 @@ public class ChatAttachmentService {
                 .eq(ChatAttachment::getSenderUserId, senderUserId)
                 .eq(ChatAttachment::getClientMsgKey, clientMsgKey)
                 .last("limit 1"));
+    }
+
+    /**
+     * 幂等回读的<b>当前读</b>版本——仅供并发撞键分支使用。
+     *
+     * <p>理由与 {@code ChatService#findExistingForShare} 完全一致：普通查询的一致性读快照建立于
+     * {@code insert} 之前的幂等预检，对手的行在那之后才提交，沿用旧快照回读会稳定读到空；
+     * {@code for share} 是当前读，且共享锁与撞键语句已持有的锁相容，不会让并发重发方互相等待。</p>
+     */
+    private ChatAttachment findBySenderAndClientMsgKeyForShare(Long senderUserId, String clientMsgKey) {
+        if (clientMsgKey == null) {
+            return null;
+        }
+        return chatAttachmentMapper.selectOne(Wrappers.<ChatAttachment>lambdaQuery()
+                .eq(ChatAttachment::getSenderUserId, senderUserId)
+                .eq(ChatAttachment::getClientMsgKey, clientMsgKey)
+                .last("limit 1 for share"));
     }
 
     private static String normalizeClientMsgKey(String raw) {

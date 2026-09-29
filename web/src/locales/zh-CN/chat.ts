@@ -157,6 +157,21 @@ export default {
   'chat.group.dissolve.success': '群聊已解散',
   'chat.group.loadFailed': '群信息没加载出来',
 
+  // 对端资料面板（单聊）：改的是「我这边怎么称呼他」的私有备注，不是对方账号昵称。
+  // 页与抽屉共用同一个组件，文案不归属于任何一侧
+  'chat.peer.title': '对端资料',
+  'chat.peer.action': '备注',
+  'chat.peer.close': '关闭',
+  'chat.peer.nickname.label': '昵称：{name}',
+  'chat.peer.alias.label': '备注',
+  'chat.peer.alias.placeholder': '给这个人起个你记得住的名字',
+  'chat.peer.alias.hint':
+    '备注只对你自己可见，对方不会看到，也不会改变对方账号上的昵称。',
+  'chat.peer.alias.save': '保存',
+  'chat.peer.alias.clear': '取消备注',
+  'chat.peer.alias.saved': '备注已保存',
+  'chat.peer.alias.cleared': '备注已取消',
+
   // 消息流里的文件卡片：聊天页与抽屉共用同一个组件，文案不归属于任何一侧
   'chat.fileCard.open': '在文件中打开 {name}',
 

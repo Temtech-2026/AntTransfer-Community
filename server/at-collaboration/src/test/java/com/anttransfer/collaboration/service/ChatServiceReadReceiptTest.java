@@ -20,6 +20,7 @@ import com.anttransfer.collaboration.model.entity.NotifyMessage;
 import com.anttransfer.collaboration.model.vo.ChatReaderVO;
 import com.anttransfer.collaboration.model.vo.NotifyMessageVO;
 import com.anttransfer.collaboration.repository.ChatReadRow;
+import com.anttransfer.collaboration.repository.ChatPeerAliasMapper;
 import com.anttransfer.collaboration.repository.GroupMemberMapper;
 import com.anttransfer.collaboration.repository.SysGroupMapper;
 import com.anttransfer.collaboration.repository.NotifyMessageMapper;
@@ -87,6 +88,8 @@ class ChatServiceReadReceiptTest {
     @Mock
     private SysGroupMapper sysGroupMapper;
     @Mock
+    private ChatPeerAliasMapper chatPeerAliasMapper;
+    @Mock
     private UserLookupPort userLookupPort;
     @Mock
     private WsBroadcaster wsBroadcaster;
@@ -103,7 +106,8 @@ class ChatServiceReadReceiptTest {
 
     @BeforeEach
     void setUp() {
-        service = new ChatService(notifyMessageMapper, groupMemberMapper, sysGroupMapper, userLookupPort,
+        service = new ChatService(notifyMessageMapper, groupMemberMapper, sysGroupMapper,
+                chatPeerAliasMapper, userLookupPort,
                 wsBroadcaster, wsPresenceService, afterCommitExecutor, properties, notifyMessageService);
         // 共享打桩用 lenient：纯序列化用例不碰 service，严格模式会把它当成无用打桩误报
         lenient().when(properties.getChatHistoryLimit()).thenReturn(50);

@@ -49,7 +49,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
@@ -110,6 +113,11 @@ public class FileNodeService {
     private final FileStorage fileStorage;
     /** 高敏感销毁的审批依据（读走 SPI，绝不跨模块直读 at-permission 的审批表）。 */
     private final SensitiveDestroyApprovalPort sensitiveDestroyApprovalPort;
+    /**
+     * 事务管理器：撞唯一键后需要一份<b>只读的独立事务</b>来回查对手已提交的行
+     * （见 {@link #readFreshFileObject}）。
+     */
+    private final PlatformTransactionManager transactionManager;
 
     /* ======================= 列表：多条件筛选 + 排序 ======================= */
 
@@ -526,7 +534,10 @@ public class FileNodeService {
             try {
                 fileObjectMapper.insert(file);
             } catch (DuplicateKeyException e) {
-                file = fileObjectMapper.findByContent(sha256, sizeBytes);
+                // 并发下他人抢先写入了同一内容：唯一键拦住了插入，收口为「复用 + 计数」。
+                // 回查必须换一份新快照（理由见 readFreshFileObject）：本事务的快照建立于上面那次
+                // findByContent，而对手的行是在那之后才提交的，沿用旧快照会读到空，把「复用」退化成报错。
+                file = readFreshFileObject(sha256, sizeBytes);
                 if (file == null) {
                     throw e;
                 }
@@ -587,8 +598,10 @@ public class FileNodeService {
                 fileObjectMapper.insert(file);
                 return file;
             } catch (DuplicateKeyException e) {
-                // 并发下他人抢先写入了同一内容：唯一键拦住插入，回退为「复用 + 计数」而非报错
-                file = fileObjectMapper.findByContent(sha256, sizeBytes);
+                // 并发下他人抢先写入了同一内容：唯一键拦住插入，回退为「复用 + 计数」而非报错。
+                // 回查必须换一份新快照（理由见 readFreshFileObject）：普通查询看到的是撞键之前
+                // 建立的那份快照，读不到对手刚提交的行，会让「复用」退化成报错。
+                file = readFreshFileObject(sha256, sizeBytes);
                 if (file == null) {
                     throw e;
                 }
@@ -599,6 +612,28 @@ public class FileNodeService {
         }
         fileObjectMapper.increaseRefCount(file.getId());
         return file;
+    }
+
+    /**
+     * 撞唯一键后，用<b>只读的独立事务</b>回查对手已提交的行。
+     *
+     * <p><b>为什么不能在本事务里回查：</b>本事务的一致性读快照建立于 {@code insert} 之前那次
+     * {@code findByContent}，而对手的行是在那之后才提交的，沿用旧快照会稳定读到空。</p>
+     *
+     * <p><b>为什么不能在本事务里做当前读（{@code for share}）：</b>撞键的 {@code insert} 已在对
+     * 手行上留下共享锁，而本方法之后还要对同一行做 {@code ref_count + 1}（排他锁），多个并发输家
+     * 同时升级就会互相等待——真库并发用例实测到的正是
+     * {@code Deadlock found when trying to get lock}。换成只读、不持锁的独立事务，既拿到新快照，
+     * 又不与各自的计数写入互相纠缠。</p>
+     *
+     * <p>该事务只读、不改动任何数据，因此即便调用方处在更大的写事务里（如
+     * {@code FileVersionService#createVersion}），也不会破坏其原子性。</p>
+     */
+    private FileObject readFreshFileObject(String sha256, long sizeBytes) {
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        template.setReadOnly(true);
+        return template.execute(status -> fileObjectMapper.findByContent(sha256, sizeBytes));
     }
 
     /* ============================ 内部实现 ============================ */

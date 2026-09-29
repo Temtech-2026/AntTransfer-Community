@@ -169,6 +169,21 @@ export default {
   'chat.group.dissolve.success': 'Group dissolved',
   'chat.group.loadFailed': 'Could not load the group info',
 
+  // Peer profile panel (private chat): it edits my own private remark, not the peer's nickname.
+  // /chat and the drawer share one component, so these belong to neither side.
+  'chat.peer.title': 'Contact profile',
+  'chat.peer.action': 'Remark',
+  'chat.peer.close': 'Close',
+  'chat.peer.nickname.label': 'Nickname: {name}',
+  'chat.peer.alias.label': 'Remark',
+  'chat.peer.alias.placeholder': 'A name you will recognise',
+  'chat.peer.alias.hint':
+    'Only you can see this remark. The other person never sees it, and their account nickname is unchanged.',
+  'chat.peer.alias.save': 'Save',
+  'chat.peer.alias.clear': 'Remove remark',
+  'chat.peer.alias.saved': 'Remark saved',
+  'chat.peer.alias.cleared': 'Remark removed',
+
   // File card in the message stream: shared by /chat and the drawer
   'chat.fileCard.open': 'Open {name} in Files',
 

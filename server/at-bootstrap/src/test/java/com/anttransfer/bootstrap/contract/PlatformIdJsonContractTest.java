@@ -140,7 +140,7 @@ class PlatformIdJsonContractTest {
     @DisplayName("防线③：计数字段保持数字，不被连带字符串化")
     void countFieldsStayNumeric() throws Exception {
         JsonNode conversation = objectMapper.readTree(objectMapper.writeValueAsString(
-                new ConversationVO(1, SNOWFLAKE, "张三", null, SNOWFLAKE, "在吗", 1, SNOWFLAKE,
+                new ConversationVO(1, SNOWFLAKE, "张三", null, null, SNOWFLAKE, "在吗", 1, SNOWFLAKE,
                         false, null, 3L, 2L)));
         assertTrue(conversation.get("unreadCount").isNumber(), "会话未读数是计数值，应保持数字");
         assertEquals(3L, conversation.get("unreadCount").asLong());
@@ -159,7 +159,7 @@ class PlatformIdJsonContractTest {
     @Test
     @DisplayName("回归：会话 targetId 字符串过线，回传后端不再查无此人")
     void conversationTargetIdSurvivesRoundTrip() throws Exception {
-        ConversationVO vo = new ConversationVO(1, SNOWFLAKE, "李四", null, SNOWFLAKE, "收到", 1,
+        ConversationVO vo = new ConversationVO(1, SNOWFLAKE, "李四", null, null, SNOWFLAKE, "收到", 1,
                 SNOWFLAKE, false, null, 0L, 0L);
 
         JsonNode json = objectMapper.readTree(objectMapper.writeValueAsString(vo));

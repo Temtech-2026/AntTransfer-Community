@@ -15,6 +15,7 @@ vi.mock('@/services/request', () => ({ requestData }));
 
 import { CHAT_ENDPOINTS } from './endpoints';
 import {
+  clearPeerAlias,
   createChatGroup,
   dissolveChatGroup,
   fetchChatGroupDetail,
@@ -23,6 +24,7 @@ import {
   quitChatGroup,
   removeChatGroupMember,
   renameChatGroup,
+  setPeerAlias,
 } from './api';
 
 const GROUP = {
@@ -189,6 +191,75 @@ describe('群管理 API', () => {
 
     await expect(quitChatGroup(GROUP_ID)).rejects.toThrow(
       '只有群主可以执行该操作',
+    );
+  });
+});
+
+/**
+ * 对端备注客户端的契约单测（设置 / 取消）。
+ *
+ * <p>只钉三件「错了只有真实操作才暴露」的事：① 路径里的雪花 ID 原样拼接
+ * （经 `Number` 归一就备注到另一个人头上）；② 设置走 `PUT` + body、取消走 `DELETE` 无 body
+ * ——取消若也走 `PUT` 空串，「主动取消」和「手滑提交空输入框」就共用一种入参了；
+ * ③ 两者都不静默：这是用户主动提交的动作，失败必须让用户看到原因（1013 等）。</p>
+ */
+describe('对端备注 API', () => {
+  const PEER_ID = '1949000000000000001';
+
+  it('setPeerAlias：PUT 到备注端点，备注名走 body', async () => {
+    requestData.mockResolvedValue({ peerId: PEER_ID, alias: '老张' });
+
+    await expect(setPeerAlias(PEER_ID, '老张')).resolves.toEqual({
+      peerId: PEER_ID,
+      alias: '老张',
+    });
+    expect(requestData).toHaveBeenCalledWith(
+      `/api/v1/chat/contacts/${PEER_ID}/alias`,
+      { method: 'PUT', data: { alias: '老张' } },
+    );
+  });
+
+  it('setPeerAlias 不静默：账号不可用（1013）等失败必须给出原因', async () => {
+    requestData.mockResolvedValue({ peerId: PEER_ID, alias: '老张' });
+
+    await setPeerAlias(PEER_ID, '老张');
+
+    const [, options] = requestData.mock.calls[0];
+    expect(options.silent).toBeUndefined();
+  });
+
+  it('clearPeerAlias：DELETE 同一路径且不带 body（与「提交空串」区分开）', async () => {
+    requestData.mockResolvedValue({ peerId: PEER_ID, alias: null });
+
+    await expect(clearPeerAlias(PEER_ID)).resolves.toEqual({
+      peerId: PEER_ID,
+      alias: null,
+    });
+    expect(requestData).toHaveBeenCalledWith(
+      `/api/v1/chat/contacts/${PEER_ID}/alias`,
+      { method: 'DELETE' },
+    );
+    const [, options] = requestData.mock.calls[0];
+    expect(options.data).toBeUndefined();
+  });
+
+  it('取消是幂等的：本来就没设备注同样返回成功，调用方无需先查一次', async () => {
+    requestData.mockResolvedValue({ peerId: PEER_ID, alias: null });
+
+    await expect(clearPeerAlias(PEER_ID)).resolves.toEqual({
+      peerId: PEER_ID,
+      alias: null,
+    });
+  });
+
+  it('失败一律抛给调用方（面板据此保持打开、让用户改条件重试）', async () => {
+    requestData.mockRejectedValue(new Error('目标账号不存在或不可用'));
+
+    await expect(setPeerAlias(PEER_ID, '老张')).rejects.toThrow(
+      '目标账号不存在或不可用',
+    );
+    await expect(clearPeerAlias(PEER_ID)).rejects.toThrow(
+      '目标账号不存在或不可用',
     );
   });
 });

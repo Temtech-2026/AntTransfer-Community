@@ -46,6 +46,7 @@ import {
   uploadMyAvatar,
 } from '@/services/auth';
 import { applyAvatarChange, resetAvatarOverrides } from '@/services/avatar/overrides';
+import { resetPeerAliasOverrides } from '@/services/chat/peerAlias';
 import { BizError } from '@/services/request';
 import { AVATAR_ACCEPT_ATTR, AVATAR_MAX_BYTES, checkAvatarFile } from '@/services/system';
 import { disposeAllUploadQueues } from '@/services/upload';
@@ -195,6 +196,8 @@ export const AvatarDropdown: React.FC<GlobalHeaderRightProps> = ({ children }) =
     wsStore.stop();
     // 清掉全局头像覆盖表：里面存的是可直出访问的地址，不该留在内存里跨账号传递
     resetAvatarOverrides();
+    // 备注同理，且理由更硬：残留会把「上一个人对他的称呼」展示给下一个登录的人
+    resetPeerAliasOverrides();
     // 上传控制器持有 File 引用与在途请求，不销毁会带着上个账号的任务进入下一个会话
     disposeAllUploadQueues();
     startTransition(() => {

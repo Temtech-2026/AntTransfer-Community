@@ -24,6 +24,7 @@ sql/
 ├── V16__chat_group_manage_permission_points.sql    # 增量：群管理权限点
 ├── V17__share_access_notify_type.sql               # 增量：notify_type 注释口径扩至 9（外发链接取件回执）
 ├── V18__chat_mention_and_retention.sql             # 增量：会话消息 @ 提及行级标记（mentioned）+ 保留期清理索引
+├── V19__chat_peer_alias.sql                        # 增量：对端备注（sys_chat_peer_alias，(我, 他) 私有属性）
 └── README.md
 ```
 
@@ -61,6 +62,7 @@ sql/
 > - **V13 ~ V16**：会话域收尾 —— 已读回执索引（V13）、建群权限点（V14）、消息撤回与引用回复（V15）、群管理权限点（V16），逐条口径见各脚本文件头。
 > - **V17**：**仅更新列注释（不改结构 / 数据）** —— `sys_notify_message.notify_type` 注释口径由 8 扩至 **9**，与 at-common `NotifyType` 编码表对齐：新增 **9 = 外发链接被取件回执**（at-file 在免登录访客成功取件后回推给链接创建者）。9 计入站内信未读（未读 SQL 为 `notify_type not in (6,7)`），**不进待办中心**（待办 SQL 为 `notify_type in (1,2,8)`）；**每次取件各发一条**，故 `bizType + bizId + notifyType` 幂等键在本类型上不可用于去重。
 > - **V18**：**纯增量（+1 列 +1 索引，不动数据）** —— `sys_notify_message` 补 `mentioned tinyint not null default 0`（会话消息的 **@ 提及行级标记**）与保留期清理索引。`mentioned` 必须落在**行**上而非消息上：会话消息是写扩散的（一条群消息按成员各落一行），「有人 @ 我」等价于 `mentioned = 1 and read_status = 0` 的等值查询，**无需解析正文昵称**（重名 / 昵称含空格 / 发送后改字都不会误判）；存量行默认 `0`（历史消息本就没有点名语义）。清理索引服务的是 `ChatRetentionScheduler` 的**保留期物理删除**（`order by create_time limit` 分批 DELETE，默认保留 30 天、**下限 30 天硬钳制**），逐条口径与并发锁见该脚本文件头与 `docs/development/AT-DIFF-todos.md` GAP-08。
+> - **V19**：**纯增量（+1 表，不动数据）** —— 新建 `sys_chat_peer_alias`（**对端备注**：`owner_user_id` / `peer_user_id` / `alias`，唯一键 `uk_owner_peer (owner_user_id, peer_user_id)`）。它存的是**单方面私有的称呼**（「我这边怎么称呼他」），不是账号昵称——**不写 `sys_user`、不改变对方与其他人的界面**，因此**不挂任何权限点**：归属者恒为登录人，不存在「替别人设备注」的入参面（与 `chat:group:*` 那类「作用对象是共享资源」的写权限不同）。备注**会压过真实昵称参与展示**（前端展示链：备注 → 真实昵称 → 「用户 #id」），故会话列表 VO 新增 `peerAlias` 并**保留** `targetName`（昵称仍是对方真实名，资料卡要并列显示）。⚠️ 唯一键**不含 `deleted`**：取消备注是逻辑删除，取消后再设必须**复活旧行**（直接 insert 撞键）——与 V6 文件域「删除后重建」是同一类坑，此处选择复活而非放弃唯一索引（备注天然一人一行，唯一约束值得保留）。无权限点、无初始化数据，纯表结构。
 > - ⚠️ V1 头部「群组成员关系不在 CE 落子表，随 at-collaboration 演进版本（V3+）扩展」的**收敛口径已由 V4 提前落地**；V1 属已发布脚本，按下方「已发布脚本禁止修改」**不回改注释**（Flyway checksum），口径演进说明以 `V4__menu_route_user_type_and_collaboration.sql` 文件头为准。
 > - ⚠️ `sys_user.avatar_url`（V1 基线列）存的是 `AvatarStoragePort` 的**存储 key（不透明标识），不是可直接访问的 URL**：对外地址由 `urlOf` 拼为 `/api/v1/users/{id}/avatar?v={key}`（见 at-file 的 `LocalAvatarStorage` 与其接口注释）。该口径同样**不回改 V1 的列注释**（Flyway checksum 铁律，改了会让既有库启动即 `Migration checksum mismatch`），需要时以本行为准。
 

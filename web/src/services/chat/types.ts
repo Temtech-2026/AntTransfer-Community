@@ -26,7 +26,7 @@ import {
 
 import type { ChatPresenceStatus } from '@/services/ws/protocol';
 
-import { buildFileCardContent, parseFileCardContent } from './fileCard';
+import { fileCardDisplayText } from './fileCard';
 
 /** 会话列表项（对齐后端 `ConversationVO`）。 */
 export interface Conversation {
@@ -44,6 +44,20 @@ export interface Conversation {
    * 单聊为对端头像；对端没有头像（或已注销）时也是 null，渲染回落首字符。</p>
    */
   targetAvatarUrl?: string | null;
+  /**
+   * <b>我给这个对端起的备注</b>（`sys_chat_peer_alias` 里 `(我, 他)` 那一行的值）。
+   *
+   * <p><b>它不是昵称，是「我这边的称呼」</b>：只影响我看到的展示名，
+   * 不写 `sys_user`、对方与其他人的界面上都不变（对齐微信 / QQ 的语义）。
+   * 因此它<b>不覆盖</b> {@link Conversation.targetName}——那仍是对方的真实昵称，
+   * 资料卡上要如实显示，两者是两个字段而不是一个字段的两种取值。</p>
+   *
+   * <p><b>展示优先级由 {@link conversationTitle} 统一裁决</b>：备注 → 真实名 → 回落名。
+   * 页面不要自己拼字符串，否则「列表显示备注、详情显示昵称」这类分裂迟早出现。</p>
+   *
+   * <p><b>群聊恒为 null</b>：群聊没有「对端用户」，备注无处可挂。</p>
+   */
+  peerAlias?: string | null;
   /** 最后一条消息 ID（去重实时帧 / 作翻页游标）。 */
   lastMessageId: string;
   /** 最后一条消息正文（列表摘要）。 */
@@ -101,6 +115,19 @@ export interface ChatTarget {
   displayName: string;
   /** 对端头像对外地址（含 `?v=` 缓存版本号）；null = 对端没有头像，渲染回落首字符。 */
   avatarUrl?: string | null;
+}
+
+/**
+ * 备注操作结果（对齐后端 `ChatPeerVO`）。
+ *
+ * <p>设置 / 取消都回吐「这次操作后的状态」，因此调用方拿到它就知道了最终值，
+ * 无需再查一次会话列表：设置成功即 {@code alias} 为写入值，取消成功即 {@code alias} 为 null。</p>
+ */
+export interface ChatPeer {
+  /** 被备注的用户 ID（原样回吐，便于确认这次改的是谁）。19 位雪花 ID，字符串。 */
+  peerId: string;
+  /** 当前备注名；null = 现在没有备注（取消成功，或本来就没设过）。 */
+  alias: string | null;
 }
 
 /**
@@ -247,6 +274,15 @@ export interface ChatSession {
    * 顶部信息区一律经 {@link resolveSessionDisplay} 取值。</p>
    */
   targetAvatarUrl?: string | null;
+  /**
+   * 我给该对端起的备注（口径见 {@link Conversation.peerAlias}）。
+   *
+   * <p>挂在定位上带过去，理由与 {@link ChatSession.targetName} 相同：深链（只剩
+   * `scope + targetId`）或刚点进列表时，详情态要靠 {@link resolveSessionDisplay} 从列表回查；
+   * 而用户刚改完备注是要<b>立刻</b>看到效果的，不该等下一次列表刷新。
+   * 用户自己改的备注由覆盖表（`services/chat/peerAlias`）叠加，优先级高于这里。</p>
+   */
+  peerAlias?: string | null;
 }
 
 /** 发送消息入参（对齐后端 `ChatSendDTO`）。 */
@@ -313,11 +349,27 @@ export const DEFAULT_CONVERSATION_TITLE_LABELS: ConversationTitleLabels = {
   user: (id) => `用户 #${id}`,
 };
 
-/** 会话展示名回落链：后端名 → 「群聊 #id」/「用户 #id」。 */
+/**
+ * 会话展示名回落链：<b>我给对方起的备注 → 后端真实名 → 「群聊 #id」/「用户 #id」</b>。
+ *
+ * <p><b>备注为什么排在最前：</b>备注的全部意义就是「我这边按我认得出的名字称呼他」——
+ * 若真实昵称还能盖过它，用户改完备注会发现界面没变（对方有昵称时），这个功能等于不存在。
+ * 它与真实名是两个字段（见 {@link Conversation.peerAlias}），只在<b>这一处</b>裁决优先级：
+ * 列表、详情标题、消息气泡署名、头像首字全都经本函数取值，因此不会出现
+ * 「列表是备注、详情是昵称」的分裂。</p>
+ *
+ * <p><b>群聊不吃备注</b>：群聊没有对端用户，`targetId` 是群组 ID，拿它当用户 ID 去查备注
+ * 属于串域取值。即便脏数据里带了 `peerAlias`，这里也按 scope 拦掉。</p>
+ */
 export function conversationTitle(
   session: ChatSession & { targetName?: string | null },
   labels: ConversationTitleLabels = DEFAULT_CONVERSATION_TITLE_LABELS,
 ): string {
+  const alias =
+    session.chatScope === ChatScope.PRIVATE ? session.peerAlias?.trim() : '';
+  if (alias) {
+    return alias;
+  }
   const name = session.targetName?.trim();
   if (name) {
     return name;
@@ -362,17 +414,37 @@ export function resolveSessionDisplay(
   // 头像「已有值」只认非空字符串：null / undefined 都表示「还不知道」，需要回查列表
   // （群聊列表项本身就是 null，回查后仍是 null，渲染回落首字，不会来回震荡）
   const avatared = Boolean(session.targetAvatarUrl);
-  if (named && avatared) {
+  // 备注的「已知 / 未知」用 undefined 判定而不是真值：null 是<b>有意义的值</b>
+  // （「当前没有备注」），拿真值判定会让「取消备注」在详情态永远回填不上
+  // ——那样列表已经回落成真实昵称、标题却还挂着旧备注，正是这个函数要消除的分裂。
+  const aliased = session.peerAlias !== undefined;
+  if (named && avatared && aliased) {
     return session;
   }
   const found = conversations?.find((item) => isSameSession(item, session));
   if (!found) {
     return session;
   }
+  const nextName = named ? session.targetName : found.targetName;
+  const nextAvatarUrl = avatared
+    ? session.targetAvatarUrl
+    : found.targetAvatarUrl;
+  const nextAlias = aliased ? session.peerAlias : found.peerAlias;
+  // 回查后三个字段都取到和原来一样的值时，返回原对象而不是新对象：
+  // 调用方的 useMemo 依赖引用相等来避免白重渲染（群聊尤其明显——群里没有头像、
+  // avatar 恒为空，若每次都铺一个新对象，打开群聊就会引发一串无谓重算）
+  if (
+    nextName === session.targetName &&
+    nextAvatarUrl === session.targetAvatarUrl &&
+    nextAlias === session.peerAlias
+  ) {
+    return session;
+  }
   return {
     ...session,
-    targetName: named ? session.targetName : found.targetName,
-    targetAvatarUrl: avatared ? session.targetAvatarUrl : found.targetAvatarUrl,
+    targetName: nextName,
+    targetAvatarUrl: nextAvatarUrl,
+    peerAlias: nextAlias,
   };
 }
 
@@ -417,6 +489,9 @@ export function messageSummary(
  * <p>文件消息的正文末尾带一条「条目引用尾注」（见 `services/chat/fileCard`），
  * 那是给卡片点击用的机器可读信息。摘要不剥掉它，会话列表里就会甩出一串
  * `#file:1949…` 的雪花 ID。</p>
+ *
+ * <p>消息本体<b>带类型</b>，所以这里的门禁是「只在文件消息上剥」：文本消息里
+ * 真写了 `#file:1` 也照原样留着（剥法见 {@link fileCardDisplayText}）。</p>
  */
 function summaryBody(
   message: Pick<NotifyMessage, 'content' | 'messageType'>,
@@ -425,8 +500,7 @@ function summaryBody(
   if (message.messageType !== MessageType.FILE) {
     return content;
   }
-  const card = parseFileCardContent(content);
-  return card ? buildFileCardContent(card.name, card.sizeText) : content;
+  return fileCardDisplayText(content);
 }
 
 /**

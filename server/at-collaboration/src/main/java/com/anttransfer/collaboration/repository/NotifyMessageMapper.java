@@ -373,6 +373,7 @@ public interface NotifyMessageMapper extends BaseMapper<NotifyMessage> {
                    chat_scope       as chatScope,
                    chat_target_id   as chatTargetId,
                    client_msg_id    as clientMsgId,
+                   message_type     as messageType,
                    content          as content,
                    recall_status    as recallStatus
             from sys_notify_message

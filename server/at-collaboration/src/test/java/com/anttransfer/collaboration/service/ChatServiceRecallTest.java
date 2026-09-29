@@ -19,6 +19,7 @@ import com.anttransfer.collaboration.config.NotifyProperties;
 import com.anttransfer.collaboration.model.dto.ChatSendDTO;
 import com.anttransfer.collaboration.model.entity.NotifyMessage;
 import com.anttransfer.collaboration.model.vo.ChatRecallVO;
+import com.anttransfer.collaboration.repository.ChatPeerAliasMapper;
 import com.anttransfer.collaboration.repository.GroupMemberMapper;
 import com.anttransfer.collaboration.repository.NotifyMessageMapper;
 import com.anttransfer.collaboration.repository.SysGroupMapper;
@@ -69,6 +70,12 @@ import static org.mockito.Mockito.when;
  * 原消息一旦被撤回（正文清空），引用块会在几秒后集体变空白。故用例断言
  * <b>写入时</b>就把 {@code quoteContent / quoteSenderUserId} 抄进每一行。</p>
  *
+ * <p><b>抄下来的快照还必须「已经是给人看的文本」：</b>文件消息的正文末尾挂着
+ * {@code #file:} / {@code #att:} 机器尾注，而快照那一行既没有类型可供渲染端判断、
+ * 也解析不成卡片，只能当字符串画出来——尾注一旦漏进去就是永久可见的。
+ * 故用例把「按被引用消息的类型剥掉尾注」与「剥在截断之前」两件事一并钉住
+ * （口径见 {@code ChatFileCardText}）。</p>
+ *
  * <p>此外还有两条边界值得单独钉：时间窗判定用的是<b>服务端时钟</b>且窗口本身是
  * 「超过 2 分钟才算超窗」（1 分 59 秒必须还能撤），以及快照截断按<b>码点</b>而不是
  * {@code char}（否则 emoji 会被切成孤立代理，写 utf8mb4 列时变成乱码）。</p>
@@ -94,6 +101,8 @@ class ChatServiceRecallTest {
     @Mock
     private SysGroupMapper sysGroupMapper;
     @Mock
+    private ChatPeerAliasMapper chatPeerAliasMapper;
+    @Mock
     private UserLookupPort userLookupPort;
     @Mock
     private WsBroadcaster wsBroadcaster;
@@ -110,7 +119,8 @@ class ChatServiceRecallTest {
 
     @BeforeEach
     void setUp() {
-        service = new ChatService(notifyMessageMapper, groupMemberMapper, sysGroupMapper, userLookupPort,
+        service = new ChatService(notifyMessageMapper, groupMemberMapper, sysGroupMapper,
+                chatPeerAliasMapper, userLookupPort,
                 wsBroadcaster, wsPresenceService, afterCommitExecutor, properties, notifyMessageService);
         // 撤回推送注册在「提交后」执行：测试里必须让它立即跑，否则断言不到推送内容
         lenient().doAnswer(invocation -> {
@@ -352,6 +362,45 @@ class ChatServiceRecallTest {
         assertThat(Character.isHighSurrogate(snapshot.charAt(snapshot.length() - 1))).isFalse();
     }
 
+    @Test
+    @DisplayName("引用：被引用的是文件消息时，快照只留「名字（尺寸）」，机器可读尾注不进引用块")
+    void send_shouldStripFileCardMarkersFromQuoteSnapshot() {
+        givenPrivateSend();
+        when(notifyMessageMapper.selectQuotableMessage(ME_ID, QUOTED_KEY))
+                .thenReturn(quoted(PEER_ID, PEER_ID, MessageType.FILE_TRANSFER,
+                        "季度报告.pdf（2.4 MB）\n#file:2102453724332388354\n#att:2104826682342342657",
+                        NotifyMessage.RECALL_NONE));
+
+        service.send(ME_ID, sendDTO(MSG_KEY, QUOTED_KEY));
+
+        ArgumentCaptor<NotifyMessage> rows = ArgumentCaptor.forClass(NotifyMessage.class);
+        verify(notifyMessageMapper, times(2)).insert(rows.capture());
+        // 引用块直接把 quote_content 画成文本，那一行拿不到被引用消息的类型、也解析不了卡片，
+        // 尾注一旦漏进快照就是永久可见的（历史行不会因为前端改版而自己变干净）
+        assertThat(rows.getAllValues()).allSatisfy(row ->
+                assertThat(row.getQuoteContent()).isEqualTo("季度报告.pdf（2.4 MB）"));
+    }
+
+    @Test
+    @DisplayName("引用：先剥尾注再截断——尾注既不吃 200 码点配额，也不会被截成半截 ID")
+    void send_shouldStripMarkersBeforeTruncatingQuoteSnapshot() {
+        givenPrivateSend();
+        String name = "n".repeat(180) + ".pdf";
+        String card = name + "（1 KB）\n#file:2102453724332388354\n#att:2104826682342342657";
+        when(notifyMessageMapper.selectQuotableMessage(ME_ID, QUOTED_KEY))
+                .thenReturn(quoted(PEER_ID, PEER_ID, MessageType.FILE_TRANSFER, card,
+                        NotifyMessage.RECALL_NONE));
+
+        service.send(ME_ID, sendDTO(MSG_KEY, QUOTED_KEY));
+
+        ArgumentCaptor<NotifyMessage> rows = ArgumentCaptor.forClass(NotifyMessage.class);
+        verify(notifyMessageMapper, times(2)).insert(rows.capture());
+        // 「名字（尺寸）」共 190 码点：先剥就完整留下；若不剥，两条尾注会把正文挤出 200 的配额，
+        // 用户看到的引用块会以半截雪花 ID 结尾
+        assertThat(rows.getAllValues()).allSatisfy(row ->
+                assertThat(row.getQuoteContent()).isEqualTo(name + "（1 KB）"));
+    }
+
     /* ======================== 夹具 ======================== */
 
     /** 单聊发送的公共打桩：幂等回查为空（首发）+ 对端可用。 */
@@ -380,11 +429,17 @@ class ChatServiceRecallTest {
     }
 
     private static NotifyMessage quoted(long senderId, long targetId, String content, int recallStatus) {
+        return quoted(senderId, targetId, MessageType.CHAT_TEXT, content, recallStatus);
+    }
+
+    private static NotifyMessage quoted(long senderId, long targetId, int messageType,
+                                        String content, int recallStatus) {
         NotifyMessage quoted = new NotifyMessage();
         quoted.setClientMsgId(QUOTED_KEY);
         quoted.setSenderUserId(senderId);
         quoted.setChatScope(ChatScope.PRIVATE);
         quoted.setChatTargetId(targetId);
+        quoted.setMessageType(messageType);
         quoted.setContent(content);
         quoted.setRecallStatus(recallStatus);
         return quoted;

@@ -210,11 +210,11 @@ public class RoleAdminService {
         SysRole role = requireRole(roleId);
         Integer dataScopeBefore = role.getDataScope();
 
-        if (role.isBuiltIn() && !Objects.equals(role.getDataScope(), dto.dataScope())) {
+        if (role.isBuiltInRole() && !Objects.equals(role.getDataScope(), dto.dataScope())) {
             throw new BusinessException(ErrorCode.BUILT_IN_ROLE_PROTECTED,
                     "内置角色的数据范围不可变更：" + role.getCode());
         }
-        if (!role.isBuiltIn()) {
+        if (!role.isBuiltInRole()) {
             assertDataScopeWithinOwnRange(dto.dataScope());
             role.setDataScope(dto.dataScope());
         }
@@ -241,7 +241,7 @@ public class RoleAdminService {
     public void deleteRole(Long roleId) {
         Long operatorId = currentUserId();
         SysRole role = requireRole(roleId);
-        if (role.isBuiltIn()) {
+        if (role.isBuiltInRole()) {
             throw new BusinessException(ErrorCode.BUILT_IN_ROLE_PROTECTED, "内置角色不可删除：" + role.getCode());
         }
         if (userRoleMapper.countByRoleId(roleId) > 0) {

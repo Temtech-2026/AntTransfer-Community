@@ -24,6 +24,7 @@
  */
 
 import {
+  EditOutlined,
   PlusOutlined,
   ReloadOutlined,
   SettingOutlined,
@@ -55,6 +56,7 @@ import ChatAttachmentPicker from '@/components/ChatAttachmentPicker';
 import ChatComposer from '@/components/ChatComposer';
 import ChatFileCard from '@/components/ChatFileCard';
 import ChatGroupPanel from '@/components/ChatGroupPanel';
+import ChatPeerPanel from '@/components/ChatPeerPanel';
 import ChatPeerStatus from '@/components/ChatPeerStatus';
 import EmptyState from '@/components/EmptyState';
 import SectionCard from '@/components/SectionCard';
@@ -62,6 +64,7 @@ import UserAvatar from '@/components/UserAvatar';
 import useChatAttachmentDraft from '@/hooks/useChatAttachmentDraft';
 import useChatMentionables from '@/hooks/useChatMentionables';
 import useChatPresence from '@/hooks/useChatPresence';
+import usePeerAliasOverrides from '@/hooks/usePeerAlias';
 import useCurrentUserAvatar from '@/hooks/useCurrentUserAvatar';
 import useWebSocket from '@/hooks/useWebSocket';
 import {
@@ -72,6 +75,8 @@ import {
   type ConversationSummaryLabels,
   type ConversationTitleLabels,
   type MessageSenderLabels,
+  applyPeerAliasChange,
+  applyPeerAliasOverride,
   applyReadReceipt,
   CHAT_PERM,
   conversationInitial,
@@ -98,7 +103,10 @@ import {
   sessionOfMessage,
   summarizeReaders,
 } from '@/services/chat';
-import { parseFileCardContent } from '@/services/chat/fileCard';
+import {
+  fileCardDisplayText,
+  parseFileCardContent,
+} from '@/services/chat/fileCard';
 import {
   applyIncomingToConversations,
   applyRecall,
@@ -206,6 +214,13 @@ const ChatPage = () => {
    * 「面板开着、会话却已切走」，那时它配的是谁就说不清了。</p>
    */
   const [groupPanelOpen, setGroupPanelOpen] = useState(false);
+  /**
+   * 对端资料面板是否展开（仅单聊）。
+   *
+   * <p>与群设置同理，只存开关：面板要看的对端恒是当前打开的会话，多存一个 ID 就多出
+   * 「面板开着、会话已切走」那种说不清的状态。</p>
+   */
+  const [peerPanelOpen, setPeerPanelOpen] = useState(false);
   const [messages, setMessages] = useState<NotifyMessage[]>([]);
   const [msgLoading, setMsgLoading] = useState(false);
   const [msgError, setMsgError] = useState(false);
@@ -998,17 +1013,38 @@ const ChatPage = () => {
   };
 
   // —— 派生数据 ——
+  /**
+   * 我改过的对端备注（`peerId → 备注名`）。
+   *
+   * <p>保存备注不一定重拉列表（写接口已回吐结果），因此「列表数据」比「真实备注」旧一拍。
+   * 展示层统一按覆盖表叠加一次，改完备注名字立刻变，不必为了三个字付一次全量往返。</p>
+   */
+  const aliasOverrides = usePeerAliasOverrides();
+
+  /**
+   * 叠加过备注的会话列表——<b>渲染与展示一律用它</b>（存储态 {@link conversations} 保持原样）。
+   *
+   * <p>不直接把覆盖表写回 `conversations`：那份数据的语义是「服务端给的会话列表」，
+   * 混进本端改动后就分不清该以谁为准（下次拉取时该不该覆盖也说不清了）。
+   * 叠加只发生在派生层，服务端数据一到即自然收敛。</p>
+   */
+  const viewConversations = useMemo(
+    () =>
+      conversations.map((item) => applyPeerAliasOverride(item, aliasOverrides)),
+    [conversations, aliasOverrides],
+  );
+
   const visibleConversations = useMemo(() => {
     const query = keyword.trim().toLowerCase();
     if (!query) {
-      return conversations;
+      return viewConversations;
     }
-    return conversations.filter(
+    return viewConversations.filter(
       (item) =>
         titleOf(item).toLowerCase().includes(query) ||
         conversationSummary(item, summaryLabels).toLowerCase().includes(query),
     );
-  }, [conversations, keyword, summaryLabels, titleOf]);
+  }, [viewConversations, keyword, summaryLabels, titleOf]);
 
   /** 我自己的头像（登录态）：气泡里「我发的」那一行不走消息载荷，见 `useCurrentUserAvatar`。 */
   const myAvatar = useCurrentUserAvatar();
@@ -1023,9 +1059,14 @@ const ChatPage = () => {
   const activeDisplay = useMemo(
     () =>
       activeSession
-        ? resolveSessionDisplay(activeSession, conversations)
+        ? // 再叠一次覆盖表：详情态自己带的备注可能是我刚改之前的旧值（{@link resolveSessionDisplay}
+          // 只在字段缺失时回填，不会覆盖已有值），而用户点完保存期待的是立刻看到新名字
+          applyPeerAliasOverride(
+            resolveSessionDisplay(activeSession, viewConversations),
+            aliasOverrides,
+          )
         : null,
-    [activeSession, conversations],
+    [activeSession, viewConversations, aliasOverrides],
   );
 
   const activeTitle = activeDisplay
@@ -1356,7 +1397,9 @@ const ChatPage = () => {
                 <>
                   {/*
                     引用块取服务端写入时的快照（谁说的 + 当时那段正文），不回查原消息：
-                    原消息随后被撤回时正文已清空，回查会让引用块一起变空白
+                    原消息随后被撤回时正文已清空，回查会让引用块一起变空白。
+                    快照过一层展示口径：被引用的是文件消息时正文末尾挂着 `#file:` / `#att:`
+                    尾注，不剥就会当成引用正文画出来（旧快照已落库，只能在这一层兜）
                   */}
                   {message.quoteClientMsgId ? (
                     <ChatMessageQuote
@@ -1365,7 +1408,7 @@ const ChatPage = () => {
                         message,
                         senderLabels,
                       )}
-                      summary={message.quoteContent ?? ''}
+                      summary={fileCardDisplayText(message.quoteContent)}
                     />
                   ) : null}
                   {message.content}
@@ -1634,6 +1677,21 @@ const ChatPage = () => {
                         {intl.formatMessage({ id: 'chat.group.title' })}
                       </Button>
                     ) : null}
+                    {/*
+                      对端资料入口与群设置入口互为镜像：备注挂的是「对方这个人」，
+                      群聊里没有这个主体（targetId 是群组 ID），因此只在单聊出现。
+                      备注是纯私有属性、不需要权限点，故这里不做任何权限预判。
+                    */}
+                    {activeScope === ChatScope.PRIVATE ? (
+                      <Button
+                        type="text"
+                        icon={<EditOutlined />}
+                        aria-label={intl.formatMessage({ id: 'chat.peer.title' })}
+                        onClick={() => setPeerPanelOpen(true)}
+                      >
+                        {intl.formatMessage({ id: 'chat.peer.action' })}
+                      </Button>
+                    ) : null}
                   </div>
                   <div
                     className={styles.stream}
@@ -1711,6 +1769,32 @@ const ChatPage = () => {
         onClose={() => setGroupPanelOpen(false)}
         onUpdated={applyGroupUpdate}
         onLeft={handleGroupLeft}
+      />
+
+      {/*
+        对端资料面板：与群设置面板共用同一条「只存开关、目标由当前会话推出」的口径。
+        群聊显式关掉——群的 targetId 是群组 ID，拿来当用户 ID 查备注属于串域取值
+        （雪花 ID 跨表理论上可碰撞），面板内部也独立拦一道。
+      */}
+      <ChatPeerPanel
+        open={peerPanelOpen && activeScope === ChatScope.PRIVATE}
+        peerId={activeScope === ChatScope.PRIVATE ? activeDisplay?.targetId : null}
+        // 只读的「真实昵称」：这里传的仍是后端名（含回落名），备注在面板内按同一套
+        // 展示链叠加——若把两者混成一个字段，面板上就再也说不清「备注改了什么」
+        nickname={
+          activeScope === ChatScope.PRIVATE && activeDisplay
+            ? activeDisplay.targetName?.trim() || labels.user(activeDisplay.targetId)
+            : ''
+        }
+        avatarUrl={activeDisplay?.targetAvatarUrl}
+        alias={
+          activeScope === ChatScope.PRIVATE
+            ? activeDisplay?.peerAlias ?? null
+            : null
+        }
+        onClose={() => setPeerPanelOpen(false)}
+        // 写接口已回吐结果，交给覆盖表即可，无需为改三个字重拉整个会话列表
+        onChanged={applyPeerAliasChange}
       />
 
       <Modal
