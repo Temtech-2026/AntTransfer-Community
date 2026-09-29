@@ -127,10 +127,10 @@
 | `[PRD-02]` US-05 表述暗示「发布事件后再写授权记录」，与 [T-02] 修订后的口径冲突 | **高** | 开发者照 PRD 字面实现，把授权写表放到事件监听里 | 修订 US-05 验收文字为「**授权写入与审批状态变更在同一事务内**，事件仅承载通知/审计」 |
 | `[PRD-03]` 状态枚举命名与状态码未定义映射（PRD 用英文态名，设计用 0~6 数字码） | **中** | 前后端各自定义态名，出现 `PAUSED` vs `status=2` 双写 | 补「状态码 ↔ 枚举名 ↔ 文案」单一映射表（上传 0~6、申请 0~4、授权 1~3），前后端共用 |
 | `[PRD-04]` 秒传性能指标（P95 < 5s / 1 GiB）无索引与查询计划门禁 | **中** | 秒传查询未命中 `(sha256,size_bytes)` 唯一索引 → 全表扫描 | 明确该唯一索引为性能前置条件，并加 `EXPLAIN` 评审门禁（禁止 `type=ALL`） |
-| `[PRD-05]` 工作台性能指标（P95 < 1s）无聚合数据源设计 | **中** | 统计口径直接 `count(*)` 多表扫描 | 落统计聚合表或 Redis 计数器，明确数据来源与刷新频率；指标与实现方案一并写入验收 |
+| `[PRD-05]` 工作台性能指标（P95 < 1s）无聚合数据源设计 | **中** | 统计口径直接 `count(*)` 多表扫描 | ~~落统计聚合表或 Redis 计数器，明确数据来源与刷新频率；指标与实现方案一并写入验收~~ ✅ **2026-09-29 已收口（含口径修正）**：数据源 = 共享内核审计账本 `sys_operation_log`（append-only），`TransferStatisticsMapper#aggregateUserTransfer` **单表**按 `(action, result)` 分组求和——**不存在「多表扫描」**；聚合结果最多 4 行、与流水条数无关，过滤走 `idx_user_time (user_id, log_time)` 收敛到单人区间。「另立统计表 / Redis 计数器」**明确不采纳**：账本与业务动作同源，再造一张表只能靠双写维持一致，而双写必然漂移（取舍见 Mapper 类注）。刷新频率为**实时查询**（非预聚合、无缓存层），P95 < 1s 由「单人区间 + ≤ 4 组结果 + 表按 `log_time` 归档」保证。消费点与证据：`GET /v1/transfers/statistics` + `TransferStatisticsServiceTest` 5 例 + `TransferStatisticsIntegrationTest` 3 例 |
 | `[PRD-06]` 打包/批量上限（如 200 个 / 20 GiB）无配额服务载体 | **中** | 超限请求无统一拦截点 | 落配额校验服务 + 明确错误码（409x 段）；入口统一校验，避免各接口自行判断 |
-| `[PRD-07]` US-08「通知必达」与 [T-06] 的 `AFTER_COMMIT` 丢失风险冲突 | **中** | 审批提交后进程崩溃，通知事件丢失 | 通知落 `sys_notify_message` 表并**与业务同事务**写入；事件只负责异步推送/邮件，失败可重试 |
-| `[PRD-08]` §8 Won't 扩展点自认「接口尚未建立」，与架构要求的可插拔接缝脱节 | **中** | EE 立项时需改已发布业务代码才能接入 | 按 [architecture.md §2](./architecture.md) 建立 SPI 契约 + CE 默认实现（Noop/单级/明文），并回写 PRD §8 命名 |
+| `[PRD-07]` US-08「通知必达」与 [T-06] 的 `AFTER_COMMIT` 丢失风险冲突 | **中** | 审批提交后进程崩溃，通知事件丢失 | 通知落 `sys_notify_message` 表并**与业务同事务**写入；事件只负责异步推送/邮件，失败可重试。📌 **2026-09-29 新增的三类通知沿用该口径**：传输完成（`8`，`TransferEventPublisher` 提交后发布，发布失败只留痕、不影响已落库结果）、取件回执（`9`）、链接到期前提醒（`4`，定时任务）均属 `AFTER_COMMIT` 非关键副作用，**不反向阻塞业务事务** |
+| `[PRD-08]` §8 Won't 扩展点自认「接口尚未建立」，与架构要求的可插拔接缝脱节 | **中** | EE 立项时需改已发布业务代码才能接入 | 按 [architecture.md §2](./architecture.md) 建立 SPI 契约 + CE 默认实现（Noop/单级/明文），并回写 PRD §8 命名。✅ **2026-09-29 已落地**：7 个接口建于 `at-common` 的 `com.anttransfer.common.spi`（identity / scan / crypto / watermark / approval / transport），CE 默认实现与 `@ConditionalOnMissingBean` 装配门禁同批完成，PRD §8 命名已回写（**A-6 收口 / D-2 主体收口**） |
 | `[PRD-09]` US-05「文件默认继承空间级别」依赖 `space.level`，该列尚未建（[V-04] 开放） | **中** | 验收「高级资源默认拦截」时无空间级数据可继承 | 标注为依赖 at-collaboration 的前置项；在 `collaboration_space` 落地前，验收用例只覆盖文件显式 `level` |
 | `[API-01]` 免登录白名单端点（分享下载）散落且缺专门防刷设计 | **高** | 外部协作者直接命中分享下载，绕过登录态限流 | 白名单集中到单一文件维护；分享下载独立限流（IP + shareId 维度）+ 强制提取码校验 + 次数原子扣减（[C-08]） |
 | `[API-02]` 秒传预检「未命中」以错误码返回会被前端当失败分支 | **中** | `precheck` 返回 4001 时前端走 `catch`/错误提示 | 改为 200 + `data.needUpload=true/false`；或明确该类「非错误」码在前端策略表中归为成功分支（见 `web/src/utils/result.ts`） |
@@ -571,10 +571,10 @@
 | `[PRD-02]` | PRD US-05 验收文字 vs [T-02] 修订后的 use-case-flows §2.3 | 授权写表位置表述冲突 |
 | `[PRD-03]` | PRD 用例态名 vs `system-design §5` 状态机数字码 | 无映射表 |
 | `[PRD-04]` | PRD US-02 性能指标 vs `sys_file` 索引设计 | 秒传查询计划无门禁 |
-| `[PRD-05]` | PRD US-11 工作台指标 vs 无统计聚合设计 | 指标无数据源 |
+| `[PRD-05]` | PRD US-11 工作台指标 vs ~~无统计聚合设计~~ 已有 `TransferStatisticsService`（`sys_operation_log` 单表聚合） | ~~指标无数据源~~ ✅ **2026-09-29 已收口**（数据源 / 索引 / 证据见上表速览 F，PRD §4.1「工作台数据总览」已置 ✅） |
 | `[PRD-06]` | PRD US-12 打包上限 vs 无配额服务/错误码 | 上限无承载 |
 | `[PRD-07]` | PRD US-08「必达」 vs [T-06] | 通知可靠性缺口 |
-| `[PRD-08]` | PRD §8 Won't 扩展点（自认「接口尚未建立」） vs [architecture.md §2](./architecture.md) | 缺 SPI 接缝 |
+| `[PRD-08]` | PRD §8 Won't 扩展点（自认「接口尚未建立」） vs [architecture.md §2](./architecture.md) | ~~缺 SPI 接缝~~ ✅ **2026-09-29 已落地**（7 SPI + CE 默认实现 + 装配门禁） |
 | `[PRD-09]` | PRD US-05「继承空间级别」 vs [V-04]（`space.level` 未建） | 验收不可测 |
 | `[API-01]` | `docs/api/README.md` §5 白名单（auth/token、refresh、分享下载） | 免登录端点散落、缺防刷 |
 | `[API-02]` | `docs/api/README.md` 秒传预检（`4001` 语义） vs 前端 `result.ts` 策略 | 业务分支被当错误 |
@@ -588,7 +588,8 @@
 1. **单一权威源**：状态码以设计基线（`system-design §5`）为准、错误码以后端 `ErrorCode` 为准；
    PRD/API 文档**引用**而非**复制**，避免二次漂移（本主题 15 条里过半是复制导致的口径分叉）。
 2. **指标必须可测**：任何 P95 / 上限 / 时延指标，必须同时给出**数据源、索引或聚合方案、验收方法**，
-   否则从 PRD 中降级为「非验收项」（[PRD-04]/[PRD-05]/[PRD-06] 均因缺此而不可测）。
+   否则从 PRD 中降级为「非验收项」（[PRD-04]/[PRD-06] 仍缺此而不可测；
+   [PRD-05] 已于 2026-09-29 补齐「数据源 + 索引」口径并明确不另立聚合表，见上表速览 F）。
 3. **契约先于实现**：幂等键（[API-03]）、免登录端点清单（[API-01]）、分页上界（[API-04]）
    必须在写第一个 Controller 前落进契约——它们属于「事后补就必然破坏兼容」的那一类。
 4. **文档重编号须全量回归**：1xxx 段重编号（[AT-DIFF-01]）后，所有引用处（含验收清单、前端策略表、
@@ -648,15 +649,26 @@
 | `docs/architecture/architecture.md` | **v1.1 新建**：模块职责/依赖方向、四层包结构、处理链路、CE/EE 扩展点、部署拓扑 | 本次落地 |
 | `docs/architecture/README.md` | 增补指向 `architecture.md` 的入口链接（原文仅有职责表与铁律，无四层/链路/扩展点/拓扑） | 本次落地 |
 | `docs/development/AT-DIFF-todos.md` | AT-DIFF-04 验收行错误码更新为 `403(1003)` / `401(1006)`；全仓扫描重编号前的 1xxx 陈旧字面量（✅ 2026-09-13 已完成） | D-06 |
-| `docs/prd/README.md` | §8 扩展点命名对齐附录 C（`IdentityProvider` 等 7 接口）+ 建立「接口尚未建立」的 SPI 接缝；US-05 授权写表表述按 [T-02] 修订 | PRD-02 / PRD-08 |
+| `docs/prd/README.md` | §8 扩展点命名对齐附录 C（`IdentityProvider` 等 7 接口）+ 建立「接口尚未建立」的 SPI 接缝（✅ 2026-09-29）；US-05 授权写表表述按 [T-02] 修订（⏸ 仍待，随 D-3） | PRD-02 / PRD-08 |
 | `docs/api/README.md` | 补：写接口幂等键、分页上界、免登录端点集中化与分享下载防刷、秒传预检返回语义（`4001` → 200+data 或前端策略表归入成功分支） | API-01~API-04 |
 | `docs/api/error-codes.md` · `web/src/utils/result.ts` | 确立「后端 `ErrorCode` 为单一权威源」；前端策略表断言覆盖全部码，重编号后回归 | API-05 / D-06 |
+| `docs/architecture/system-design.md` | §1.2 SPI 规则收紧为「接口统一定义在 `at-common` 的 `com.anttransfer.common.spi`」；§4.1 `sys_notify_message` 补 `mentioned` / `notify_type=9` / 保留期清理；§5.1 补 `TransferCompletedEvent`；§5.3 补取件回执与到期前提醒；§7.1 补 `at:chat:retention-lock`；§8 现状核对刷新 | A/B/C 三批（✅ 2026-09-29） |
+| `docs/architecture/use-case-flows.md` | 头部状态刷新；§1.1 步骤 7 补 `TransferCompletedEvent`；§2.1 事件表补通知类副作用；补 @提及、取件回执、下载水印等已落地步骤 | A/B/C（✅ 2026-09-29） |
+| `docs/api/README.md` | §1 前缀表补 `mentionUserIds` / `mentionUnreadCount` 与通知类型 8/9/4；§7 补三类系统通知帧 | A/B（✅ 2026-09-29） |
+| `docs/api/error-codes.md` | §五副作用补取件回执（`9`）/ 传输完成（`8`）/ 到期前提醒（`4`）；`4011` 锁定提醒改为「恰好跨过阈值发一次」 | A（✅ 2026-09-29） |
+| `docs/development/README.md` · `dod.md` | 测试用例与覆盖率基线刷新（后端 661 例 / 前端 73 文件 828 例）；AT-DIFF 计数由「5 处」更正为「登记 11 项、代码内 3 处」 | 回归（✅ 2026-09-29） |
+| `docs/deployment/README.md` | 环境变量表补 `message-cleanup-cron` / `message-retention-days`（下限 30 硬钳制）；上线清单补通知回执与保留期清理核验 | B（✅ 2026-09-29） |
+| `docs/architecture/red-team-review.md` · `docs/prd/README.md` §4.2 | 工作台指标（US-11）数据源收敛并回写红队三处表述（速览 F / 位置与证据 / 收敛红线）：`TransferStatisticsService` 直读 `sys_operation_log` 单表聚合（走 `idx_user_time`），**不另立统计表 / 不用 Redis 计数器** | PRD-05（✅ 2026-09-29） |
 
 > 上表前三项及随附的同类勘误/实体注释同步已于 **2026-09-06 回写完成**。
 > **v1.1 新增行**中，`docs/architecture/architecture.md`（新建）与 `docs/architecture/README.md`（增补入口）**已落地**；
 > `system-design.md` §1.3、`docs/prd/README.md` §8、`docs/api/README.md`、`docs/development/AT-DIFF-todos.md` AT-DIFF-04、
 > `web/src/utils/result.ts` 为**待回改项**；其中涉及对外契约的（错误码权威源 / 幂等键 / 分页上界 / 免登录端点防刷）
 > 须在写首个 Controller 之前完成（见发布门禁第 7 条）。
+> 🔄 **2026-09-29 更新**：`docs/prd/README.md` §8 命名回写、`AT-DIFF-todos.md` AT-DIFF-09、`docs/api/README.md`
+> 的**本轮通知 / 提及契约部分**已落地；`system-design.md` §1.3（`mapper` → `repository`）、幂等键 / 分页上界 /
+> 免登录端点防刷、`web/src/utils/result.ts` 仍属 **D-3 待回改项**（未改动）。本轮 A/B/C 三批新增的同步行见上表末尾六行，
+> 另加 PRD-05 收口一行（工作台指标数据源），**均已完成**。
 > ⏸ **2026-09-13 裁决**：上述待回改项**已登记为延期项**（先记录、不阻塞当前开发），见 [architecture.md §4 ⏸ 延期登记](./architecture.md)：
 > D-1（跨模块协作口径）、D-2（附录 C / PRD §8 命名权威源）、D-3（红队待回改项整体）；
 > 其中「对外契约 4 项」按 DoD-3 收口口径单列为 **D-4**（写接口幂等键 / 免登录端点防刷 / 前后端确认留痕）；

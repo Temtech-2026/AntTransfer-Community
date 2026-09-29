@@ -54,6 +54,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -160,6 +161,11 @@ public class ChatService {
      * <p>引用的校验发生在<b>幂等回查之后</b>：重放同一条已落库的消息不该因为
      * 原消息后来被撤回而失败，幂等语义优先。</p>
      *
+     * <p><b>{@code @} 提及（{@code mentionUserIds} 非空）不改变落库形态</b>：仍是 N 行写扩散，
+     * 只是把「被点名者那一行」的 {@code mentioned} 置 1。于是「有人 @ 我」在库里就是一个
+     * 可索引的等值条件，会话列表的提及未读计数与气泡高亮都从它派生，
+     * 而<b>不需要解析正文里的昵称</b>（口径与取舍见 {@link #resolveMentionTargets}）。</p>
+     *
      * @param senderId 发送人（取自登录态，不从入参取——否则可伪造他人发消息）
      * @param dto      发送参数
      * @return 发送人视角的消息视图（其自身那一行，{@code chatTargetId} 为对端 / 群组）
@@ -171,6 +177,9 @@ public class ChatService {
         validateShape(scope, messageType, dto.content());
 
         List<Long> recipients = resolveRecipients(senderId, scope, dto.targetId());
+        // 提及目标必须在接收人清单内收敛（见 resolveMentionTargets）：
+        // 非成员、自己、单聊场景一律静默剔除，不报错也不落标记
+        Set<Long> mentionTargets = resolveMentionTargets(senderId, scope, recipients, dto.mentionUserIds());
 
         NotifyMessage existed = findExisting(senderId, scope, dto.targetId(), dto.clientMsgId());
         if (existed != null) {
@@ -183,7 +192,7 @@ public class ChatService {
         // 引用快照：非引用消息返回 null；引用不合法时在此抛 1036（不落任何行）
         NotifyMessage quoted = resolveQuote(senderId, scope, dto.targetId(), dto.quoteClientMsgId());
 
-        List<NotifyMessage> rows = buildRows(senderId, scope, dto, recipients, quoted);
+        List<NotifyMessage> rows = buildRows(senderId, scope, dto, recipients, quoted, mentionTargets);
         try {
             for (NotifyMessage row : rows) {
                 notifyMessageMapper.insert(row);
@@ -450,7 +459,8 @@ public class ChatService {
                     last.getSenderUserId(),
                     isSelfSent(last),
                     last.getCreateTime(),
-                    summary.getUnreadCount() == null ? 0L : summary.getUnreadCount()));
+                    summary.getUnreadCount() == null ? 0L : summary.getUnreadCount(),
+                    summary.getMentionUnreadCount() == null ? 0L : summary.getMentionUnreadCount()));
         }
         return conversations;
     }
@@ -720,9 +730,14 @@ public class ChatService {
      * <p>{@code chatTargetId} 的语义按接收人视角写：单聊时<b>互指对方</b>
      * （A 那行记 B、B 那行记 A），这样各自按 {@code (scope, target)} 查会话历史时
      * 都能得到完整双向记录；群聊时所有人统一记 groupId。</p>
+     *
+     * <p>{@code mentioned} 只对 {@code mentionTargets} 里的接收人置 1：发送人自己那一行
+     * 必然不在其中（{@link #resolveMentionTargets} 已剔除自己），
+     * 因此「自己 @ 自己」不会给发送人制造一个假角标。</p>
      */
     private List<NotifyMessage> buildRows(Long senderId, int scope, ChatSendDTO dto,
-                                          List<Long> recipients, NotifyMessage quoted) {
+                                          List<Long> recipients, NotifyMessage quoted,
+                                          Set<Long> mentionTargets) {
         boolean group = ChatScope.isGroup(scope);
         List<NotifyMessage> rows = new ArrayList<>(recipients.size());
         for (Long recipient : recipients) {
@@ -735,6 +750,9 @@ public class ChatService {
             row.setChatTargetId(group ? dto.targetId() : otherSide(senderId, recipient, dto.targetId()));
             row.setClientMsgId(dto.clientMsgId());
             row.setContent(dto.content());
+            // 提及标记只落在被点名者那一行：这是「行级属性」，同一条消息在不同接收人那里取值不同
+            row.setMentioned(mentionTargets.contains(recipient)
+                    ? NotifyMessage.MENTION_YES : NotifyMessage.MENTION_NONE);
             // 引用快照抄进每一行：接收人各自的视角里都要能渲染出「这是回复谁的哪句话」，
             // 而他们的那一行与发送人那一行是彼此独立的记录，无法事后互相回查
             applyQuote(row, quoted);
@@ -747,6 +765,54 @@ public class ChatService {
             rows.add(row);
         }
         return rows;
+    }
+
+    /**
+     * 解析 {@code @} 提及目标：与接收人清单取交集，<b>非法项静默剔除而不报错</b>。
+     *
+     * <p><b>为什么剔除而不报错：</b>本字段的唯一作用是「给被点名者的那一行打个标记」，
+     * 它<b>不改变投递范围</b>——接收人只由 {@link #resolveRecipients} 决定，而那里已经做过
+     * 完整的成员校验。因此「@ 了一个不在本会话的人」不会造成越权投递、不会泄露任何信息，
+     * 最坏结果只是没人被高亮。而报错的代价是实打实的：前端的成员列表可能因
+     * 「刚有人退群 / 缓存过期」而携带一个已失效的 ID，此时若整条消息发送失败，
+     * 用户看到的是「消息发不出去」——为一个装饰性标记牺牲主功能，方向是反的。</p>
+     *
+     * <p>剔除的三类：<b>非本会话成员</b>（不在 {@code recipients} 内）、
+     * <b>发送人自己</b>（自己 @ 自己只会给自己制造假角标）、<b>重复项</b>（同一人传了多次）。</p>
+     *
+     * <p><b>单聊恒返回空集</b>：单聊的对方本来就是唯一读者，「点名」不产生任何额外语义；
+     * 若在此放行，单聊界面就会出现「对方 @ 了我」这种本不存在的概念。</p>
+     *
+     * @param senderId       发送人（自己 @ 自己会被剔除）
+     * @param scope          会话范围（单聊恒为空集）
+     * @param recipients     已经过成员校验的接收人清单（交集边界）
+     * @param mentionUserIds 客户端提交的提及对象；可为 {@code null}
+     *                       ——引用类消息与未升级的客户端都不带这个字段
+     * @return 实际生效的提及目标（可能为空集，不可变）
+     */
+    private Set<Long> resolveMentionTargets(Long senderId, int scope,
+                                            List<Long> recipients, List<Long> mentionUserIds) {
+        if (mentionUserIds == null || mentionUserIds.isEmpty() || !ChatScope.isGroup(scope)) {
+            return Set.of();
+        }
+        // 用集合而不是遍历 recipients 做包含判定：本方法在群聊发送热路径上，
+        // 成员上限 500，集合的 O(1) 判定比线性查找更稳妥（也让下面这段保持线性一趟）
+        Set<Long> allowed = new HashSet<>(recipients);
+        Set<Long> targets = new LinkedHashSet<>();
+        int dropped = 0;
+        for (Long userId : mentionUserIds) {
+            if (userId == null || userId.equals(senderId) || !allowed.contains(userId)) {
+                dropped++;
+                continue;
+            }
+            targets.add(userId);
+        }
+        if (dropped > 0) {
+            // 不打断发送：这是装饰性标记，剔除了哪些只对排查有意义
+            log.debug("会话消息提及对象已剔除非法项：sender={}, requested={}, applied={}, dropped={}",
+                    senderId, mentionUserIds.size(), targets.size(), dropped);
+        }
+        return targets;
     }
 
     /** 单聊视角下的对端：接收人是发送人时看 targetId，否则看发送人。 */

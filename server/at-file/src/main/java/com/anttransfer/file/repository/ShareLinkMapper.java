@@ -148,4 +148,27 @@ public interface ShareLinkMapper extends BaseMapper<ShareLink> {
     @Select("select token from sys_share_link "
             + "where owner_user_id = #{ownerUserId} and status = 0 and deleted = 0")
     List<String> selectActiveTokens(@Param("ownerUserId") Long ownerUserId);
+
+    /**
+     * 查询「生效中且将在窗口内到期」的链接，供到期前提醒扫描任务使用。
+     *
+     * <p>命中 {@code idx_status_expire (status, expire_at)}：等值列在前、范围列在后，
+     * 索引可直接用于过滤与排序。</p>
+     *
+     * <p><b>只取提醒必需列</b>（不拉 {@code extract_code_hash} 等敏感列）——扫描是遍历式的，
+     * 少取一列就是每个周期少读一份提取码哈希。<b>不需要额外判断额度</b>：
+     * 额度耗尽的链接已由 {@link #consumeDownloadQuota} 在同一语句内收敛为 {@code status = 2}，
+     * 故 {@code status = 0} 已隐含「仍有可取件额度」。</p>
+     *
+     * @param now      当前时间（应用时钟，单一时钟源）
+     * @param deadline 提醒窗口上界（{@code now + expireSoonWindow}）
+     * @param limit    单批条数上限（防止一个扫描周期把内存与通知量打爆）
+     * @return 候选链接（按到期时刻升序，最紧急的先提醒）
+     */
+    @Select("select id, token, file_id, owner_user_id, expire_at from sys_share_link "
+            + "where status = 0 and deleted = 0 and expire_at > #{now} and expire_at <= #{deadline} "
+            + "order by expire_at asc limit #{limit}")
+    List<ShareLink> selectExpiringActive(@Param("now") LocalDateTime now,
+                                         @Param("deadline") LocalDateTime deadline,
+                                         @Param("limit") int limit);
 }

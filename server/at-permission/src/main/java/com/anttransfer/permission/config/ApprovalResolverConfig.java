@@ -15,7 +15,7 @@
  */
 package com.anttransfer.permission.config;
 
-import com.anttransfer.permission.extension.ApprovalNodeResolver;
+import com.anttransfer.common.spi.approval.ApprovalNodeResolver;
 import com.anttransfer.permission.extension.SingleNodeApprovalResolver;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;

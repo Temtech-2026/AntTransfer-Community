@@ -41,6 +41,7 @@ package com.anttransfer.common.constant;
  *   at:share:ticket:{ticket}   访客一次性下载/预览票据，TTL 5min，GETDEL 原子取用（一次即焚）
  *   at:file:ticket:{ticket}    登录用户下载票据，TTL 5min，绑定 userId+nodeId+fileId，可重试至过期
  *   at:chatatt:ticket:{ticket} 会话附件取件票据，TTL 5min，绑定 attachmentId+consumerUserId+nodeId，可重试至过期
+ *   at:chat:retention-lock     会话消息保留期清理互斥锁，TTL 15min（不主动释放，自然过期）
  *   at:share:pick:{ticket}     分享核销后取件票据，TTL 5min，绑定 shareId+fileId+accessType，可重复读至过期
  *   at:perm:{userId}           用户权限标识缓存，TTL 30min，授权变更主动失效
  *   at:perm:escalate:{appId}   超时未审批升级提醒幂等键，默认 TTL 24h
@@ -134,6 +135,19 @@ public final class RedisKeyConstants {
      */
     public static final String SHARE_PICK_PREFIX = PREFIX + "share:pick:";
 
+    /**
+     * 链接到期提醒幂等键前缀：at:share:expire-notify:{shareId}（SETNX）。
+     *
+     * <p>到期前扫描任务（{@code ShareExpireNotifyScheduler}）以它抑制重复提醒：
+     * 同一条链接在 TTL 内只提醒创建者一次。属<b>纯抑制重复通知</b>的防御态键，
+     * 丢失最多导致同一链接多提醒一次，不影响链接状态与到期判定（P-8）；
+     * TTL 默认 {@link #SHARE_EXPIRE_NOTIFY_TTL_SECONDS}，可由
+     * {@code anttransfer.file.share.expire-notify-idempotent-window} 覆盖。</p>
+     */
+    public static final String SHARE_EXPIRE_NOTIFY_PREFIX = PREFIX + "share:expire-notify:";
+    /** 链接到期提醒幂等默认 TTL：7d（覆盖「进入提醒窗口 → 到期」全程；链接续期后重新进入窗口可再次提醒） */
+    public static final long SHARE_EXPIRE_NOTIFY_TTL_SECONDS = 7 * 24 * 60 * 60L;
+
     /* ======================== 文件管理：下载票据 ======================== */
 
     /**
@@ -175,6 +189,37 @@ public final class RedisKeyConstants {
     public static final String CHAT_ATTACHMENT_TICKET_PREFIX = PREFIX + "chatatt:ticket:";
     /** 会话附件取件票据默认 TTL：5min（仅需覆盖「换票 → 取件」间隔） */
     public static final long CHAT_ATTACHMENT_TICKET_TTL_SECONDS = 5 * 60L;
+
+    /* ===================== 会话消息保留期清理互斥 ===================== */
+
+    /**
+     * 会话消息保留期清理互斥键：at:chat:retention-lock（SETNX + TTL，无参数——全局同一把锁）。
+     *
+     * <p><b>为什么需要它：</b>清理任务由 {@code @Scheduled} 驱动，而定时注解在各实例
+     * <b>各自</b>触发——它不理解「这是集群任务」。多实例同刻进入时会同时开始按批删同一张表：
+     * 删除本身幂等（都只删超期行），但 N 倍的行锁竞争与 binlog 写入会把一次后台清理
+     * 放大成一次写抖动，故用本键收敛为「每轮只有一个实例在跑」。</p>
+     *
+     * <p><b>属防御态键</b>（P-8）：丢失 / 不可用最多导致多实例重复做一遍同样的事，
+     * 不影响任何正确性判定——超期与否完全由 DB 的 {@code create_time} 裁定。
+     * 因此 Redis 异常时清理任务<b>降级放行</b>而不是中止，理由见
+     * {@code ChatRetentionScheduler#acquireLock()}。</p>
+     */
+    public static final String CHAT_RETENTION_LOCK_KEY = PREFIX + "chat:retention-lock";
+
+    /**
+     * 会话消息保留期清理互斥 TTL：15min。
+     *
+     * <p>取值依据：单次触发的最坏耗时 ≈ {@code MAX_ROUNDS(100)} × 单批（默认 1000 行）的 DELETE，
+     * 按每批百毫秒量级估算约 10s，即便再放大两个数量级仍在 15min 内。
+     * TTL 必须显著大于最坏耗时，否则「锁先过期」会让第二个实例在第一个还没跑完时进入——
+     * 那正是本锁要避免的情形。反过来，TTL 偏长只会在任务被强行中断（实例被 kill）后
+     * 多拖延一轮清理，而清理是每日一次的兜底动作，晚一天无影响。</p>
+     *
+     * <p>本键<b>刻意不被主动释放</b>（避免非原子的「读-比对-删」与 P-6 规约冲突），
+     * 由 TTL 自然过期，详见 {@code ChatRetentionScheduler#acquireLock()}。</p>
+     */
+    public static final long CHAT_RETENTION_LOCK_TTL_SECONDS = 15 * 60L;
 
     /* ============================ 权限缓存 ============================ */
 

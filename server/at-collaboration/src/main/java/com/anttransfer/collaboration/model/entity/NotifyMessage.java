@@ -59,6 +59,12 @@ public class NotifyMessage extends BaseEntity {
     /** 阅读状态：已读 */
     public static final int READ_READ = 1;
 
+    /** 提及标记：本行接收人未被本条消息点名 */
+    public static final int MENTION_NONE = 0;
+
+    /** 提及标记：本行接收人被本条消息点名 */
+    public static final int MENTION_YES = 1;
+
     /** 撤回状态：正常（未撤回） */
     public static final int RECALL_NONE = 0;
 
@@ -112,6 +118,19 @@ public class NotifyMessage extends BaseEntity {
     private LocalDateTime readTime;
 
     /**
+     * {@code @} 提及标记：0-本行接收人未被点名 1-本行接收人被点名（见 {@code V18} 口径 ①）。
+     *
+     * <p><b>为什么是「行级」而不是「消息级」：</b>写扩散下一条群消息落 N 行，
+     * 「这条消息点名了谁」在每一行上的答案不同——只有被点名者那一行为 1。
+     * 于是「有没有人 @ 我」退化成 {@code mentioned = 1 and read_status = 0} 的等值查询，
+     * 与未读 / 已读的既有查询形态同构，不需要解析正文里的昵称（可重名、可改名，不可靠）。</p>
+     *
+     * <p><b>发送人自己那一行恒为 {@link #MENTION_NONE}：</b>自己 @ 自己没有任何提示价值，
+     * 若允许置位，发送人会给自己凭空制造一个「有人 @ 我」的角标。</p>
+     */
+    private Integer mentioned;
+
+    /**
      * 撤回状态：0-正常 1-已撤回（见 {@link #RECALL_NONE} / {@link #RECALL_DONE}）。
      *
      * <p><b>为什么不能只看 {@code content} 是否为空来判定撤回：</b>空正文是合法状态
@@ -157,5 +176,10 @@ public class NotifyMessage extends BaseEntity {
     /** 是否未读。 */
     public boolean isUnread() {
         return !isRead();
+    }
+
+    /** 本行接收人是否被本条消息点名（{@code @} 提及）。 */
+    public boolean isMentioned() {
+        return mentioned != null && mentioned == MENTION_YES;
     }
 }

@@ -127,7 +127,7 @@ AntTransfer CE 面向**开发者与中小团队**，解决三类日常痛点：
 作为**普通成员 / 审批人**，我希望审批结果与安全事件都汇集到站内通知，以便不再错过关键动作。
 
 验收标准：
-- 通知类型含：**审批待办、审批结果（通过/驳回）、外发链接被锁定、链接到期提醒、异常登录告警**；
+- 通知类型含（编号见 at-common `NotifyType` 编码表）：**1 审批待办、2 审批结果（通过/驳回）、3 外发链接被锁定、4 链接到期提醒、5 异常登录告警、8 传输完成提醒、9 外发链接被取件回执**；其中 9 计入未读红点但**不进待办中心**——「有人取件」是告知而非待处置事项，放进待办会制造没有动作可做的僵尸待办；
 - 通知中心区分未读/已读，未读角标实时更新（轮询 ≤ 30 s）；关键类型（审批、告警）支持同时触发邮件（P1 打通）；
 - Given 一条审批待办通知，When 我在任意一端处理，Then 另一端同步标记已处理，不产生重复待办。
 
@@ -249,13 +249,23 @@ AntTransfer CE 面向**开发者与中小团队**，解决三类日常痛点：
 
 **后端复核（2026-09-14）**：
 
-- ✅ **已落地**：批量打包下载（`PackService` + `sys_pack_task`，异步打包 + 产物过期清理 + 失败任务收敛）、任务级限速（`BandwidthLimiter` + 下载端点 `speedLimit`，与全局并发 / 带宽兜底叠加）、文件历史版本（`FileVersionService` / `FileVersionController`，权限点 `file:version`：`GET|POST /v1/files/{nodeId}/versions`、`POST .../{versionNo}/rollback`）、回收站与恢复（含彻底销毁 `file:destroy` 已收敛至仅 SUPER_ADMIN）、标签与关键词搜索（`TagService` + `FileController#page` 的 `NodeQuery`：`folderId / keyword / ext / level / size 区间 / 时间区间 / tagId / sort`；**`keyword` 为 LIKE 匹配、未建全文索引**，故 §4「全文搜索」尚未满足）、目录树（`FolderService` + `sys_folder` 物化路径）、站内轻 IM（`ChatController`：发消息 / 拉历史 / 标记已读，`scope + targetId` 会话维度）、邮件通知（`MailNotifier`）、待办中心（`TodoController`：`GET /v1/todos` 分页三态 + `GET /v1/todos/count` 角标）、权限地图（`GET /v1/permission/map`）；
-- ⬜ **仍缺**：中英文国际化**业务文案未接入**（ADP 模板自带 `web/src/locales` 具备框架能力，但业务页未接入）、传输统计 / 统计中心（无后端聚合接口）、站内轻 IM 的 **@ 提及**与「消息保留 ≥ 30 天」策略（无归档 / 清理任务，保留期无实现）；
+- ✅ **已落地**：批量打包下载（`PackService` + `sys_pack_task`，异步打包 + 产物过期清理 + 失败任务收敛）、任务级限速（`BandwidthLimiter` + 下载端点 `speedLimit`，与全局并发 / 带宽兜底叠加）、文件历史版本（`FileVersionService` / `FileVersionController`，权限点 `file:version`：`GET|POST /v1/files/{nodeId}/versions`、`POST .../{versionNo}/rollback`）、回收站与恢复（含彻底销毁 `file:destroy` 已收敛至仅 SUPER_ADMIN）、标签与关键词搜索（`TagService` + `FileController#page` 的 `NodeQuery`：`folderId / keyword / ext / level / size 区间 / 时间区间 / tagId / sort`；**`keyword` 为 LIKE 匹配、未建全文索引**，故 §4「全文搜索」尚未满足）、目录树（`FolderService` + `sys_folder` 物化路径）、站内轻 IM（`ChatController`：发消息 / 拉历史 / 标记已读，`scope + targetId` 会话维度；**2026-09-29 起含 `@` 提及与 `ChatRetentionScheduler` 保留期清理，见下行 ✅**）、邮件通知（`MailNotifier`）、待办中心（`TodoController`：`GET /v1/todos` 分页三态 + `GET /v1/todos/count` 角标）、权限地图（`GET /v1/permission/map`）；
+- ⬜ **仍缺**：中英文国际化**业务文案未接入**（ADP 模板自带 `web/src/locales` 具备框架能力，但业务页未接入）、传输统计 / 统计中心（无后端聚合接口）；
+- ✅ **本轮补齐（2026-09-29）**：站内轻 IM 的 **@ 提及**与「消息保留 ≥ 30 天」策略。
+  @ 提及按**行级**落库（写扩散下每人一行，`mentioned` 是行属性），
+  上行 `mentionUserIds`（服务端与群成员求交集、静默剔除非成员 / 自己 / 重复项），
+  下行 `NotifyMessageVO.mentioned`，会话列表 `mentionUnreadCount`（**未读的子集，不与 `unreadCount` 相加**）；
+  保留期由 `ChatRetentionScheduler` 分批**物理**清理，**下限 30 天硬钳制**（配置下探无效，且不回写配置）。
+  口径细节见 [AT-DIFF-todos GAP-08](../development/AT-DIFF-todos.md)；
+  **不额外写站内信**：同一句话若在两处各算一次未读，用户点任一处都清不掉另一处（若产品要消息中心留痕，须先定未读合并口径）；
 - **表与契约**：所需表由 `sql/V6__file_management.sql` 创建 —— `sys_folder`（物化路径目录树）、`sys_file_node`（引用层）、`sys_file_version`（历史版本）、`sys_tag` / `sys_file_tag`（标签与关联）、`sys_pack_task`（异步打包任务）；`sql/V7` 补 `sys_pack_task.node_ids` 输入清单；`sql/V8` 把 `file:destroy` 收敛至仅 SUPER_ADMIN；`sql/V9__system_admin_permission_points.sql` 补系统管理面权限点（`system:user:*` 7 个 + `system:role:*` 系列，**仅授 SUPER_ADMIN、AUDITOR 一个不授**）。对外契约见 `docs/api/README.md` §1 与 `docs/api/error-codes.md`（`4013~4023`）。
 
 #### Won't
 
-均未实现（符合预期）。§8 所列扩展点的 CE 落地状态与「命名权威源」待办，见 §8 与 [`architecture.md` §4「⏸ 延期登记」](../architecture/architecture.md) 的 D-2 条目（附录 C 的 7 个接口名当前全仓库零命中，暂以附录 C 命名为准）。
+均未实现（符合预期，CE 不引入）。但 §8 所列扩展点**已于 2026-09-29 全部落地为真实 SPI**
+（7 个接口 + CE 默认实现 + 装配门禁 + 消费点 + 回归测试，清单见 [`architecture.md` §2.3「落地登记」](../architecture/architecture.md)），
+命名统一取附录 C 口径。§8 与 architecture.md §4 的 **`A-6` 已收口**、**`D-2` 主体收口**
+（PRD §8 命名已回写；仅剩「附录 C 原文入库」的溯源残留，不阻塞开发）。
 
 #### 横切地基（超出 P0 清单，但为 P0 前置）
 
@@ -327,27 +337,33 @@ AntTransfer CE 面向**开发者与中小团队**，解决三类日常痛点：
 > 原则：**默认不做的能力，在架构上留出接缝**，保证未来可按插拔方式演进而不破坏 CE 现有闭环。
 > 溯源：下表与战略规划书「0.3 节」右栏 **EE 专属**能力对齐；EE 立项时按预留接缝承接，CE 不引入。
 
-| Won't 项 | 本期处理方式 | 预留扩展点位置 |
+| Won't 项 | 本期处理方式 | 预留扩展点（命名以附录 C 为准，实现位置见 [architecture.md §2](./architecture.md)） |
 | --- | --- | --- |
-| **AI DLP** | 不上传内容扫描/敏感词/涉密识别 | `at-file` 文件接收异步事件上预留「后处理管道 Hook」（与杀毒共用一条 SPI） |
-| **杀毒** | 不做病毒扫描 | 同上：文件入库后处理管道（scan pipeline），实现方按 SPI 注册即可 |
-| **盲水印** | 下载/预览不加任何水印 | `at-transfer` / `at-collaboration` 下载渲染管线预留「内容渲染处理器」（可插拔加水印/DRM） |
-| **KMS 存储加密** | 文件落盘默认明文（权限与审计为安全主链路），数据库敏感字段加密除外 | `at-file` 存储层抽象 `FileStore`，预留信封加密包装器接口；对象存储键不耦合加密方案 |
-| **多租户** | 单租户 CE | 账号/组织模型不引入租户列；预留组织边界抽象，供企业版/未来按租户隔离演进 |
-| **ES 高级审计** | 审计落 MySQL + 检索导出 | 审计事件定义独立领域事件 + 通用 `AuditSink`，可扩展对接 Elasticsearch/对象存储归档 |
-| **动态多级审批** | 固定单级（Owner 审批），仅级别×是否审批可配 | `at-permission` 审批策略抽象为「审批链 Policy 接口」，多级/会签作为另一实现接入 |
-| **QUIC / HTTP3** | 仅 HTTP/HTTPS（TLS） | 传输网关协议层抽象（当前 at-gateway 转发），协议升级不影响业务模块 |
-| **SSO / OIDC** | 仅本地账号 + JWT 双令牌 | `at-auth` 认证入口抽象 `AuthenticationProvider`，预留 OIDC/SAML/LDAP 适配器位 |
+| **AI DLP** | 不上传内容扫描/敏感词/涉密识别 | **`ContentScanInterceptor`**（`at-common` SPI）；CE 默认 `SuffixAndKeywordScanInterceptor`（后缀黑名单 + 文件名敏感词，**真实生效**）；EE 按 `@Order` 叠加 `DlpContentScanInterceptor` |
+| **杀毒** | 不做病毒扫描 | **`VirusScanner`**（`at-common` SPI，与 DLP 共用「有序管道 + Deny 优先 + fail-closed」语义）；CE 默认 `NoopVirusScanner`（PASS）；EE 接 `ClamAvVirusScanner` |
+| **盲水印** | 下载/预览不加任何水印 | **`WatermarkProvider`**（`at-common` SPI）；CE 默认 `NoopWatermarkProvider`（原样透传）；实际渲染点在 `at-file` 下载与匿名分享下载（`at-transfer` 为计划位，其链路当前无流式渲染点） |
+| **KMS 存储加密** | 文件落盘默认明文（权限与审计为安全主链路），数据库敏感字段加密除外 | **`CryptoCodec`**（`at-common` SPI），由 `at-file` 存储层读写两侧织入；CE 默认 `PlainCryptoCodec`。原「`FileStore` 信封加密包装器」的职责已由 `CryptoCodec` 达成，**CE 未单列 `FileStore` 接口**（见 architecture.md §2.2-8 / §2.4-4） |
+| **多租户** | 单租户 CE | 账号/组织模型不引入租户列；预留组织边界抽象，供企业版/未来按租户隔离演进（附录 C 未列，**PRD 现名保留待裁决**） |
+| **ES 高级审计** | 审计落 MySQL + 检索导出 | 审计事件定义独立领域事件 + 通用 **`AuditSink`**（附录 C 未列，**PRD 现名保留待裁决**），可扩展对接 Elasticsearch/对象存储归档 |
+| **动态多级审批** | 固定单级（Owner 审批），仅级别×是否审批可配 | **`ApprovalNodeResolver`**（`at-common` SPI）；CE 默认 `SingleNodeApprovalResolver`（恒 `node_seq=1`）；EE 接 `MultiNodeApprovalResolver`（读 `sys_approval_node`） |
+| **QUIC / HTTP3** | 仅 HTTP/HTTPS（TLS） | **`TransportStrategy`**（`at-common` SPI）；CE 默认 `HttpTransportStrategy`（落 `at-gateway`）；EE 新增协议与 HTTP **共存**（装配为 Bean 名称级，见 architecture.md §2.2 装配注） |
+| **SSO / OIDC** | 仅本地账号 + JWT 双令牌 | **`IdentityProvider`**（`at-common` SPI）；CE 默认 `LocalIdentityProvider`（BCrypt 本地账号）；EE 接 `OidcIdentityProvider` / `LdapIdentityProvider` |
 
-> ⚠️ **扩展点落地状态（2026-09-13）**：上表「预留扩展点位置」当前**全部为设计约定**——
-> `FileStore`（存储抽象）、`AuditSink`（审计出口）、`AuthenticationProvider`（认证入口）、
-> 审批链 `Policy`（多级审批）、后处理管道（DLP / 杀毒 SPI）、内容渲染处理器（水印）等接口
-> **尚未在代码中建立**（`at-file` / `at-transfer` / `at-collaboration` 仍为空壳模块）。
-> 即 Won't 项当前既未实现，也**尚无真正的可插拔接缝**。
+> ✅ **扩展点落地状态（2026-09-29）**：上表**已全部落地为真实 SPI**（不再是设计约定）——
+> 7 个接缝的接口定义在 `at-common` 的 `spi` 子包，CE 默认实现与 `@ConditionalOnMissingBean`
+> 装配门禁同批建立，且每个接缝都有**实际消费点**与回归测试（清单见
+> [`architecture.md` §2.3「落地登记」](./architecture.md)）。命名统一取附录 C 口径，
+> 原 `AuthenticationProvider` / 审批链 `Policy` / 「后处理管道 Hook」/「内容渲染处理器」等 PRD 现名
+> **已按 §2.1 映射表回写为附录 C 命名**（`AuditSink` / 组织边界抽象附录 C 未列，保留 PRD 现名待裁决）。
 >
-> 建立接缝的时机不应晚于对应模块首个功能落地（例：`at-file` 实现存储时即抽出 `FileStore`；
-> `at-permission` 实现审批时即以 `Policy` 接口承载单级实现），否则 EE 化时将被迫改动
-> 已发布接口，破坏 CE 兼容性。
+> ⚠️ **仍未建立的两项**：`AuditSink`（审计出口，当前三份同构写入器 + 共享实体 / Mapper，
+> 见 [AT-DIFF-10](../development/AT-DIFF-todos.md)）与多租户的「组织边界抽象」
+> （附录 C 未列，且 CE 不做多租户，**不预建空接口**）。`FileStore` 亦未单列——其信封加密职责
+> 已由 `CryptoCodec` 在存储层织入达成。
+>
+> 📌 **纪律**：CE/EE 差异**只由 Bean 是否存在表达**，业务代码禁止 `if (eeEnabled)`；
+> 新增 SPI 时按 architecture.md §2.3 四项门禁（不晚于首个功能落地 / CE 必须有默认 Bean /
+> 接缝不引入运行时分支 / 建立即登记）执行，否则 EE 化时将被迫改动已发布接口，破坏 CE 兼容性。
 
 ---
 
@@ -359,10 +375,12 @@ AntTransfer CE 面向**开发者与中小团队**，解决三类日常痛点：
 | M2（1.x） | 全部 P1 | 权限地图 / 回收站 / 搜索统计 / 邮件 / IM / 打包限速 / 版本 / 国际化上线；性能基线见 `tests/performance` |
 | M3（社区演进） | Won't 项逐个评估 | 依 §8 扩展点立项，另行评审 |
 
-> 📍 **当前进度（2026-09-13）**：处于 M1 前半程。P0 中「JWT 双令牌」「RBAC」已落地（含集成测试 8 例全绿）；
-> 「三权分立」「审批闭环」为部分落地；「传输引擎」「外发链接」「站内通知」「工作台」**尚未开工**
-> （`at-file` / `at-transfer` / `at-collaboration` 为空壳模块）；Compose 编排缺前端。
-> 距 1.0 门槛的剩余量以 §4.1 为准。
+> 📍 **当前进度（2026-09-29）**：M1 主线（**上传 / 审批 / 外发分享**）已跑通并具备回归证据；
+> §8 所列 CE/EE 扩展点已**同批落地为真实 SPI**（含 CE 默认实现、装配门禁与消费点，见
+> [`architecture.md` §2.3](../architecture/architecture.md)）。距 1.0 门槛的剩余量以 §4.1 为准。
+>
+> 📜 **历史快照（2026-09-13）**：曾记录「传输引擎 / 外发链接 / 站内通知 / 工作台尚未开工
+> （`at-file` / `at-transfer` / `at-collaboration` 为空壳模块）」——**该状态已失效**，保留仅作沿革。
 
 ## 10. 📖 术语表
 

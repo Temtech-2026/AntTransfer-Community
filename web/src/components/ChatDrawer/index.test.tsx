@@ -127,6 +127,7 @@ const conversation: Conversation = {
   lastContent: '在吗',
   lastMessageType: MessageType.TEXT,
   unreadCount: 1,
+  mentionUnreadCount: 0,
 };
 
 /** 对端发来的一条消息：`senderUserId !== recipientUserId` 即「不是我发的」。 */
@@ -156,6 +157,7 @@ const otherConversation: Conversation = {
   lastContent: '晚点说',
   lastMessageType: MessageType.TEXT,
   unreadCount: 0,
+  mentionUnreadCount: 0,
 };
 
 /** 注入一条服务端推回的帧（抽屉已把 onMessage 注册进 useWebSocket 替身）。 */
@@ -520,6 +522,7 @@ describe('ChatDrawer 会话列表', () => {
         lastContent: '你好',
         lastMessageType: MessageType.TEXT,
         unreadCount: 1,
+        mentionUnreadCount: 0,
       },
     ]);
     await pushFrame({

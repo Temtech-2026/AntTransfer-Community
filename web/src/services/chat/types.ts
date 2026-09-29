@@ -71,6 +71,17 @@ export interface Conversation {
   lastTime?: string | null;
   /** 该会话未读数（0 = 不渲染角标）。 */
   unreadCount: number;
+  /**
+   * 该会话未读里「点名了我」的条数（后端 {@code ConversationVO.mentionUnreadCount}）。
+   *
+   * <p><b>与 {@link unreadCount} 是包含关系，不是并列关系</b>：被 @ 的消息本身也是一条未读，
+   * 它同时计入两者。因此界面上应是「角标数字仍取 {@code unreadCount}，
+   * 若 {@code mentionUnreadCount > 0} 则把角标换成『有人 @ 我』的强调样式」，
+   * 两个数<b>不相加</b>——相加会让用户看到比实际未读更多的数字。</p>
+   *
+   * <p>取值为 0 是常态（绝大多数会话没有人 @ 我），渲染层据此决定是否上强调样式。</p>
+   */
+  mentionUnreadCount: number;
 }
 
 /**
@@ -256,6 +267,20 @@ export interface ChatSendPayload {
    * 并把「谁说的 + 正文快照」抄进本次消息（`1036` 表示引用目标不可用）。</p>
    */
   quoteClientMsgId?: string | null;
+  /**
+   * {@code @} 提及对象的用户 ID 列表（选填，仅群聊有意义）。
+   *
+   * <p><b>为什么由前端给出 ID 而不让服务端解析正文里的 `@昵称`</b>：昵称可重名、可修改、
+   * 可含空格与特殊字符，从文本反查「点的是谁」必然误判；而发送端本来就知道用户点选了谁。
+   * 正文里仍然照常写入 `@昵称`（那是给人看的），ID 列表只用于让服务端给被点名者
+   * 那一行打标记。</p>
+   *
+   * <p>服务端会<b>静默剔除</b>不属于本会话的 ID（不报错）：成员列表可能因「刚有人退群」
+   * 而过期，此时整条消息发送失败是不可接受的。</p>
+   *
+   * <p>ID 一律字符串过线（19 位雪花 ID 超出 JS 安全整数范围），不得 `Number()` 归一。</p>
+   */
+  mentionUserIds?: string[] | null;
 }
 
 /** 会话键：`scope:targetId`。用作 React key 与 Map 键。 */
@@ -404,12 +429,55 @@ function summaryBody(
   return card ? buildFileCardContent(card.name, card.sizeText) : content;
 }
 
-/** 会话列表项摘要（字段口径与 {@link messageSummary} 一致）。 */
+/**
+ * 会话是否「还有未读的 @ 我」。
+ *
+ * <p><b>为什么单独成一个函数而不是各处写 {@code mentionUnreadCount > 0}：</b>
+ * 摘要前缀与角标强调必须同源——一处判成强调、另一处不强调，用户会看到「红了却没说为什么」。
+ * 判定本身只有一行，但它承载的是「未读 @ 是未读的子集」（见 {@link Conversation.mentionUnreadCount}）
+ * 这条口径，散落成字面量比较后就没人记得它了。</p>
+ */
+export function hasUnreadMention(
+  conversation: Pick<Conversation, 'mentionUnreadCount'>,
+): boolean {
+  return (conversation.mentionUnreadCount ?? 0) > 0;
+}
+
+/**
+ * 会话摘要里「有人 @ 我」前缀的标签（由调用方注入 intl 版本）。
+ *
+ * <p>与 {@link ConversationTitleLabels} 同一套路：纯函数里不硬编码语言。</p>
+ */
+export interface ConversationSummaryLabels {
+  /** 如「有人@我」；渲染时会自动补上双方括号。 */
+  mentionMe: string;
+}
+
+/** 默认标签（中文；单测 / 非 React 场景用，页面应传 intl 版本）。 */
+export const DEFAULT_CONVERSATION_SUMMARY_LABELS: ConversationSummaryLabels = {
+  mentionMe: '有人@我',
+};
+
+/**
+ * 会话列表项摘要（字段口径与 {@link messageSummary} 一致）。
+ *
+ * <p><b>未读 @ 会在摘要前加一个前缀</b>（对齐微信的「[有人@我] 张三：…」）：
+ * 单靠头像上的红色角标，用户只看到「有几条没读」，不知道这几条里有人点名了自己，
+ * 而点名往往是这几条里唯一需要立刻回应的。</p>
+ *
+ * <p>前缀<b>不计入</b> {@link maxLength}：它是标记而不是摘要正文，被截断掉就失去了意义
+ * （40 字的摘要本来就常在长消息上被截）。</p>
+ *
+ * <p>判定用 {@link hasUnreadMention}（会话里还有未读的 @ 即显示），<b>不试图判断
+ * 「是不是最后那一条 @ 了我」</b>——后者需要服务端再出一个字段，而未读 @ 通常只有一两条，
+ * 两种情况用户接下来的动作完全一样：打开这个会话。</p>
+ */
 export function conversationSummary(
   conversation: Conversation,
+  labels: ConversationSummaryLabels = DEFAULT_CONVERSATION_SUMMARY_LABELS,
   maxLength = 40,
 ): string {
-  return messageSummary(
+  const body = messageSummary(
     {
       content: conversation.lastContent,
       messageType: conversation.lastMessageType,
@@ -418,6 +486,9 @@ export function conversationSummary(
     },
     maxLength,
   );
+  return hasUnreadMention(conversation)
+    ? `[${labels.mentionMe}] ${body}`
+    : body;
 }
 
 /**

@@ -18,6 +18,8 @@ package com.anttransfer.file.service;
 import com.anttransfer.common.constant.RedisKeyConstants;
 import com.anttransfer.common.exception.AuthException;
 import com.anttransfer.common.exception.BusinessException;
+import com.anttransfer.common.notify.NotificationCommand;
+import com.anttransfer.common.notify.NotificationPort;
 import com.anttransfer.common.result.ErrorCode;
 import com.anttransfer.file.config.ShareProperties;
 import com.anttransfer.file.model.dto.RedeemTicketRequest;
@@ -29,6 +31,7 @@ import com.anttransfer.file.model.vo.SharePayloadVO;
 import com.anttransfer.file.model.vo.ShareTicketVO;
 import com.anttransfer.file.repository.FileObjectMapper;
 import com.anttransfer.file.repository.ShareLinkMapper;
+import com.anttransfer.file.util.AfterCommitUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -118,6 +121,7 @@ public class ShareAccessService {
     private final ShareAuditLogger auditLogger;
     private final ShareProperties shareProperties;
     private final StringRedisTemplate stringRedisTemplate;
+    private final NotificationPort notificationPort;
 
     /** BCrypt 自带随机盐；本模块自持实例，不依赖其他模块的 PasswordEncoder Bean（模块自治） */
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
@@ -193,6 +197,15 @@ public class ShareAccessService {
         auditLogger.success(actionOf(accessType), null, link.getId(), clientIp, userAgent, extra);
         log.info("外发取件成功：shareId={}, fileId={}, accessType={}, remaining={}",
                 link.getId(), file.getId(), accessType, remaining);
+
+        // 取件回执：把「有人取走了你的文件」回推给创建者。免登录访客没有账号，
+        // 这条回执是创建者唯一能感知「链接真的被用了」的通道（否则只能自己去翻取件审计）。
+        // 每次成功取件各提醒一次——不复用 bizType+bizId+notifyType 幂等键，因为「又一次取件」
+        // 本身是新事实；取件总量已由链接额度闸门约束，不会无限刷。
+        // 通知失败不影响本次取件（额度已扣、审计已落，见 notifyQuietly）。
+        notifyQuietly(NotificationCommand.shareAccessed(link.getOwnerUserId(), link.getId(),
+                        file.getOriginalName(), accessType, "剩余可取件 " + remaining + " 次"),
+                "shareAccessed", link.getId());
 
         return SharePayloadVO.builder()
                 .shareId(link.getId())
@@ -365,12 +378,59 @@ public class ShareAccessService {
     private BusinessException codeError(ShareLink link, String clientIp, String userAgent) {
         long errors = increaseCodeErrorCount(link.getToken());
         if (errors >= shareProperties.getMaxCodeErrors()) {
+            // 只在「恰好跨过阈值」的那一次提醒创建者：INCR 严格递增，errors == 阈值全局只有一个请求命中；
+            // 同窗口内继续试探的请求 errors > 阈值，不再重复告警——否则脚本连打会把创建者的收件箱刷满，
+            // 而信息量始终只有「被锁了」。锁定期满后计数归零，再次达阈值会重新提醒（语义自洽）。
+            if (errors == shareProperties.getMaxCodeErrors()) {
+                notifyLocked(link);
+            }
             auditLogger.failure(OperationLog.ACTION_SHARE_CODE_LOCKED, null, link.getId(), clientIp, userAgent,
                     "提取码连续错误 " + errors + " 次，锁定 "
                             + shareProperties.getCodeLockDuration().toMinutes() + " 分钟");
             return new BusinessException(ErrorCode.SHARE_LOCKED);
         }
         return new BusinessException(ErrorCode.SHARE_CODE_ERROR, MSG_CODE_ERROR);
+    }
+
+    /**
+     * 链接被临时锁定 → 提醒创建者（带文件名，便于在收件箱一眼判断是哪条分享出事）。
+     *
+     * <p>本路径没有事务（校验链是免登录的只读流程），故文件名单独回源一次；
+     * 文件已被删除时由 {@link NotificationCommand#shareLocked} 的文件名兜底处理。</p>
+     */
+    private void notifyLocked(ShareLink link) {
+        String fileName = null;
+        try {
+            FileObject file = link.getFileId() == null ? null : fileObjectMapper.selectById(link.getFileId());
+            fileName = file == null ? null : file.getOriginalName();
+        } catch (Exception e) {
+            log.warn("锁定提醒回源文件名失败（降级为无文件名文案）：shareId={}", link.getId(), e);
+        }
+        notifyQuietly(NotificationCommand.shareLocked(link.getOwnerUserId(), link.getId(),
+                        fileName, shareProperties.getCodeLockDuration().toMinutes()),
+                "shareLocked", link.getId());
+    }
+
+    /**
+     * 发送外发链接提醒，异常一律吞掉。
+     *
+     * <p><b>为什么必须吞</b>：这些都是「访客侧已经成功 / 已经判定的动作」——取件已扣额度、已落审计，
+     * 锁定是既定的拒绝结论。通知只是旁路回执，若让它冒泡成 500，就会把一次成功的取件
+     * 变成一次失败，代价远大于少收到一条提醒。落库与推送的失败隔离由通知域负责，此处只做兜底。</p>
+     *
+     * <p>经 {@link AfterCommitUtils} 发送：调用链将来若引入事务，通知会自动推迟到提交之后，
+     * 避免出现「事务回滚但回执已落库」的幻影通知。</p>
+     */
+    private void notifyQuietly(NotificationCommand command, String scene, Long shareId) {
+        if (command == null || command.recipientUserId() == null) {
+            return;
+        }
+        try {
+            AfterCommitUtils.run(() -> notificationPort.send(command));
+        } catch (Exception e) {
+            log.warn("外发链接提醒发送失败（不影响取件 / 校验结果）：scene={}, shareId={}, cause={}",
+                    scene, shareId, e.toString());
+        }
     }
 
     private long increaseCodeErrorCount(String token) {

@@ -572,6 +572,11 @@ pm.environment.set('nodeId', String(hit.id));
 **S15f 不再重复扣次数**：重发 S15d 后再次 `GET {{baseUrl}}/v1/shares/{{shareToken}}` → `downloadedCount` 仍为 1
 （扣减与审计只发生在 S15 核销那一次；取件票在 TTL 内可重复读，正是它与一次性票的分工）。
 
+**S15g 取件回执（创建者侧断言，2026-09-29 新增）**：用 `{{adminToken}}` 拉通知
+`GET {{baseUrl}}/v1/notifications?pageNum=1&pageSize=20` → 断言多出一条 `notifyType == 9`（`SHARE_ACCESSED`）；
+再断言该条**计入站内信未读**（`GET /v1/notifications/unread` 的站内信口径 +1）**但不进待办**（待办角标**不变**）。
+这条回执是免登录访客场景下创建者唯一能感知「链接真的被用过」的通道，不能只测核销返回而漏掉它。
+
 ### S16 IM 消息送达
 
 **S16-a 管理员发单聊消息**　`POST {{baseUrl}}/v1/chat/messages`（`Bearer {{adminToken}}`）
@@ -864,6 +869,25 @@ SELECT status FROM sys_group WHERE id = <groupId>;
    - 邀请 / 移除成功后成员名单与人数**用响应即时刷新**（不补一次 GET，也避免「写完之后读到的还是旧值」）；
    - 成员行**群主那条没有「移除」按钮**（`ability.canRemoveMember` 为真时，群主正是「我自己」那一行）；
    - 错误码提示就地弹出、**不清令牌不跳登录**（1037~1041 均为**请求被拒**，会话仍然有效）。
+
+### S16-l `@` 提及与消息保留期（2026-09-29 新增）
+
+**S16-l-1 上行点名（含非法项）**　`POST {{baseUrl}}/v1/chat/messages`（`Bearer {{adminToken}}`）发群消息，body 带
+`"mentionUserIds": ["{{userId}}", "{{adminUserId}}", "not-a-member-id", "{{userId}}"]`——故意混入**发送人自己、
+非成员、重复项**。断言 `code == 0`（**不因非法项驳回整条消息**，客户端名单可能本就是旧快照），消息正常落库。
+
+**S16-l-2 行属性与未读子集**：
+- `GET {{baseUrl}}/v1/chat/messages?scope=2&targetId={{groupId}}`（`{{accessToken}}`）→ 断言该条 `mentioned == true`；
+- 同端点换 `{{adminToken}}` → 断言**发送人视角** `mentioned == false`（`mentioned` 是**行属性**而非消息级属性）；
+- `GET {{baseUrl}}/v1/chat/conversations`（`{{accessToken}}`）→ 断言 `mentionUnreadCount >= 1` 且
+  **`mentionUnreadCount <= unreadCount`**（子集关系，两个数**不能相加**）；摘要前缀出现「[有人@我]」。
+
+**S16-l-3 剔除口径**：`not-a-member-id` / 发送人自己 / 重复 id **不得**产生额外订阅行或额外未读——
+DB 断言该 `clientMsgId` 下 `mentioned = 1` 的行数**恰好为 1**。
+
+**S16-l-4 保留期下限硬钳制**：把 `anttransfer.collaboration.notify.message-retention-days` 配成 `7` → 重启后断言
+**实际仍按 30 天清理**（`NotifyProperties.MIN_MESSAGE_RETENTION_DAYS` 硬钳制），且**配置回显仍是 7**（不静默改写管理员填的值）；
+等一个 cron 周期后 DB 中超过 30 天的会话消息被**物理删除**（非软删），且 `at:chat:retention-lock` 在周期内只被一个实例持有。
 
 ### S17 授权到期回收
 

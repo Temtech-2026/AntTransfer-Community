@@ -2,14 +2,15 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 版本 / 状态 | v0.1-draft · 随红队评审（`red-team-review.md`）同步修订 |
-| 日期 | 2026-09-06 |
+| 版本 / 状态 | v0.1-draft · 随红队评审（`red-team-review.md`）同步修订；CE/EE 扩展点与站内通知 / 轻 IM 已落地（2026-09-29 复核） |
+| 日期 | 2026-09-06（2026-09-29 复核更新 §1.2 / §1.3 / §4.1 / §5.1 / §5.3 / §7 / §7.1 / §8） |
 | 产品口径 | [PRD](../prd/README.md)（v0.1-draft） |
 | 覆盖范围 | 模块化单体 `server/` 8 个 `at-*` 模块 + `web/`（React 19 / Ant Design Pro v6）；MySQL 8 / Redis 7 / Flyway |
 | 文档关系 | 本文件是**技术设计基线**（实现蓝图）；[架构 README](./README.md) 为总览；[use-case-flows](./use-case-flows.md) 为两条主线的时序口径；[API](../api/README.md) / [error-codes](../api/error-codes.md) 为接口契约。凡涉及“越权 / 并发 / 事务边界”的实现必须通过 [红队评审清单](./red-team-review.md) 的门禁项 |
 
-> 阅读提示：骨架期代码与设计基线并存。正文“设计目标（To-Be）”与“现状（As-Is）”分开描述，
-> 落地以 To-Be 为准，现状核对见 §10。
+> 阅读提示：设计基线与已落地实现并存。正文“设计目标（To-Be）”与“现状（As-Is）”分开描述，
+> 落地以 To-Be 为准；现状核对见 §8——**截至 2026-09-29，上传 / 审批 / 外发分享 / 站内通知 / 轻 IM
+> 主线均已落地**，本节只保留尚未实现的部分。
 
 ---
 
@@ -49,10 +50,14 @@ web/ (React) ── HTTP /api/*（开发期代理联调，生产经反代 TLS）
 at-file 的落库服务，但 use-case-flows §1 上传主线明确“写 sys_file + sys_upload_task”
 需要跨 at-file / at-transfer 编排。拟定规则：
 
-- 各模块对外暴露**接口形态**（如 `at-file` 提供 `FileRepository` SPI，由模块内实现，
-  并随模块注册进容器），编排模块只面向 SPI（接口定义放 at-common 的
-  `com.anttransfer.common.spi` 或各自模块的 `api` 子包），**禁止 import 他模块的
-  `service` / `mapper` 实现类**——即“依赖倒置取代依赖铁律的直接例外”；
+- 各模块对外暴露**接口形态**（如 `at-file` 提供 `FileRepository` / `FileIngestPort`，由模块内实现，
+  并随模块注册进容器），编排模块只面向接口，**禁止 import 他模块的 `service` / `mapper`
+  实现类**——即“依赖倒置取代依赖铁律的直接例外”；
+- **接口位置（2026-09-29 收紧）**：**CE/EE 扩展点的 7 个 SPI 统一定义在 at-common 的
+  `com.anttransfer.common.spi` 子包**（`identity` / `scan` / `crypto` / `watermark` / `approval` /
+  `transport`，见 [architecture.md §2.2 / §2.3](./architecture.md)）——EE 只需依赖 at-common 即可实现
+  **任一**扩展点，不必反向依赖某个业务模块；模块**私有的跨模块协作端口**（如 at-file 的
+  `FileIngestPort`）则留在各自模块的 `spi` / `api` 子包内。两者用途不同，**勿混谈**；
 - 跨模块数据库写操作必须落在**同一个本地事务**中编排（同库），不允许拆成两个
   “先写 A 表再写 B 表”的独立事务。
 
@@ -61,7 +66,7 @@ at-file 的落库服务，但 use-case-flows §1 上传主线明确“写 sys_fi
 ```
 controller   # 仅做参数绑定与鉴权注解，不写业务
 service      # 业务 + @Transactional 边界（公共入口）
-spi/api      # 暴露给其他模块的接口（如需要）
+spi/api      # 模块私有对外端口（如 at-file 的 FileIngestPort）；CE/EE 扩展点已统一上收 at-common 的 common.spi
 mapper       # MyBatis-Plus Mapper（@Mapper 自动扫描，无需 @MapperScan）
 entity       # 对应表实体（继承 BaseEntity）
 model        # DTO / VO / 上下文
@@ -207,7 +212,7 @@ DB 事务内执行 `token_epoch = token_epoch + 1`，并主动失效两个 Redis
 | `sys_upload_task` | at-transfer | V1（二次重置） | 已落地 | 状态机 0~6（含「合并中」）；已传分片索引持久化于 `uploaded_indexes`（原 transfer_part 子表收敛于此） |
 | `sys_share_link` | at-collaboration | V1（二次重置） | 已落地 | 外发链接：token 唯一 / 提取码散列 / 有效期 / 次数（原子扣减）/ 状态；提取码错误计数走 Redis |
 | `collaboration_space` / `space_member` | at-collaboration | 待建（实体已建） | 规划 | 空间与成员模型随 at-collaboration Service 落地；`sys_file.space_id`、授权 `resource_type=SPACE` 逻辑关联此族 |
-| `sys_notify_message` | at-collaboration | V1（二次重置） | 已落地 | 站内 / 离线消息（US-08），`idx_user_read(recipient_user_id, read_status, id)` 支撑未读角标 |
+| `sys_notify_message` | at-collaboration | V1（二次重置）+ V17 / V18 扩展 | 已落地 | 站内 / 离线消息（US-08），`idx_user_read(recipient_user_id, read_status, id)` 支撑未读角标。**V18** 增 `mentioned`（**行级**标记：群消息写扩散为一行 / 接收人，故「有人 @ 我」退化成 `mentioned=1 and read_status=0` 的等值查询，无需解析正文昵称）+ 保留期清理索引；**V17** 将 `notify_type` 扩至 `9 = SHARE_ACCESSED`（**计入站内信未读、不进待办**）。保留期由 `ChatRetentionScheduler` 按 **≥30 天下限**分批**物理**删除（保留期是留存承诺，不是软删除开关） |
 | `sys_operation_log` / `sys_login_log` | at-common / at-auth | V1（二次重置） | 已落地 | append-only；操作日志留存 ≥ 6 个月（归档任务按 log_time 清理）；`idx_log_time` 等供审计检索 |
 
 ### 4.2 主键 / 审计 / 逻辑删除规约
@@ -224,6 +229,10 @@ DB 事务内执行 `token_epoch = token_epoch + 1`，并主动失效两个 Redis
 ### 5.1 上传主线（at-transfer + at-file，时序口径见 use-case-flows §1）
 
 预检(秒传) → 建任务 → 分片并发上传(≤5，逐片 Hash) → 合并 → 整件 SHA-256 校验 → 落库 + 事件。
+
+> 📣 **完成通知（2026-09-29）**：合并成功后由 at-transfer 的 `TransferEventPublisher` **在状态提交后**
+> 发布 `TransferCompletedEvent`（通知域消费，`NotifyType 8`）。发布失败**只留痕**——已落库的传输结果
+> 不因通知失败而回滚（非关键副作用，见 `P-3` 与 [红队 PRD-07](./red-team-review.md)）。
 
 **传输任务状态机**（评审修订版，落地以本表为准）：
 
@@ -276,7 +285,8 @@ DB 事务内执行 `token_epoch = token_epoch + 1`，并主动失效两个 Redis
    TTL 在**触发锁定那一刻**刷新为完整时长（而非仅首次错误时设置）——否则「第 5 次错误发生在第 25 分钟」
    就只剩 5 分钟锁定，窗口被侵蚀；判定是否锁定须**比值 ≥ 阈值**，不能只看键存在（计数与锁定同键，
    `hasKey` 会把第 1 次错误误判为锁定）；提取码正确即 DEL 该键；锁定属防爆破加速态，Redis 丢失仅放宽
-   尝试窗口，无正确性风险；
+   尝试窗口，无正确性风险；**锁定提醒（2026-09-29 修正）**：仅在计数**恰好跨过阈值**时向创建者发出一次，
+   避免脚本连打把创建者收件箱刷满；
 4. 白名单端点：分享下载允许**无登录**，但校验严格限定在分享通道内，不泄露原存储路径（[V-07]）；
 5. **三步式取件（双票模型，CE 实现新增）**：① 换票 `POST /v1/shares/{token}/verify` 走完上述校验后仅签发
   **一次性票据**（Redis `at:share:ticket:{ticket}`，TTL 5 min，`GETDEL` 取用即焚、**不落库**），
@@ -287,6 +297,12 @@ DB 事务内执行 `token_epoch = token_epoch + 1`，并主动失效两个 Redis
   **两票分工**：一次性票回答「谁有权取件」（不可重放），取件票回答「把这一次取件读完」（TTL 内可重复读）——
   一次取件在传输层必然被拆成多次请求（`Range` 分段 / 浏览器重试 / 多线程下载），若用一次性票读字节，
   第二次就会撞上「票已焚毁」；次数扣减与审计仍只发生在核销那一次，取件票重复读**不再扣减、不再审计**。
+6. **取件回执（CE 实现新增，2026-09-29）**：核销 `POST /v1/shares/redeem` 成功后向**链接创建者**回推
+  取件回执（`NotifyType 9 = SHARE_ACCESSED`，计入站内信未读、**不进待办**）。免登录访客无账号，
+  这是创建者唯一能感知「链接真的被用了」的通道（此前只能自行翻取件审计）；
+7. **到期前提醒（CE 实现新增，2026-09-29）**：`ShareExpireNotifyScheduler`（cron 默认**每小时第 25 分**）
+  经 `ShareLinkMapper#selectExpiringActive` 选出即将到期的活动链接发提醒；幂等为「Redis 占位键 +
+  `existsForBiz` 兜底」两层，且**发送失败会释放占位键**以便下轮重试。
 
 ## 6. 🚧 一致性、并发与事务设计基线（红线，实现必守）
 
@@ -314,6 +330,9 @@ DB 事务内执行 `token_epoch = token_epoch + 1`，并主动失效两个 Redis
 | 限流 | 429 语义已定义；登录、refresh、提取码通道、上传并发需落地 Redis 令牌桶/计数（现缺实现） |
 | 审计 | 关键操作全量审计；审计表只增不改删；留存 ≥ 6 个月（归档导出后清理）；审计员操作亦记录 |
 | 配置 | 环境变量占位 `:默认值`；Flyway locations 已统一为 classpath:db/migration（构建期打包 sql/，见 at-bootstrap pom） |
+| 通知 | 站内信**与业务同事务**落 `sys_notify_message`（`P-3`），事件 / 定时任务只负责异步推送与邮件；类型见 PRD §4 与 at-common `NotifyType`（`9 = SHARE_ACCESSED` 计入未读、**不进待办**，`isInbox()` 与未读 SQL 同口径） |
+| 定时任务 | 文件域清理 **03:30**、外发链接到期前提醒（**每小时第 25 分**）、聊天消息保留期清理 **04:20**（`0 20 4 * * ?`）；均为「分布式锁 + 分批 + 失败留痕」，多实例只允许一个执行 |
+| CE/EE 扩展点 | 7 个 SPI 定义在 at-common `com.anttransfer.common.spi`；**能力差异只由 Bean 是否存在表达**（`@ConditionalOnMissingBean`），业务代码禁止 `if (eeEnabled)`；`TransportStrategy` 为 Bean 名称级例外（协议是集合，避免类型级顶替造成功能回退） |
 
 ### 7.1 Redis Key 规划
 
@@ -332,6 +351,7 @@ Key 与 TTL 的**唯一权威常量**在 at-common `RedisKeyConstants`（各业�
 | `at:perm:{userId}` | 用户可达权限点聚合（角色静态 ∪ 授权动态快照） | 30 min | 授权 / 角色变更、账号停用主动 DEL；丢失由 RBAC 判定重算（P-8） |
 | `at:rl:{类}#{方法}[:业务key]:{维度}` | String = 固定窗口限流计数（Lua `INCR` + 首增 `EXPIRE` 原子） | = `@RateLimit.windowSeconds`（窗口即 TTL，动态） | 超限 `4290`（HTTP 429）；Redis 异常降级放行（防御态，P-8） |
 | `at:ws:channel` | Pub/Sub 频道名 | 常驻 | 集群 WebSocket 广播通道 |
+| `at:chat:retention-lock` | String = 聊天消息保留期清理的分布式锁（`SETNX` 占位） | 15 min | **不主动释放**，实例崩溃靠 TTL 兜底；**Redis 异常时降级放行**（清理幂等，而「锁坏了就不清理」会让保留期悄悄失效） |
 
 > 语义红线：本表中仅 `at:token:refresh:{userId}`、「分享链接临时锁」与「`at:share:ticket`」属 Redis 单写
 > （写丢失会放宽安全窗口 / 使票据失效需重换，但**不破坏数据正确性**——频次与配额仍以 DB 为准）；
@@ -355,6 +375,23 @@ Redis Key 规划定稿：at-common `RedisKeyConstants`（`at:` 前缀 Key/TTL �
 （Redis Key 规划表）同步（2026-09-06）；2026-09-13 补入限流键 `at:rl:`——原散落于 at-gateway
 `RateLimitAspect`（手拼前缀），已回归常量类工厂方法，全仓无手拼 Key。
 
+**2026-09-29 落地（三批）**：
+
+- 🧩 **CE/EE 扩展点 7 个 SPI**：接口上收 at-common `com.anttransfer.common.spi`；CE 默认实现
+  （`LocalIdentityProvider` / `SuffixAndKeywordScanInterceptor` / `NoopVirusScanner` / `NoopWatermarkProvider` /
+  `PlainCryptoCodec` / `SingleNodeApprovalResolver` / `HttpTransportStrategy`）+ `@ConditionalOnMissingBean`
+  装配门禁 + 实际消费点 + 回归测试**同批完成**（详见 [architecture.md §2.3](./architecture.md)）；
+- 📣 **站内通知接线三件**：传输完成提醒（`TransferEventPublisher` → `TransferCompletedEvent`）、
+  外发链接到期前提醒（`ShareExpireNotifyScheduler` + `ShareLinkMapper#selectExpiringActive`）、
+  取件回执（`ShareAccessService#redeem` 回推创建者）；`NotifyType` 新增 `9 = SHARE_ACCESSED`（`sql/V17`）；
+- 💬 **轻 IM @ 提及 + 消息保留 ≥ 30 天**：`sql/V18` 落 `notify_message.mentioned`（行级）+ 清理索引；
+  上行 `mentionUserIds`、下行 `mentioned` / `mentionUnreadCount`；`ChatRetentionScheduler` 按 ≥30 天下限
+  物理分批清理（GAP-08 关闭）。
+
+**回归证据（2026-09-29 实跑）**：后端 8 模块 **661 例**全绿（at-common 30 / at-gateway 55 / at-auth 55 /
+at-transfer 46 / at-permission 225 / at-file 148 / at-collaboration 72 / at-bootstrap 30）；
+前端 **73 文件 / 828 例**全绿。
+
 **待实现（按 P0 顺序建议，相关表已随 V1 就绪）**：
 1. ~~认证切面 + 双令牌 + Redis 会话~~ **✅ 已实现（2026-09-07）**：Spring Security 过滤链 +
    access JWT（`ver=token_epoch`）+ refresh Redis 白名单原子轮换 + 登录失败计数锁定；
@@ -367,7 +404,10 @@ Redis Key 规划定稿：at-common `RedisKeyConstants`（`at:` 前缀 Key/TTL �
    `PUT parts` / `merge` / `DELETE`）+ `TransferTaskService` 编排 + `TransferTaskStateStore`（`SELECT ... FOR UPDATE` + 状态 CAS）
    + `ChunkStore`（`.tmp` 原子改名落片 / 流式合片 / 服务端重算 SHA-256）+ `ChunkIndexes`（`uploaded_indexes` 索引集）；
    合片产物经 `FileIngestPort` 交 `at-file` 登记（不破坏依赖铁律）；单测 25 例（服务层 18 + 控制器 7）；
-4. 审批主线（冲突判重 1008/1009 + CAS + 到期回收定时任务）；
+4. ~~审批主线（冲突判重 1008/1009 + CAS + 到期回收定时任务）~~ **✅ 已实现（2026-09-29 复核）**：
+   落地于 `at-permission`——`PermissionApplicationService` 编排申请与三选一审批（通过 / 驳回 / 转审）
+   + 授权**随审批同事务**写入 + `PermissionGrantExpireScheduler` 到期回收；审批人解析经
+   `ApprovalNodeResolverChain`（CE 默认 `SingleNodeApprovalResolver`，接口已上收 at-common `spi.approval`）；
 5. ~~外发分享（下载三校验 + 次数原子扣减 + 审计）~~ **✅ 已实现（2026-09-13）**：落地于 `at-file`
    （**非**本文档原规划的 at-collaboration，差异见 [AT-DIFF-06](../development/AT-DIFF-todos.md#at-diff-06-外发分享模块归属)）；
    创建者侧 `ShareController` + 访客侧免登录 `ShareAccessController`，含一次性票据（Redis `GETDEL`）、

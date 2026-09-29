@@ -23,12 +23,15 @@ import com.anttransfer.auth.model.entity.SysUser;
 import com.anttransfer.auth.repository.UserMapper;
 import com.anttransfer.auth.security.JwtTokenProvider;
 import com.anttransfer.auth.security.PasswordPolicy;
+import com.anttransfer.auth.extension.IdentityProviderChain;
 import com.anttransfer.auth.security.SecurityUtils;
 import com.anttransfer.common.audit.OperationLog;
 import com.anttransfer.common.exception.AuthException;
 import com.anttransfer.common.exception.BusinessException;
 import com.anttransfer.common.file.AvatarStoragePort;
 import com.anttransfer.common.result.ErrorCode;
+import com.anttransfer.common.security.AuthenticatedUser;
+import com.anttransfer.common.spi.identity.AuthenticationRequest;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -61,6 +64,7 @@ public class AuthService {
     private final LoginAttemptService attemptService;
     private final AuthProperties properties;
     private final AuthAuditLogger auditLogger;
+    private final IdentityProviderChain identityProviderChain;
 
     public AuthService(UserMapper userMapper,
                        PasswordEncoder passwordEncoder,
@@ -68,7 +72,8 @@ public class AuthService {
                        TokenSessionService sessionService,
                        LoginAttemptService attemptService,
                        AuthProperties properties,
-                       AuthAuditLogger auditLogger) {
+                       AuthAuditLogger auditLogger,
+                       IdentityProviderChain identityProviderChain) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.tokenProvider = tokenProvider;
@@ -76,6 +81,7 @@ public class AuthService {
         this.attemptService = attemptService;
         this.properties = properties;
         this.auditLogger = auditLogger;
+        this.identityProviderChain = identityProviderChain;
     }
 
     /**
@@ -89,22 +95,25 @@ public class AuthService {
             throw new AuthException(ErrorCode.ACCOUNT_LOCKED, lockedMessage());
         }
 
-        SysUser user = userMapper.selectByUsername(username);
-
-        // 2. 账号不存在 / 密码错误 → 同一提示，并计数失败
-        if (user == null || !passwordEncoder.matches(rawPassword, user.getPasswordHash())) {
-            if (attemptService.recordFailure(username)) {
-                throw new AuthException(ErrorCode.ACCOUNT_LOCKED, lockedMessage());
+        // 2. 身份提供方认证（CE = 本地账号 + BCrypt 口令；EE 可插入 LDAP / OIDC，编排逻辑不变）
+        AuthenticatedUser principal;
+        try {
+            principal = identityProviderChain.authenticate(new AuthenticationRequest(username, rawPassword));
+        } catch (AuthException e) {
+            // 只有「凭据错误」才计入失败次数：锁定 / 停用表示身份已确认，再计数会把
+            // 「别人试你的账号」记到你的失败次数上，也会让已锁账号的计数继续上涨
+            if (e.getErrorCode() == ErrorCode.BAD_CREDENTIALS) {
+                if (attemptService.recordFailure(username)) {
+                    throw new AuthException(ErrorCode.ACCOUNT_LOCKED, lockedMessage());
+                }
             }
-            throw new AuthException(ErrorCode.BAD_CREDENTIALS);
+            throw e;
         }
 
-        // 3. 账号状态检查（服务端强校验，不依赖计数）
-        if (user.getStatus() != null && user.getStatus() == SysUser.STATUS_DISABLED) {
-            throw new AuthException(ErrorCode.ACCOUNT_DISABLED);
-        }
-        if (user.getStatus() != null && user.getStatus() == SysUser.STATUS_LOCKED) {
-            throw new AuthException(ErrorCode.ACCOUNT_LOCKED);
+        // 3. 载入本地权威用户行：认证通过 ≠ 本地账号行可用（EE 的 JIT 供给也落在这一步之前）
+        SysUser user = userMapper.selectById(principal.getId());
+        if (user == null) {
+            throw new AuthException(ErrorCode.BAD_CREDENTIALS);
         }
 
         // 4. 登录成功：清零失败计数，回写最近登录时间

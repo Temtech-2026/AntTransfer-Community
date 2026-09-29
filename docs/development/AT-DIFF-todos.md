@@ -41,6 +41,10 @@ IDE 提示（任选其一）：
 >
 > **GAP-10** 为 2026-09-29 落地「本人自助换头像」时新识别的缺口：把「个人中心」从
 > 「只有头像这一半」补记为「昵称自助仍缺」。
+>
+> **GAP-08 已于 2026-09-29 关闭**（站内轻 IM 的 @ 提及 + 消息保留 ≥ 30 天两项全量收口，
+> 含 `sql/V18__chat_mention_and_retention.sql`；详见文末该条），本节剩余未关闭项为
+> GAP-04 ~ GAP-07 / GAP-09 / GAP-10。
 
 > 发布门禁建议：进入版本收尾前，将「TODO[AT-DIFF- 为 0」纳入 checklist
 > （对应 docs/deployment/README.md 上线清单），防止带未裁决口径发版。
@@ -57,7 +61,7 @@ IDE 提示（任选其一）：
 | [AT-DIFF-06](#at-diff-06-外发分享模块归属) | 外发分享模块归属：规划 `at-collaboration` vs 实际 `at-file` | `server/at-file/.../controller/ShareController.java`、`ShareAccessController.java` | 📝 已登记（未阻塞） |
 | [AT-DIFF-07](#at-diff-07-一次性票据-redis-键新增) | 新增 Redis 键 `at:share:ticket:`（一次性票据，GETDEL） | `server/at-common/.../constant/RedisKeyConstants.java`、`server/at-file/.../service/ShareTicketService.java` | 📝 已登记（已同步 §7.1） |
 | [AT-DIFF-08](#at-diff-08-4004-语义扩展票据失效) | `4004` 语义扩展：是否承载「一次性票据失效」 | `server/at-file/.../service/ShareAccessService.java`、`docs/api/error-codes.md` | 📝 已登记（未阻塞） |
-| [AT-DIFF-09](#at-diff-09-contentscaninterceptor-落点) | `ContentScanInterceptor` 落点：`at-common` SPI vs CE 暂落 `at-file` | `server/at-file/.../extension/ContentScanInterceptor.java` | 📝 已登记（未阻塞） |
+| [AT-DIFF-09](#at-diff-09-contentscaninterceptor-落点) | `ContentScanInterceptor` 落点：`at-common` SPI vs CE 暂落 `at-file` | `server/at-common/.../spi/scan/ContentScanInterceptor.java` | ✅ 2026-09-29（按方案 B 上收） |
 | [AT-DIFF-10](#at-diff-10-审计写入器同构三份) | 审计写入器同构三份：抽公共实现 vs 保持三份（实体 / Mapper 已共享） | `server/at-permission/.../service/PermissionAuditLogger.java`、`server/at-file/.../service/FileAuditLogger.java` | 📝 已登记（未阻塞） |
 | [AT-DIFF-11](#at-diff-11头像双写入口与-profile-帧广播) | 头像双写入口（本人 `/users/me/avatar` ↔ 管理员 `/system/users/{id}/avatar`）与 `PROFILE` 帧全员广播 | `server/at-auth/.../controller/UserSelfController.java`、`server/at-collaboration/.../event/CollaborationEventListener.java` | 📝 已登记（未阻塞） |
 
@@ -175,10 +179,19 @@ IDE 提示（任选其一）：
     「或一次性取件票据失效（重复使用 / 过期 / 伪造）」；前端仍按 F 类（410）处置；
   - **B**：新增 `4013 TICKET_INVALID`——**不推荐**（无处置差异，纯增加前端分支与契约面）。
 
-## AT-DIFF-09：`ContentScanInterceptor` 落点
+## AT-DIFF-09：`ContentScanInterceptor` 落点 —— ✅ 已收口（2026-09-29，按方案 B 上收）
 
-- **差异**：`architecture.md` §2.1 CE/EE 扩展点表把 `ContentScanInterceptor` 的**接口位置**定为
-  **`at-common` SPI**（并预留 CE 实现名 `NoopContentScanInterceptor`）；CE 实现把它落在
+- **裁决**：C 组差异化落地时按**方案 B** 收口——接口由 `at-file` 上收至
+  **`at-common` 的 SPI 包**（`com.anttransfer.common.spi.scan.ContentScanInterceptor`），
+  CE 实现 `SuffixAndKeywordScanInterceptor` 仍留在 `at-file` 并**继续真实生效**（后缀黑名单 +
+  文件名敏感词，命中即 4007 并审计），**未**退化为 Noop PASS。
+- **触发条件达成**：方案 B 的触发判据是「扫描被多个模块消费」。C 组一次性引入 7 个 SPI 时，
+  若 `ContentScanInterceptor` 单独留在 `at-file`，EE 就必须同时依赖 `at-file` 才能实现 DLP，
+  与「EE 只依赖 `at-common` 即可实现任一扩展点」的口径冲突；且同期 `VirusScanner` 已按同一
+  约定落 `at-common`——两者本就共用「有序管道 + Deny 优先 + fail-closed」语义，分居两处会
+  让 EE 接入方对「扫描类接缝在哪」产生二义。
+- **原差异（历史记录）**：`architecture.md` §2.1 CE/EE 扩展点表把 `ContentScanInterceptor` 的
+  **接口位置**定为 **`at-common` SPI**；CE 实现最初把它落在
   **`at-file` 模块内**（`server/at-file/.../extension/ContentScanInterceptor.java`），
   CE 默认实现为 **`SuffixAndKeywordScanInterceptor`**（后缀黑名单 + 文件名敏感词），而非 Noop PASS。
 - **理由**：① 该接口当前**只有一个消费方**（外发分享的内容扫描），未构成跨模块契约，
@@ -186,13 +199,14 @@ IDE 提示（任选其一）：
   若按原表给 Noop PASS，则「后缀黑名单」需求（默认阻断 exe/sh/bat/msi/com/scr）落不了地；
   ③ 职责上它本就是 at-file 的「写入前拦截」策略，与文件域内聚。
 - **方案**：
-  - **A（推荐，已实施）**：CE 阶段保持 at-file 内扩展点（`ContentScanChain` 责任链 + Deny 优先 +
+  - **A（CE 初期，已退役）**：CE 阶段保持 at-file 内扩展点（`ContentScanChain` 责任链 + Deny 优先 +
     **fail-closed**：扫描器抛异常按拦截处理）；EE 若需 DLP，可直接提供 `ContentScanInterceptor`
     的 Spring Bean 加入链，无需改业务代码；
-    `architecture.md` §2.1 已就地标注「CE 暂落 at-file」与本条链接；
-  - **B（EE / 跨模块时）**：当扫描被**多个模块**消费（如上传、协作空间、分享同时需要）时，
-    再把接口上移到 `at-common` SPI 并保留 at-file 的 CE 实现，届时同步 §2.1 与 §2.4 映射表。
-- **影响面**：无正确性风险；仅「SPI 归属位置」与「CE 实现命名」两处文档口径待后续对齐。
+  - **B（✅ 2026-09-29 采行）**：接口上移至 `at-common` SPI，**保留** at-file 的 CE 实现
+    （`SuffixAndKeywordScanInterceptor`）与责任链语义；EE 只需依赖 `at-common` 即可实现 DLP。
+    已同步 `architecture.md` §2.1 / §2.2 / §2.4 与 PRD §8 命名。
+- **影响面**：无正确性风险。迁移仅改包位置（`ContentScanChain` / `SuffixAndKeywordScanInterceptor`
+  与相关测试改 import），链的 Deny 优先与 fail-closed 行为由既有测试原样守住。
 
 ## AT-DIFF-10：审计写入器同构三份（`PermissionAuditLogger` ↔ `FileAuditLogger` / `ShareAuditLogger`）
 
@@ -262,6 +276,9 @@ IDE 提示（任选其一）：
 > 其中 ~~**GAP-01 建议提前**（默认 1 MB 会直接挡掉大文件上传验收）~~ **✅ 已随分片上传主线落地（2026-09-14）**，
 > ~~**GAP-02 / GAP-03 同批**（账号生命周期动作）~~ **✅ 已于 2026-09-20 同批关闭**
 > （自助改密端点 + 停用即时吊销，含 Redis 纪元镜像键回填缺陷修复）。
+> ~~**GAP-08**（轻 IM 的 @ 提及 + 消息保留策略）~~ **✅ 已于 2026-09-29 随 B 组（IM 收口）关闭**：
+> 「保留期清理」不再等 **D-10**（后者仍在延期登记中），改参照 `at-file` 已上线的
+> `FileCleanupScheduler` 同构方案（分布式锁 + 分批 + 幂等）。
 
 | ID | 缺口 | 级别 | 代码现状锚点 |
 | --- | --- | --- | --- |
@@ -272,7 +289,7 @@ IDE 提示（任选其一）：
 | [GAP-05](#gap-05三权分立缺角色互斥校验) | 角色互斥无数据层约束 / 服务层校验 | P1 合规缺口 | `at-permission`（`mutex` 全仓零命中） |
 | [GAP-06](#gap-06敏感级别缺变更端点与变更审计) | 敏感级别无变更端点、无级别变更审计、无「提级需审批」联动 | P1 合规缺口 | `at-file/.../model/entity/FileNode.java`、`at-permission/.../config/ApprovalProperties.java` |
 | [GAP-07](#gap-07全文搜索未建索引) | 检索 `keyword` 走 LIKE 模糊匹配，未建全文索引 | P1 能力 / 性能缺口 | `at-file/.../controller/FileController.java`（`NodeQuery`） |
-| [GAP-08](#gap-08轻-im-缺-提及与消息保留策略) | 轻 IM 缺 @ 提及与「消息保留 ≥ 30 天」策略 | P1 验收缺口 | `at-collaboration/.../service/ChatService.java` |
+| [GAP-08](#gap-08轻-im-缺-提及与消息保留策略) | ~~轻 IM 缺 @ 提及与「消息保留 ≥ 30 天」策略~~ **✅ 已关闭（2026-09-29）**：行级 `mentioned` 标记 + `mentionUserIds` 上行 + 会话 `mentionUnreadCount`；`ChatRetentionScheduler` 分批物理清理（下限 30 天） | P1 验收缺口 | `at-collaboration/.../service/ChatService.java`、`.../job/ChatRetentionScheduler.java`、`sql/V18__chat_mention_and_retention.sql` |
 | [GAP-09](#gap-09安全徽标所需字段未下发) | 安全徽标所需字段未下发：`watermarkEnabled` / `expireAt` | P1 能力缺口 | `at-file/.../model/vo/FileNodeVO.java`、`web/src/pages/file/components/SecurityBadges.tsx` |
 | [GAP-10](#gap-10个人资料自助仅落头像缺改昵称) | 个人资料自助仅落头像：缺「本人改昵称」端点（`PUT /v1/users/me`） | P1 能力缺口 | `server/at-auth/.../controller/UserSelfController.java` |
 
@@ -415,18 +432,54 @@ IDE 提示（任选其一）：
 
 ### GAP-08：轻 IM 缺 @ 提及与消息保留策略
 
-- **现象**：站内轻 IM 只支持发消息 / 拉历史 / 标记已读（**建群能力已于 2026-09-26 补齐**，
+> **✅ 状态：已关闭（2026-09-29）**。两项验收（@ 提及 / 消息持久化 ≥ 30 天）均有落点，
+> 原「现象 / 证据」已不成立，保留作决策留痕。
+
+- ~~**现象**：站内轻 IM 只支持发消息 / 拉历史 / 标记已读（**建群能力已于 2026-09-26 补齐**，
   见 `POST` / `GET /api/v1/chat/groups`；本缺口与其无关，仍是 @ 提及与保留策略两项），无 @ 提及，
-  也无消息保留期管理。
-- **证据**：`at-collaboration` 的 `ChatService` 与 Chat 端点仅覆盖会话与消息收发；无 @ 提及的
+  也无消息保留期管理。~~
+- ~~**证据**：`at-collaboration` 的 `ChatService` 与 Chat 端点仅覆盖会话与消息收发；无 @ 提及的
   解析 / 通知 / 未读高亮逻辑，亦无归档或清理任务（`@Scheduled` 全仓仅 `PermissionGrantExpireScheduler` 一处，
-  与 **D-10** 同源问题）。
-- **影响**：§4 P1「站内轻 IM（会话与 **@ 提及**）；**消息持久化 ≥ 30 天**」两项验收无落点；
-  消息表将无限增长，与留存策略矛盾。
-- **回头需完成**：① @ 提及：消息体识别提及对象 → 生成定向通知（复用 `NotifyService`）→ 会话内未读高亮；
-  ② 保留策略：明确「≥ 30 天」的下限与归档 / 清理动作（可复用 **D-10** 的 `AuditArchiveScheduler`
-  同构方案与分布式锁要求）。
-- **触发时机**：协作主线（Phase 3，at-collaboration 落地）时；清理任务与 **D-10** 同批。
+  与 **D-10** 同源问题）。~~
+- **影响**：§4 P1「站内轻 IM（会话与 **@ 提及**）；**消息持久化 ≥ 30 天**」两项验收原无落点；
+  消息表将无限增长，与留存策略矛盾。**已解决。**
+- **已落地**：
+  - **① @ 提及**（`V18__chat_mention_and_retention.sql` 加 `notify_message.mentioned` 列）：
+    - **行级标记而非消息级属性**：写扩散下一条群消息落 N 行，`mentioned` 是**每接收人一行**的列。
+      这样「有人 @ 我」退化成 `mentioned = 1 and read_status = 0` 的等值查询，
+      **不需要解析正文里的昵称**（重名、昵称含空格、正文改字都不会误判）。
+    - **上行契约**：`POST /api/v1/chat/messages` 新增可空 `mentionUserIds`（上限 500）。
+      服务端在 `ChatService#resolveMentionTargets` 里与**群成员求交集**，
+      非成员 / 发送人自己 / 重复项**静默剔除**（不报错、不影响本条发送）——
+      点名失败不该让整句话发不出去，而客户端持有的成员名单本来就可能是旧快照。
+    - **定向投递**：被点名者那一行走既有的按接收人推送通道（`CHAT` 帧载荷 `NotifyMessageVO.mentioned`），
+      不额外写一条站内信 —— 同一句话若在「会话未读」与「站内信未读」各算一次，
+      用户会在两个地方看到两份未读，且点任一处都无法同时清掉。（若产品后续要求消息中心留痕，
+      须先定未读合并口径再动。）
+    - **未读口径**：会话列表新增 `mentionUnreadCount` = 该会话「未读且被点名」的条数，
+      **它是 `unreadCount` 的子集，两个数不能相加**（角标数字仍取 `unreadCount`，只在 `> 0` 时染强调色）。
+    - **前端**：输入框 `@` 选人（`resolveMentionTrigger` / `filterMentionCandidates` / `insertMention` /
+      `pushMention` / `retainActiveMentions`，纯函数可单测）、气泡「有人@我」标记 + 描边、
+      会话列表摘要前缀 `[有人@我]`（对齐微信）。
+      **生效提及靠正文匹配**（`retainActiveMentions`）：用户删掉 `@昵称` 时该 ID 随之失效，
+      不做插入位置跟踪（**这点与 Emoji 的占位符不同** —— 见 `web/src/components/ChatComposer/index.tsx` 的触发判定注释）。
+  - **② 保留策略**：`ChatRetentionScheduler`（`anttransfer.collaboration.notify.message-cleanup-cron`，默认 `0 20 4 * * ?`，
+    与文件域清理 03:30 错峰）
+    → `NotifyMessageService#purgeExpiredChatMessages(cutoff, batchSize)` →
+    `NotifyMessageMapper#deleteExpiredChatMessages`（`order by create_time limit` 分批 DELETE，
+    **物理删除**：保留期是留存承诺，不是软删除开关）。
+    - **30 天下限硬钳制**：`NotifyProperties.MIN_MESSAGE_RETENTION_DAYS = 30`，
+      配置小于 30 一律按 30 执行（**不回写配置**，配置里仍显示管理员填的值，便于发现配错）。
+    - **并发只允许一个实例清理**：Redis `SETNX at:chat:retention-lock`（TTL 15min，**不主动释放**，
+      靠 TTL 兜底，避免实例崩溃后锁永久占用）；**Redis 异常时降级放行**（清理幂等、重复执行无害，
+      而「锁坏了就不清理」会让保留期悄悄失效）。
+    - 参照的是 **at-file `FileCleanupScheduler`** 而不是 **D-10 的 `AuditArchiveScheduler`**：
+      后者至今未落地（`D-10` 仍在延期登记中），前者的「分布式锁 + 分批 + 重试留痕」已经过生产路径验证。
+- **交叉引用**：`docs/api/README.md` 的 `CHAT` 帧与 `mentionUserIds` 说明；
+  `docs/prd/README.md` §4.1 的 IM 行已置 ✅；回归护栏 `web/src/components/ChatComposer/composer.test.ts`、
+  `web/src/hooks/useChatMentionables.test.tsx`、`web/src/services/chat/messages.test.ts`、
+  `server/at-collaboration/.../ChatServiceRecallTest.java`。
+- **触发时机**：✅ 已随协作主线（Phase 3）落地；**D-10** 的档案归档仍另案待办（本缺口不再等它）。
 
 ### GAP-09：安全徽标所需字段未下发
 

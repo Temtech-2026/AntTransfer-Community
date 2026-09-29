@@ -19,6 +19,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
+import java.util.List;
+
 /**
  * 发送会话消息入参（单聊 / 群聊共用）。
  *
@@ -43,6 +45,13 @@ import jakarta.validation.constraints.Size;
  * @param clientMsgId     客户端消息 ID（幂等键，同一消息重发须沿用同一个值）
  * @param quoteClientMsgId 被引用消息的幂等键（选填）；非空即为「引用回复」，
  *                         服务端在写入前校验该消息属于本会话且未被撤回（见 {@code ChatService#send}）
+ * @param mentionUserIds  {@code @} 提及对象的用户 ID 列表（选填，仅群聊有意义）。
+ *                        <b>由客户端显式给出而不由服务端解析正文</b>：昵称可重名、可修改、
+ *                        可含空格与特殊字符，从 "@昵称" 反查「点的是谁」必然误判；
+ *                        而发送端本来就知道用户点选了哪个成员，这是唯一可靠的信息源。
+ *                        服务端据此把对应接收人的那一行标记为「被点名」（见 {@code V18} 口径 ①），
+ *                        并<b>静默剔除</b>不属于本会话的 ID（不报错：见 {@code ChatService#resolveMentionTargets}）。
+ *                        单聊忽略本字段——对方本就是唯一读者，点名没有额外语义。
  * @author AntTransfer CE
  */
 public record ChatSendDTO(
@@ -53,5 +62,6 @@ public record ChatSendDTO(
         @Size(max = 1000, message = "消息内容过长") String content,
         @NotBlank(message = "客户端消息 ID 不能为空")
         @Size(max = 64, message = "客户端消息 ID 过长") String clientMsgId,
-        @Size(max = 64, message = "被引用消息 ID 过长") String quoteClientMsgId) {
+        @Size(max = 64, message = "被引用消息 ID 过长") String quoteClientMsgId,
+        @Size(max = 500, message = "提及人数过多") List<Long> mentionUserIds) {
 }

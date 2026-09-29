@@ -21,7 +21,9 @@
 - 🧱 **模块化单体**：后端 `server/` 下 8 个 Maven 模块（`at-common` / `at-gateway` / `at-auth` / `at-transfer` / `at-permission` / `at-file` / `at-collaboration` / `at-bootstrap`），模块间禁止循环依赖，可平滑演进拆分微服务；
 - 📦 **统一返回体与错误码**：`Result<T>`（code / message / data / traceId），分段业务错误码（`0 / 1xxx / 2xxx / 4xxx / 5xxx`）；
 - 🛤️ **全链路追踪**：`X-Trace-Id` 透传 + MDC 日志关联，全局异常兜底；
-- 🔑 **领域骨架**：认证鉴权（`at-auth`）、RBAC 权限点（`at-permission`）、传输任务与断点续传模型（`at-transfer`）、文件元数据/秒传（`at-file`）、协作空间与分享（`at-collaboration`）；
+- 🔑 **领域骨架**：认证鉴权（`at-auth`）、RBAC 权限点与审批（`at-permission`）、传输任务与断点续传（`at-transfer`）、文件元数据/秒传/外发分享（`at-file`）、协作空间与站内轻 IM（`at-collaboration`）；
+- 🔔 **站内通知与轻 IM**：传输完成提醒、外发链接到期前提醒、取件回执（`NotifyType 4 / 8 / 9`），会话消息支持 `@` 提及与「有人@我」未读，消息保留期 ≥ 30 天并由定时任务自动清理；
+- 🔌 **CE/EE 扩展点**：7 个 SPI（身份源 / 内容扫描 / 水印 / 存储编解码 / 病毒扫描 / 审批人解析 / 传输策略）已就绪——CE 提供直通实现，EE 以 Bean 覆盖即可接入，业务代码内**无 `if (eeEnabled)` 分支**；
 - 🗄️ **数据库版本化**：Flyway 迁移（脚本仓库 `sql/`），`dev` / `prod` 默认均自动迁移（`FLYWAY_ENABLED` 默认 `true`），并支持存量库基线；
 - 📖 **接口文档**：SpringDoc OpenAPI 3（Swagger UI），生产默认关闭；
 - 🖥️ **前端工程**：`web/` 基于 Ant Design Pro v6（Umi Max + React 19 + TypeScript），已配置 `/api` 代理到后端；
@@ -68,7 +70,7 @@ anttransfer-community/
 
 | 模块 | 职责 |
 | --- | --- |
-| `server/at-common` | 共享内核：`Result<T>` / 错误码 / `BaseEntity` / 链路 Trace / 业务异常 |
+| `server/at-common` | 共享内核：`Result<T>` / 错误码 / `BaseEntity` / 链路 Trace / 业务异常 / **CE-EE 扩展点 7 个 SPI 契约（`com.anttransfer.common.spi`）** |
 | `server/at-gateway` | 统一接入层：全局异常、TraceId 过滤器、CORS |
 | `server/at-auth` | 认证鉴权：登录态 / 用户上下文 / `@RequireLogin` |
 | `server/at-transfer` | 传输任务核心：任务实体 / 状态机 / 断点续传骨架 |
@@ -125,7 +127,9 @@ cd web && npm install && npm run dev
 
 ## 🗺️ 路线图 / Roadmap
 
-- 🖥️ 前端页面按领域落地（登录/传输/文件/协作），替换模板示例页；
+- ✅ ~~前端页面按领域落地（登录/传输/文件/协作），替换模板示例页~~（已完成：登录 / 工作台 / 文件 / 分享 / 会话 / 消息中心 / 审计 / 权限地图）；
+- 🔌 **CE/EE 差异化接口已就绪**：7 个扩展点具备 CE 默认实现与 `@ConditionalOnMissingBean` 装配门禁，
+  EE 可直接以 Bean 覆盖接入（口径见 [架构落地说明 §2](docs/architecture/architecture.md)）；
 - 🧪 各业务模块接口与测试完善，接入 E2E（`tests/e2e`）与性能基线（`tests/performance`）；
 - 📦 Kubernetes/Helm 正式部署物、首个稳定版本 1.0.0。
 

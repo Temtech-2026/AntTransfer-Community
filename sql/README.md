@@ -18,6 +18,12 @@ sql/
 ├── V10__upload_task_parent_id.sql                  # 增量：sys_upload_task 补 parent_id（预检上报的目标目录）
 ├── V11__notify_message_title_nullable.sql          # 增量：sys_notify_message.title 放宽为可空（会话消息无标题）
 ├── V12__chat_attachment.sql                        # 增量：会话文件附件授权（用途档位 + 有效期 + 下载次数 三轴限制）
+├── V13__chat_read_receipt.sql                      # 增量：会话已读回执索引（idx_sender_session）
+├── V14__chat_group_permission_points.sql           # 增量：会话域权限点（chat:group:create）
+├── V15__chat_message_recall_quote.sql              # 增量：会话消息撤回窗口 + 引用回复
+├── V16__chat_group_manage_permission_points.sql    # 增量：群管理权限点
+├── V17__share_access_notify_type.sql               # 增量：notify_type 注释口径扩至 9（外发链接取件回执）
+├── V18__chat_mention_and_retention.sql             # 增量：会话消息 @ 提及行级标记（mentioned）+ 保留期清理索引
 └── README.md
 ```
 
@@ -37,7 +43,7 @@ sql/
 | 文件传输族 | `sys_file` / `sys_upload_task` / `sys_share_link` | 元数据（SHA-256 + `ref_count` 物理去重）、分片任务（含 `uploaded_indexes` 已传分片索引持久化）、外发链接（提取码散列/有效期/次数） |
 | 协作审计族 | `sys_notify_message` / `sys_operation_log` / `sys_login_log` | 站内/离线消息、操作审计（append-only，留存 ≥ 6 个月）、登录成功/失败日志 |
 
-> 🧩 **增量迁移（V3 ~ V14）**：上表为 **V1 基线**（16 表）；V3 ~ V7 / V9 / V10 / V12 ~ V14 只做**纯增量**（新增列 / 新增索引 / 新增表 / 新增行），不改写既有列语义、不删除任何对象；V8 为**纯数据收敛**（仅删授权行，不动表结构）；V11 为**约束放宽**（仅把 `title` 由 `not null` 改为可空，不改类型 / 长度、不动任何数据）。
+> 🧩 **增量迁移（V3 ~ V18）**：上表为 **V1 基线**（16 表）；V3 ~ V7 / V9 / V10 / V12 ~ V18 只做**纯增量**（新增列 / 新增索引 / 新增表 / 新增行 / 更新列注释），不改写既有列语义、不删除任何对象；V8 为**纯数据收敛**（仅删授权行，不动表结构）；V11 为**约束放宽**（仅把 `title` 由 `not null` 改为可空，不改类型 / 长度、不动任何数据）。
 >
 > - **V3**：`sys_user` 补 `token_epoch` —— 会话吊销纪元，配合 `at:token:access:{userId}` 缓存镜像实现全端登出 / 改密即失效（见 `architecture.md` §4 D-8 与红队 [C-08]）。
 > - **V4**：① `sys_permission` 补菜单路由元数据 `route_path` / `component` / `icon` / `visible`（仅 `type=1` 菜单使用，**不参与权限判定**）；② `sys_user` 补 `user_type`（`1`-内部用户 / `2`-外部协作者；**CE 已裁定维持 PRD、恒为 `1` 不启用**，该列仅作 EE / 受限账号预留，口径见 `architecture.md` §4 **D-12**）；③ 新建 `sys_group_member`（项目 / 群组成员关系，唯一键 `uk_group_user`）与 `sys_space`（协作空间，字段对齐 at-collaboration `CollaborationSpace` 骨架实体，见 §4 **D-11**）。
@@ -52,6 +58,9 @@ sql/
 > - ✅ 由此 **sys_ 前缀表由 16 表经 V4（+2）后，再经 V6（+6）、V12（+1）增至 25 表**；`sys_file.space_id` 自 V4 起为**已落地**的逻辑关联（其原注释「空间表随 at-collaboration 版本落地」所指即 `sys_space`）。
 > - **V13**：**纯增量（+1 索引，不动结构 / 数据）** —— `sys_notify_message` 补 `idx_sender_session (sender_user_id, chat_scope, chat_target_id, client_msg_id, read_status)`，支撑会话「已读回执」查询。写扩散下「谁读过我的消息」= 取 **sender 为我**且 `read_status=1` 的镜像行；V5 的 `idx_session` 服务的是反方向（我作为接收人的历史与角标），`uk_sender_recipient_client` 虽以 sender 为前缀，但 `client_msg_id` 排在第三列，按它过滤只能扫「我历史上发过的全部行」——故补一个以**发送人视角的会话定位**为前缀的索引（详见该脚本文件头，EE 若改读扩散 + 已读游标则该索引与回执查询一并废弃）。
 > - **V14**：**纯数据新增（不改结构）** —— 会话域落权限点：新增菜单根节点 `chat` 与操作点 **`chat:group:create`**（建群），授 SUPER_ADMIN / DEPT_ADMIN / USER，**不授 AUDITOR**（建群写 `sys_group` / `sys_group_member` 并决定后续消息可见范围，与审计员「权限锁定只读」冲突）。会话的读 / 发 / 已读 / 在线状态**一律不设权限点**（查询与写入维度写死在登录主体上，见 `ChatController` 类注），故本域仅此一点；建群接口 `POST /api/v1/chat/groups` 挂 `@RequiresPerm("chat:group:create")`，错误码 1031~1033 见 `docs/api/error-codes.md`。
+> - **V13 ~ V16**：会话域收尾 —— 已读回执索引（V13）、建群权限点（V14）、消息撤回与引用回复（V15）、群管理权限点（V16），逐条口径见各脚本文件头。
+> - **V17**：**仅更新列注释（不改结构 / 数据）** —— `sys_notify_message.notify_type` 注释口径由 8 扩至 **9**，与 at-common `NotifyType` 编码表对齐：新增 **9 = 外发链接被取件回执**（at-file 在免登录访客成功取件后回推给链接创建者）。9 计入站内信未读（未读 SQL 为 `notify_type not in (6,7)`），**不进待办中心**（待办 SQL 为 `notify_type in (1,2,8)`）；**每次取件各发一条**，故 `bizType + bizId + notifyType` 幂等键在本类型上不可用于去重。
+> - **V18**：**纯增量（+1 列 +1 索引，不动数据）** —— `sys_notify_message` 补 `mentioned tinyint not null default 0`（会话消息的 **@ 提及行级标记**）与保留期清理索引。`mentioned` 必须落在**行**上而非消息上：会话消息是写扩散的（一条群消息按成员各落一行），「有人 @ 我」等价于 `mentioned = 1 and read_status = 0` 的等值查询，**无需解析正文昵称**（重名 / 昵称含空格 / 发送后改字都不会误判）；存量行默认 `0`（历史消息本就没有点名语义）。清理索引服务的是 `ChatRetentionScheduler` 的**保留期物理删除**（`order by create_time limit` 分批 DELETE，默认保留 30 天、**下限 30 天硬钳制**），逐条口径与并发锁见该脚本文件头与 `docs/development/AT-DIFF-todos.md` GAP-08。
 > - ⚠️ V1 头部「群组成员关系不在 CE 落子表，随 at-collaboration 演进版本（V3+）扩展」的**收敛口径已由 V4 提前落地**；V1 属已发布脚本，按下方「已发布脚本禁止修改」**不回改注释**（Flyway checksum），口径演进说明以 `V4__menu_route_user_type_and_collaboration.sql` 文件头为准。
 > - ⚠️ `sys_user.avatar_url`（V1 基线列）存的是 `AvatarStoragePort` 的**存储 key（不透明标识），不是可直接访问的 URL**：对外地址由 `urlOf` 拼为 `/api/v1/users/{id}/avatar?v={key}`（见 at-file 的 `LocalAvatarStorage` 与其接口注释）。该口径同样**不回改 V1 的列注释**（Flyway checksum 铁律，改了会让既有库启动即 `Migration checksum mismatch`），需要时以本行为准。
 

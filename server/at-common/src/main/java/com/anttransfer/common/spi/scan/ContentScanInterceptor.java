@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.anttransfer.file.extension;
+package com.anttransfer.common.spi.scan;
 
 /**
  * 外发内容扫描扩展点（CE/EE 边界接口）。
@@ -23,7 +23,7 @@ package com.anttransfer.file.extension;
  * 无需改动分享主链路。</p>
  *
  * <p><b>扩展方式</b>：EE 只需声明自己的 {@code ContentScanInterceptor} Bean
- * （可用 {@code @Order} 控制顺序），{@link ContentScanChain} 会自动发现并串行执行全部实现，
+ * （可用 {@code @Order} 控制顺序），{@code ContentScanChain} 会自动发现并串行执行全部实现，
  * 采取 <b>Deny 优先</b>（任一实现拒绝即拦截，与 RBAC 的「Deny 优先」同一语义）。</p>
  *
  * <p><b>实现约束</b>：</p>
@@ -34,6 +34,9 @@ package com.anttransfer.file.extension;
  *         以便主链路统一落审计日志（动作 {@code SHARE_BLOCKED}）后抛 4007；</li>
  *     <li>不得记录文件内容明文到日志。</li>
  * </ul>
+ *
+ * <p><b>C 组归位</b>：本接口原定义在 {@code at-file} 的 {@code extension} 包，现已上收至
+ * {@code at-common} 的 SPI 包——EE 只需依赖 {@code at-common} 即可实现，不必依赖 {@code at-file}。</p>
  *
  * @author AntTransfer CE
  */

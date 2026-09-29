@@ -77,6 +77,8 @@ function conversation(overrides: Partial<Conversation> = {}): Conversation {
     lastMessageMine: false,
     lastTime: '2026-09-16T09:00:00',
     unreadCount: 0,
+    // 未读 @ 是未读的子集：默认没有点名，用例要考它时在 overrides 里给
+    mentionUnreadCount: 0,
     ...overrides,
   };
 }
@@ -224,6 +226,43 @@ describe('clearSessionUnread', () => {
 
     expect(cleared[0].unreadCount).toBe(4);
   });
+
+  it('提及未读与未读一起归零（它是未读的子集，留一个会自相矛盾）', () => {
+    const hit = conversation({ unreadCount: 3, mentionUnreadCount: 2 });
+
+    const cleared = clearSessionUnread([hit], {
+      chatScope: ChatScope.PRIVATE,
+      targetId: '9',
+    });
+
+    expect(cleared[0].unreadCount).toBe(0);
+    expect(cleared[0].mentionUnreadCount).toBe(0);
+  });
+
+  it('未读已归零但提及未读还有剩时也要清（不留用户无法消除的「有人@我」）', () => {
+    const hit = conversation({ unreadCount: 0, mentionUnreadCount: 1 });
+
+    const cleared = clearSessionUnread([hit], {
+      chatScope: ChatScope.PRIVATE,
+      targetId: '9',
+    });
+
+    expect(cleared[0]).not.toBe(hit);
+    expect(cleared[0].mentionUnreadCount).toBe(0);
+  });
+
+  it('本来就没有未读的会话保持原对象引用（缺失字段不能算成「有东西要清」）', () => {
+    const hit = conversation({ unreadCount: 0 });
+    // 模拟后端某天不回这个字段：判定必须按 0 处理，否则每次进入会话都换一次引用
+    const legacy = { ...hit, mentionUnreadCount: undefined } as unknown as Conversation;
+
+    expect(
+      clearSessionUnread([legacy], {
+        chatScope: ChatScope.PRIVATE,
+        targetId: '9',
+      })[0],
+    ).toBe(legacy);
+  });
 });
 
 describe('applyIncomingToConversations', () => {
@@ -313,6 +352,68 @@ describe('applyIncomingToConversations', () => {
     expect(hit.lastMessageId).toBe('50');
     expect(hit.lastContent).toBe('最新');
     expect(hit.unreadCount).toBe(2);
+  });
+
+  it('被 @ 的消息：未读与提及未读各 +1（未读是总数，提及是其中的子集）', () => {
+    const list = [
+      conversation({ unreadCount: 1, mentionUnreadCount: 0 }),
+    ];
+
+    const result = applyIncomingToConversations(
+      list,
+      chatMessage({ id: '40', content: '@张三 看一下', mentioned: true }),
+      { activeSession: null },
+    );
+
+    const hit = result.conversations[0];
+    expect(hit.unreadCount).toBe(2);
+    expect(hit.mentionUnreadCount).toBe(1);
+  });
+
+  it('没被 @ 的消息只加未读，不碰已有的提及未读', () => {
+    const list = [conversation({ unreadCount: 1, mentionUnreadCount: 2 })];
+
+    const result = applyIncomingToConversations(list, incoming(41), {
+      activeSession: null,
+    });
+
+    const hit = result.conversations[0];
+    expect(hit.unreadCount).toBe(2);
+    // 路过一条无关消息不该把「有人@我」擦掉（它只能由进入会话 / 标记已读清零）
+    expect(hit.mentionUnreadCount).toBe(2);
+  });
+
+  it('自己发的消息即便带了提及标记（多标签页收到自己的帧）也不给自己造「有人@我」', () => {
+    const list = [conversation({ unreadCount: 0, mentionUnreadCount: 0 })];
+
+    const result = applyIncomingToConversations(
+      list,
+      chatMessage({
+        id: '42',
+        content: '@张三 看一下',
+        mentioned: true,
+        senderUserId: '7',
+        recipientUserId: '7',
+      }),
+      { activeSession: null },
+    );
+
+    const hit = result.conversations[0];
+    expect(hit.unreadCount).toBe(0);
+    expect(hit.mentionUnreadCount).toBe(0);
+  });
+
+  it('当前打开的会话里被 @ 也不加未读（我正看着这条消息）', () => {
+    const list = [conversation({ targetId: '9', unreadCount: 0, mentionUnreadCount: 0 })];
+
+    const result = applyIncomingToConversations(
+      list,
+      chatMessage({ id: '43', content: '@张三 看一下', mentioned: true }),
+      { activeSession: { chatScope: ChatScope.PRIVATE, targetId: '9' } },
+    );
+
+    expect(result.conversations[0].unreadCount).toBe(0);
+    expect(result.conversations[0].mentionUnreadCount).toBe(0);
   });
 });
 

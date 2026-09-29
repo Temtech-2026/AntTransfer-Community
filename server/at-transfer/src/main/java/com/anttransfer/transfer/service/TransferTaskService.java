@@ -21,6 +21,7 @@ import com.anttransfer.common.file.FileIngestPort;
 import com.anttransfer.common.file.FileIngestResult;
 import com.anttransfer.common.result.ErrorCode;
 import com.anttransfer.transfer.config.TransferProperties;
+import com.anttransfer.transfer.event.TransferEventPublisher;
 import com.anttransfer.transfer.model.dto.MergeRequest;
 import com.anttransfer.transfer.model.dto.PrecheckRequest;
 import com.anttransfer.transfer.model.entity.TransferTask;
@@ -105,6 +106,7 @@ public class TransferTaskService {
     private final ChunkStore chunkStore;
     private final TransferProperties properties;
     private final FileIngestPort fileIngestPort;
+    private final TransferEventPublisher eventPublisher;
 
     /* ============================ 预检 ============================ */
 
@@ -251,6 +253,10 @@ public class TransferTaskService {
                 // 不回滚内容（回滚要删 at-file 的引用计数，属于另一个事务边界），只留痕。
                 log.warn("任务 {} 在合并期间被并发取消，内容已落库（fileId={}）但任务状态未落为完成",
                         uploadId, result.fileId());
+            } else {
+                // 状态已由 transition 的独立事务提交，此处是「已提交后」发布：
+                // 站内提醒 + 待办投影由 at-collaboration 监听器落地，事件失败不回滚传输结果
+                eventPublisher.publishCompleted(task);
             }
             chunkStore.deleteTaskDir(uploadId);
             // nodeId 必须一并回传：调用方（如聊天里「上传本地文件后直接发出去」）拿到的是

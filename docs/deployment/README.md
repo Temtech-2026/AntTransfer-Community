@@ -31,6 +31,9 @@
 | `ANTTRANSFER_CORS_ALLOWED_ORIGINS` | 否 | `*`（compose 中已收敛为 `http://localhost:8000`） | CORS 来源白名单，逗号分隔，支持通配；生产禁用 `*` |
 | `ANTTRANSFER_FILE_STORAGE_ROOT` | 否 | `./data/files` | 文件正文存储根；容器内须指向挂载点 `/app/data/files` |
 | `TRANSFER_STAGING_ROOT` | 否 | `./data/transfer-staging` | 分片暂存根；容器内须指向挂载点 `/app/data/transfer-staging` |
+| `ANTTRANSFER_COLLABORATION_NOTIFY_MESSAGE_RETENTION_DAYS` | 否 | `30` | 会话消息（站内轻 IM）保留天数。**小于 30 一律按 30 执行**（`NotifyProperties.MIN_MESSAGE_RETENTION_DAYS` 硬钳制），且**不回写配置**——排查时配置里仍是管理员填的值；调大只多花存储，永远安全 |
+| `ANTTRANSFER_COLLABORATION_NOTIFY_MESSAGE_CLEANUP_CRON` | 否 | `0 20 4 * * ?`（每日 04:20） | 保留期清理任务 cron；**与文件域清理（每日 03:30）错峰**——两者都写库 / 写盘，同刻执行会让抖动叠加 |
+| `ANTTRANSFER_COLLABORATION_NOTIFY_MESSAGE_CLEANUP_BATCH_SIZE` | 否 | `1000` | 保留期清理单批删除行数；单次触发上界 = 本值 × 100（默认 10 万行 / 天） |
 
 > ⚠️ 后两个存储路径**必须落在持久卷上**：`docker-compose.yml` 已挂载 `files-data` /
 > `staging-data` 两个卷并同步注入上述环境变量，否则每次 `up -d --build` 重建容器都会丢失
@@ -113,4 +116,8 @@ docker run -d --name at-server -p 8080:8080 \
 4. 💾 `files-data` / `staging-data` 两个卷已挂载且纳入备份，重建容器不丢文件；
 5. 🚀 首次启动观察 Flyway 迁移是否成功，确认 `server/at-bootstrap/target` 产物为最新提交；
 6. 🌐 反向代理（Nginx/网关）透传 `/api/`（含 `/api/ws/notify` 的 WebSocket Upgrade，
-   上传体积上限 ≥ 80MB），并按需开启 HTTPS 与限流。
+   上传体积上限 ≥ 80MB），并按需开启 HTTPS 与限流；
+7. 📣 **通知链路冒烟**：跑完一次上传合并 → 创建者收到传输完成站内信（`notifyType 8`）；用外发链接核销一次 →
+   创建者收到取件回执（`notifyType 9`）且**待办角标不变**（该类型计入未读、**不进待办**）；
+8. 🗄️ **保留期任务核验**：确认 `at:chat:retention-lock` 只被一个实例持有、清理日志显示按 ≥ 30 天执行。
+   **多实例部署时必查该键**——否则每个实例都会各自跑一遍全量清理。

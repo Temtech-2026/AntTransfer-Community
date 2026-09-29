@@ -244,17 +244,31 @@ export function sortConversations(list: Conversation[]): Conversation[] {
   );
 }
 
-/** 把某个会话的未读清零（进入会话 / 标记已读后调用）。 */
+/**
+ * 把某个会话的未读清零（进入会话 / 标记已读后调用）。
+ *
+ * <p><b>提及未读必须一并清零</b>：它是未读的<b>子集</b>——未读都没了，提及未读不可能还有剩。
+ * 只清一个会留下「角标已经消失、会话名旁却仍挂着『有人 @ 我』」这种自相矛盾的画面，
+ * 而用户此后没有任何操作能让它消失（未读已经归零，不会再触发清零）。</p>
+ */
 export function clearSessionUnread(
   list: Conversation[],
   session: ChatSession,
 ): Conversation[] {
   const key = sessionKey(session);
-  return list.map((item) =>
-    sessionKey(item) === key && item.unreadCount !== 0
-      ? { ...item, unreadCount: 0 }
-      : item,
-  );
+  return list.map((item) => {
+    if (sessionKey(item) !== key) {
+      return item;
+    }
+    // 缺失一律按 0 算：老列表项（或后端某天不回这个字段）不该被当成「有东西要清」，
+    // 否则每次进入会话都会给这个对象换一次引用，白渲染一遍列表
+    const unread = item.unreadCount ?? 0;
+    const mentionUnread = item.mentionUnreadCount ?? 0;
+    if (unread === 0 && mentionUnread === 0) {
+      return item;
+    }
+    return { ...item, unreadCount: 0, mentionUnreadCount: 0 };
+  });
 }
 
 /** 实时消息对会话列表的影响。 */
@@ -300,6 +314,16 @@ export function applyIncomingToConversations(
   const selfSent = isMine(message);
   const isActive =
     options.activeSession != null && sessionKey(options.activeSession) === key;
+  /**
+   * 未读增量口径：只由「别人发的 + 不是当前打开的会话」产生（见文件头口径 ②）。
+   *
+   * <p><b>提及未读不是独立口径，而是未读的子集</b>——它的增量必须与未读严格同源，
+   * 否则会出现「未读 0 条、其中 1 条点名了我」这种不可能的组合。故这里由同一个
+   * {@code addUnread} 派生，而不是再写一份 {@code selfSent || isActive}。</p>
+   */
+  const addUnread = !selfSent && !isActive;
+  // 自己送出的消息即便带了提及标记（多标签页会收到自己的帧）也不该给自己制造「有人 @ 我」
+  const addMention = addUnread && message.mentioned === true;
   const current = list[index];
   const next = [...list];
   /**
@@ -322,8 +346,12 @@ export function applyIncomingToConversations(
           lastTime: message.createTime ?? current.lastTime,
         }
       : {}),
-    unreadCount:
-      selfSent || isActive ? current.unreadCount : current.unreadCount + 1,
+    unreadCount: addUnread ? current.unreadCount + 1 : current.unreadCount,
+    // 未读不加时提及未读也不加，但**不清零**：当前打开的会话由 clearSessionUnread 负责归零，
+    // 其余情况保留原值（缺失归 0），避免「路过一条无关消息就把 @我 标记擦掉」
+    mentionUnreadCount: addMention
+      ? (current.mentionUnreadCount ?? 0) + 1
+      : current.mentionUnreadCount ?? 0,
   };
   return { conversations: sortConversations(next), knownSession: true };
 }

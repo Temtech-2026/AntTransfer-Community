@@ -27,7 +27,7 @@ package com.anttransfer.common.notify;
  * （权威幂等源仍是调用方的 Redis 幂等键）。</p>
  *
  * @param recipientUserId 接收人用户 ID（必填，为空实现侧拒绝并跳过）
- * @param notifyType      通知类型（取值见 {@link NotifyType}，须为系统通知段 1~5 / 8）
+ * @param notifyType      通知类型（取值见 {@link NotifyType}，须为系统通知段 1~5 / 8~9）
  * @param title           标题（≤ 128 字符）
  * @param content         正文（纯文本，≤ 1000 字符）
  * @param bizType         关联业务类型，取值见 {@link #BIZ_APPLICATION} 等常量
@@ -78,5 +78,52 @@ public record NotificationCommand(
                 "传输已完成",
                 summary,
                 BIZ_TRANSFER, transferId);
+    }
+
+    /** 外发链接被临时锁定（→ 链接创建者；提取码连续输错触发保护） */
+    public static NotificationCommand shareLocked(Long ownerUserId, Long shareId,
+                                                  String fileName, long lockMinutes) {
+        return new NotificationCommand(ownerUserId, NotifyType.SHARE_LOCKED,
+                "外发链接已被临时锁定",
+                "文件「" + safeName(fileName) + "」的分享链接因提取码连续输错已锁定 "
+                        + lockMinutes + " 分钟",
+                BIZ_SHARE, shareId);
+    }
+
+    /**
+     * 外发链接即将到期（→ 链接创建者）。
+     *
+     * @param expireAt 已格式化的到期时刻文本（如 {@code 2026-09-30 18:00}），
+     *                 由调用方按展示口径格式化后传入——本类不做时区 / 格式假设
+     */
+    public static NotificationCommand shareExpireSoon(Long ownerUserId, Long shareId,
+                                                      String fileName, String expireAt) {
+        return new NotificationCommand(ownerUserId, NotifyType.SHARE_EXPIRE_SOON,
+                "外发链接即将到期",
+                "文件「" + safeName(fileName) + "」的分享链接将于 " + expireAt + " 到期，"
+                        + "到期后访客将无法继续访问",
+                BIZ_SHARE, shareId);
+    }
+
+    /**
+     * 外发链接被取件回执（→ 链接创建者）。
+     *
+     * @param accessType 访问类型（{@code preview} 预览 / 其他值按下载处理）
+     * @param quotaText  额度描述（如「剩余可取件 3 次」「该链接不限取件次数」），
+     *                   由调用方按链接额度口径生成
+     */
+    public static NotificationCommand shareAccessed(Long ownerUserId, Long shareId,
+                                                    String fileName, String accessType,
+                                                    String quotaText) {
+        String action = "preview".equals(accessType) ? "预览" : "下载";
+        return new NotificationCommand(ownerUserId, NotifyType.SHARE_ACCESSED,
+                "外发链接已被取件",
+                "访客已" + action + "文件「" + safeName(fileName) + "」，" + quotaText,
+                BIZ_SHARE, shareId);
+    }
+
+    /** 文件名兜底：文件已被删除 / 未取到时避免把字面量 {@code null} 拼进用户可见文案。 */
+    private static String safeName(String fileName) {
+        return (fileName == null || fileName.isBlank()) ? "（文件已删除）" : fileName;
     }
 }

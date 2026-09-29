@@ -37,7 +37,8 @@
 | 分享管理 `/shares` | 行复选框 + 失效所选（带条数；未勾选则禁用） | `file:share` | 全部业务角色（`POST /v1/shares/batch/revoke`，单次上限 200；复选框只对「生效中」的行开放） |
 | 分享管理 `/shares` | 失效全部（**不接受任何范围参数**） | `file:share` | 全部业务角色（`POST /v1/shares/all/revoke`，作用域由服务端按登录主体决定；回**实际失效条数**，`0` 条不等于成功） |
 | 审计日志 `/audit` | 页面可见 + 查询 / 导出 | `audit:log:read` | 仅 SUPER_ADMIN / AUDITOR |
-| 会话 `/chat` | 页面可见 + 历史 / 发送 / 已读 / 在线状态 / 「我加入的群」 | —（**不设权限点**：查询与写入维度都写死在登录主体上，见 `ChatController` 类注） | 全部业务角色（有登录态即可见） |
+| 消息中心 `/messages` | 页面可见 + 通知列表 / 标记已读 / 离线补拉 | —（**不设权限点**：`/v1/notifications/**` 的查询维度写死为登录人本人；加权限点只会造出「有未读却打不开」） | 全部业务角色（有登录态即可见；含本轮新增 `8` 传输完成 / `9` 取件回执 / `4` 到期前提醒） |
+| 会话 `/chat` | 页面可见 + 历史 / 发送 / 已读 / 在线状态 / 「我加入的群」/ **`@` 提及**（上行 `mentionUserIds`、下行 `mentioned` / `mentionUnreadCount`） | —（**不设权限点**：查询与写入维度都写死在登录主体上，见 `ChatController` 类注） | 全部业务角色（有登录态即可见） |
 | 会话 `/chat` | 新建会话弹窗 → 「群聊」类型（建群：群名 + 受邀成员） | `chat:group:create` | SUPER_ADMIN / DEPT_ADMIN / USER（`sql/V14__chat_group_permission_points.sql`；**不授 AUDITOR**——建群写 `sys_group` / `sys_group_member` 并决定后续消息可见范围，与审计员「权限锁定只读」冲突） |
 | 会话 `/chat` + 即时通讯抽屉 | 群设置面板：群资料 + 成员名单（打开即可看） | —（**只看自己加入的群**：非成员回 `1012`，越权面由成员资格堵住，不设权限点） | 全部业务角色（是该群成员即可见） |
 | 会话 `/chat` + 即时通讯抽屉 | 群设置面板：改群名 | `chat:group:update` | SUPER_ADMIN / DEPT_ADMIN / USER（`sql/V16__chat_group_manage_permission_points.sql`；**不授 AUDITOR**，同建群理由）**且**群内身份为群主或管理员（身份不足回 `1038`） |

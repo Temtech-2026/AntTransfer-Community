@@ -30,7 +30,7 @@ import {
 } from '@ant-design/icons';
 import { useIntl } from '@umijs/max';
 import { createStyles } from 'antd-style';
-import { App, Badge, Button, Drawer, Empty, Spin } from 'antd';
+import { App, Badge, Button, Drawer, Empty, Spin, theme } from 'antd';
 import React, {
   useCallback,
   useEffect,
@@ -51,6 +51,7 @@ import ChatPeerStatus from '@/components/ChatPeerStatus';
 import ChatQuoteBar from '@/components/ChatQuoteBar';
 import UserAvatar from '@/components/UserAvatar';
 import useChatAttachmentDraft from '@/hooks/useChatAttachmentDraft';
+import useChatMentionables from '@/hooks/useChatMentionables';
 import useChatPresence from '@/hooks/useChatPresence';
 import useCurrentUserAvatar from '@/hooks/useCurrentUserAvatar';
 import { useWebSocket } from '@/hooks/useWebSocket';
@@ -81,6 +82,7 @@ import {
   conversationInitial,
   conversationSummary,
   conversationTitle,
+  hasUnreadMention,
   isMine,
   isRecalled,
   isSameSession,
@@ -93,6 +95,7 @@ import {
   type ChatGroupDetail,
   type ChatSession,
   type Conversation,
+  type ConversationSummaryLabels,
   type MessageSenderLabels,
 } from '@/services/chat/types';
 import { ChatScope, MessageType, type NotifyMessage } from '@/services/notify';
@@ -265,6 +268,23 @@ const useStyles = createStyles(({ token, css }) => ({
     font-size: 11px;
     text-align: end;
   `,
+  /**
+   * 被点名（{@code @} 了我）的气泡：加一道强调描边。
+   *
+   * <p>用 {@code box-shadow} 而不是 {@code border}：已撤回气泡占用了虚线边框，
+   * 两个类同时出现时谁覆盖谁取决于样式插入顺序（那由「哪个类先被用过」决定），
+   * 内阴影不参与边框计算，两者可以共存（与 `/chat` 页同口径）。</p>
+   */
+  bubbleMentioned: css`
+    box-shadow: inset 0 0 0 1px ${token.colorError};
+  `,
+  /** 气泡内的「有人@我」标记：文字必须给出来，描边只是加速扫视。 */
+  bubbleMention: css`
+    display: block;
+    margin-bottom: 2px;
+    color: ${token.colorError};
+    font-size: ${token.fontSizeSM}px;
+  `,
   /** 已读回执：气泡下的读者头像（只渲染自己发的消息）。 */
   readers: css`
     display: flex;
@@ -324,6 +344,7 @@ function formatClock(value?: string | null): string {
  */
 const ChatDrawer: React.FC = () => {
   const intl = useIntl();
+  const { token } = theme.useToken();
   const { styles } = useStyles();
   // 撤回成功的反馈：抽屉比页面小，气泡变灰之外再给一句，避免用户怀疑没点上
   const { message: toast } = App.useApp();
@@ -365,6 +386,13 @@ const ChatDrawer: React.FC = () => {
     dropZoneProps,
     buildMessage,
   } = useChatAttachmentDraft();
+  /**
+   * 本次正文里仍然有效的 {@code @} 提及对象，唯一写入方是输入框的
+   * {@code onMentionChange}（口径与 `/chat` 页一致，见该页状态注释）。
+   */
+  const [mentionUserIds, setMentionUserIds] = useState<string[]>([]);
+  // 可 @ 的群成员：单聊 / 未选中会话时是空名单，输入框据此不显示 @ 入口
+  const mentionables = useChatMentionables(active);
 
   const streamRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<ChatSession | null>(null);
@@ -583,7 +611,7 @@ const ChatDrawer: React.FC = () => {
     try {
       // 幂等键与授权建立都在共用草稿机里（含仅预览传 0、群聊不建授权等规则）
       const sent = await sendChatMessage(
-        await buildMessage(active, text, quote?.clientMsgId),
+        await buildMessage(active, text, quote?.clientMsgId, mentionUserIds),
       );
       // 同上：响应与 WS 回推帧几乎同时到达，去重交给 mergeMessage（同时认 id 与 clientMsgId）
       setMessages((prev) => mergeMessage(prev, sent));
@@ -660,6 +688,12 @@ const ChatDrawer: React.FC = () => {
         intl.formatMessage({ id: 'chat.session.userFallback' }, { id: userId }),
     }),
     [intl, active?.chatScope, activeTitle],
+  );
+
+  /** 摘要里「有人@我」前缀的文案（与 `/chat` 页同源，纯函数不硬编码语言）。 */
+  const summaryLabels = useMemo<ConversationSummaryLabels>(
+    () => ({ mentionMe: intl.formatMessage({ id: 'chat.mention.me' }) }),
+    [intl],
   );
 
   /** 撤回后的气泡占位：自己撤的说「你」，别人撤的写名字。 */
@@ -867,7 +901,17 @@ const ChatDrawer: React.FC = () => {
                     )}
                     onClick={() => void openSession(session)}
                   >
-                    <Badge count={conversation.unreadCount} size="small">
+                    <Badge
+                      count={conversation.unreadCount}
+                      size="small"
+                      /* 有人 @ 我时把角标染成错误色：数字仍是未读总数
+                         （未读 @ 是它的子集，相加会报出比实际更多的未读数） */
+                      color={
+                        hasUnreadMention(conversation)
+                          ? token.colorError
+                          : undefined
+                      }
+                    >
                       <UserAvatar
                         /* 单聊的 targetId 才是用户 ID，群聊不传（同 /chat 页口径） */
                         userId={
@@ -892,7 +936,7 @@ const ChatDrawer: React.FC = () => {
                         </span>
                       </span>
                       <span className={styles.conversationSummary}>
-                        {conversationSummary(conversation, 28)}
+                        {conversationSummary(conversation, summaryLabels, 28)}
                       </span>
                     </span>
                   </button>
@@ -924,6 +968,15 @@ const ChatDrawer: React.FC = () => {
                     !recalled && msg.messageType === MessageType.FILE
                       ? parseFileCardContent(msg.content)
                       : null;
+                  /**
+                   * 这条消息是否点了我。
+                   *
+                   * <p>{@code mentioned} 是行级标记（写扩散下同一条消息每人一行），服务端只在被点名者
+                   * 那一行置 1，所以「我这一行是 1」就等于「有人 @ 了我」，不需要解析正文里的昵称。</p>
+                   *
+                   * <p>已撤回的排除在外：正文已清空，再挂标记会让人以为那句话还读得到。</p>
+                   */
+                  const mentioned = !recalled && msg.mentioned === true;
                   // 非空即代表「这条消息现在可以被引用」：菜单项的显隐直接由它决定，
                   // 不另写一套判断（口径见 services/chat/quote）
                   const quoteDraft = toQuoteDraft(
@@ -965,11 +1018,20 @@ const ChatDrawer: React.FC = () => {
                             // 已撤回的不叠 bubbleMine：撤回后两个方向长得一样是刻意的
                             recalled
                               ? `${styles.bubble} ${styles.bubbleRecalled}`
-                              : mine
-                                ? `${styles.bubble} ${styles.bubbleMine}`
-                                : styles.bubble
+                              : `${styles.bubble}${
+                                  mine ? ` ${styles.bubbleMine}` : ''
+                                }${mentioned ? ` ${styles.bubbleMentioned}` : ''}`
                           }
                         >
+                          {/*
+                            「有人@我」标记放在正文之前：光有一圈描边是说不清原因的
+                            ——用户只会看到一条「不知为何被框起来」的消息
+                          */}
+                          {mentioned ? (
+                            <span className={styles.bubbleMention}>
+                              {intl.formatMessage({ id: 'chat.mention.me' })}
+                            </span>
+                          ) : null}
                           {recalled ? (
                             recalledText(msg)
                           ) : card ? (
@@ -1024,6 +1086,9 @@ const ChatDrawer: React.FC = () => {
               sending={sending}
               allowEmpty={Boolean(attachment)}
               autoSize={{ minRows: 1, maxRows: 4 }}
+              /* 群成员名单为空（单聊 / 未选中会话）时输入框自然不显示 @ 入口 */
+              mentionables={mentionables}
+              onMentionChange={setMentionUserIds}
               placeholder={intl.formatMessage({
                 id: attachment
                   ? 'chat.attach.placeholder'

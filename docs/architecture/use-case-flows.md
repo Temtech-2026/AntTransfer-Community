@@ -1,8 +1,10 @@
 # ⚙️ 核心用例时序（Use-Case Flows）
 
-> 🎯 两条核心闭环——**上传主线**（传输引擎）与**权限审批主线**（RBAC 标准流程）——的系统级时序。
+> 🎯 三条闭环的系统级时序：**上传主线**（传输引擎）、**权限审批主线**（RBAC 标准流程）与
+> **站内通知 / 轻 IM 主线**（2026-09-29 补齐，见 §3）。
 > 🔗 关联：[PRD §5](../prd/README.md#5-主用例时序描述文字版)、[API 规范](../api/README.md)、[错误码](../api/error-codes.md)、[架构](./README.md)。
-> 🚧 状态：设计基线（draft）。骨架期仅具备实体与注解（见「现状核对」），Controller/Service 落地时以本文件为口径。
+> ✅ 状态：**主线均已落地**（上传 2026-09-14、外发分享 2026-09-13、审批 2026-09-29 复核、
+> 站内通知与轻 IM 2026-09-29）。本文件为落地口径的时序基线，实现须与其中步骤、错误码及表结构一致。
 
 ## 0️⃣ 📌 阅读约定
 
@@ -27,7 +29,7 @@
 | 4 | 并发上传分片 | `PUT /api/v1/transfers/{id}/parts/{index}`；并发 ≤ 5、单片 ≤ 8 MiB，逐片校验分片 Hash 后写临时分片（先写 `.tmp` 再原子改名，半个分片不计入已收）；原子累加 `TransferTask.transferredSize` | 全部分片就绪 | 单片失败：`4008`（保留已传分片可续传）；状态冲突：`4102`；超并发/流量：`4103` |
 | 5 | 合并 | `POST /api/v1/transfers/{id}/merge`：先 CAS 迁移任务 `1 传输中 → 6 合并中`，随后在**数据库事务外**重组文件（长 IO 不进事务，避免占用连接池与行锁） | 分片齐全，进入合并中 | **缺片**：`4002`（HTTP 200 分支码），`data` 附 `missing: [...]`，回 §1.1-3；源状态非 `1`（非传输中）：`4102` |
 | 6 | SHA-256 完整性校验 | 重组后服务端**整件重算** SHA-256，与步骤 1 上报值比对（仍在事务外） | 一致 | **不一致**：`4003`（409），CAS 置任务 `status=4 失败` 并提示重传 |
-| 7 | 落库（短事务） | CAS `6 合并中 → 3 已完成` 的**短事务**内写 `sys_file`（`status=0 可用`，含 `sha256`）与 `sys_upload_task`（`status=3 已完成`）；事务提交后（`AFTER_COMMIT`）发布 `FileUploadedEvent` 供审计/后续处理管道（PRD §8 扩展点）监听 | `code=0`，返回 `fileId` | DB 异常：`5002`（整体回滚，任务保持 `6 合并中`，merge 可幂等重入）；兜底：`5001` |
+| 7 | 落库（短事务） | CAS `6 合并中 → 3 已完成` 的**短事务**内写 `sys_file`（`status=0 可用`，含 `sha256`）与 `sys_upload_task`（`status=3 已完成`）；**入库前经 `FileScanPipeline.assertClean`**（`ContentScanInterceptor` 链，见 [`architecture.md` §2.3](./architecture.md)）；事务提交后（`AFTER_COMMIT`）发布 `FileUploadedEvent` 供审计/后续处理管道监听；合并完成另由 `TransferEventPublisher` 发布 `TransferCompletedEvent`（通知域消费，发布失败只留痕） | `code=0`，返回 `fileId` | DB 异常：`5002`（整体回滚，任务保持 `6 合并中`，merge 可幂等重入）；兜底：`5001`；扫描命中：`4007`（拒登记 + 审计，**不删物理内容**） |
 
 **任务状态机**（与 `TransferRecord` Javadoc 一致，实体注释已同步补 `6 合并中`）：
 `0 排队 → 1 传输中 ⇄ 2 暂停`、`1 → 6 合并中 → 3 已完成`、`0/1/2/6 → 4 失败（可重试回 0）/ 5 取消`。
@@ -55,6 +57,7 @@
 | API 契约 | `precheck` / `GET parts` / `PUT parts` / `merge` / `DELETE` / **`PATCH`（暂停 / 续传）** 六端点**已落地**（`at-transfer` 的 `TransferController`）；分片字段名 `chunk` / `hash`、索引以路径为准、`received` 回**索引数组**（非计数）、`GET parts` 回任务 `status`，与前端 `uploadApi.ts` 逐字对齐 | ✅ 已落地（2026-09-14；暂停 / 续传 2026-09-20） |
 | 分片索引持久化 | `sys_upload_task.uploaded_indexes`（JSON 已传分片索引）已随 2026-09-06 `sql/V1` 二次重置落地；读改写随任务行 `SELECT ... FOR UPDATE` 同事务 | 满足 |
 | 双层 Hash | §1.1-1/6 已定义；分片级与整件级 SHA-256 **均由服务端重算**（不信任客户端上报） | 满足 |
+| CE/EE 扩展点消费 | 入库前 `FileScanPipeline.assertClean` → `ContentScanInterceptor`（接口在 at-common `spi.scan`，CE 默认 `SuffixAndKeywordScanInterceptor` **真实生效**）；下载侧 `WatermarkProvider`、存储读写织入 `CryptoCodec`（`CodecResource`） | ✅ 已落地（2026-09-29） |
 
 ---
 
@@ -72,6 +75,7 @@
 | `PermissionGrantEvent` | at-permission（审批通过，事务提交后） | ① 通知申请人 ② 写审计（**授权记录在审批事务内写入，见 §2.3-5；事件不承载关键写**） |
 | `PermissionExpiredEvent` | at-permission（到期回收任务，PermissionGrantExpireScheduler） | 撤销授权状态；写审计；通知申请人（可选） |
 | `FileUploadedEvent` | at-file | 审计/后续处理管道（复用 PRD §8 管道 Hook） |
+| `TransferCompletedEvent` | at-transfer（合并成功，**事务提交后**） | at-collaboration 通知域监听 → 传输完成站内提醒（`NotifyType 8`）；**发布失败只留痕**，已落库的传输结果不回滚 |
 
 > 💡 模块化单体进程内事件即可；将来外发 MQ/异步化不改变事件语义（仅换通道），属扩展点。
 
@@ -129,7 +133,53 @@
 
 ---
 
-## 3️⃣ 🔗 关联文档
+## 3️⃣ 🔔 站内通知与轻 IM 主线（2026-09-29 补齐）
+
+**参与模块**：`at-collaboration`（站内信 / 会话与消息，主）、`at-transfer`（传输完成事件）、
+`at-file`（外发链接到期提醒、取件回执）、`at-common`（`NotifyType` / `NotificationCommand`）。
+
+### 3.1 📣 通知类型与投递口径
+
+| # | 类型 | 触发方 | 未读 / 待办 |
+| --- | --- | --- | --- |
+| 4 | 外发链接**到期前**提醒 | at-file `ShareExpireNotifyScheduler`（cron 默认每小时第 25 分）+ `ShareLinkMapper#selectExpiringActive` | 计入未读；不进待办 |
+| 8 | 传输完成提醒 | at-transfer `TransferEventPublisher`（合并成功、**事务提交后**） | 计入未读；不进待办 |
+| 9 | 取件回执 `SHARE_ACCESSED` | at-file `ShareAccessService#redeem` 成功后回推**链接创建者** | 计入未读；**不进待办**（`isInbox()` 与未读 SQL 同口径，`sql/V17`） |
+
+> 📌 **一致性口径**：通知一律**与业务同事务**落 `sys_notify_message`（`P-3` / [红队 PRD-07](./red-team-review.md)），
+> 事件与定时任务只负责异步推送 / 邮件，**发送失败不反向阻塞业务事务**（传输完成提醒发布失败只留痕）。
+> **取件回执**是免登录访客场景下，创建者唯一能感知「链接真的被用过」的通道（此前只能自行翻取件审计）；
+> **到期前提醒**的幂等为「Redis 占位键 + `existsForBiz` 兜底」两层，**发送失败会释放占位键**以便下轮重试；
+> **提取码锁定提醒**仅在计数**恰好跨过阈值**时发出一次，避免脚本连打把创建者收件箱刷满。
+
+### 3.2 💬 轻 IM 的 @ 提及
+
+| # | 步骤 | 行为 | 正常出口 | 分支 / 错误 |
+| --- | --- | --- | --- | --- |
+| 1 | 发送带提及的消息 | `POST /api/v1/chat/messages` 新增可空 `mentionUserIds`（≤ 500 项） | 服务端与**群成员求交集**后按行落 `mentioned`（**每接收人一行**） | 非成员 / 发送人自己 / 重复项**静默剔除**——客户端持有的成员名单可能本就是旧快照，点名失败不该让整句话发不出去 |
+| 2 | 定向投递 | 被点名者那一行走既有按接收人推送通道（`CHAT` 帧 `NotifyMessageVO.mentioned=true`，发送人恒 `false`） | 被点名者收到提醒 | **不额外写站内信**：同一句话若在「会话未读」与「站内信未读」各算一次，点任一处都清不掉另一处 |
+| 3 | 会话未读 | 会话列表 `ConversationVO.mentionUnreadCount` = 该会话「未读且被点名」条数 | 角标数字仍取 `unreadCount`，仅在 `> 0` 时染强调色 | **`mentionUnreadCount` 是 `unreadCount` 的子集，两个数不能相加** |
+
+> 📌 **为何按「行」记而非按「条」记**：群消息是写扩散的（一条消息落 N 行），故 `mentioned` 是**每接收人一行**
+> 的标记而非消息级属性——于是「有人 @ 我」退化成 `mentioned = 1 and read_status = 0` 的等值查询，
+> **完全不需要解析正文里的昵称**（重名、昵称含空格、正文改字都不会误判）。
+> 前端**生效提及靠正文匹配**（用户删掉 `@昵称` 即失效），不跟踪插入位置。
+
+### 3.3 🗄️ 消息保留 ≥ 30 天
+
+`ChatRetentionScheduler`（`anttransfer.collaboration.notify.message-cleanup-cron`，默认 `0 20 4 * * ?`，
+与文件域清理 **03:30 错峰**）→ `NotifyMessageService#purgeExpiredChatMessages` →
+`NotifyMessageMapper#deleteExpiredChatMessages`（`order by create_time limit` **分批物理删除**）：
+
+- **30 天下限硬钳制**：`NotifyProperties.MIN_MESSAGE_RETENTION_DAYS = 30`，配置小于 30 一律按 30 执行，
+  **不回写配置**（配置里仍显示管理员填的值，便于发现配错）；
+- **只允许一个实例清理**：Redis `SETNX at:chat:retention-lock`（TTL 15 min，**不主动释放**，实例崩溃靠 TTL 兜底）；
+  **Redis 异常时降级放行**——清理幂等、重复执行无害，而「锁坏了就不清理」会让保留期悄悄失效；
+- 参照 at-file 的 `FileCleanupScheduler` 而非 **D-10** 的 `AuditArchiveScheduler`（后者至今未落地）。
+
+---
+
+## 4️⃣ 🔗 关联文档
 
 - 📋 产品口径与验收：`docs/prd/README.md`（§3 US-01/02/05、§5 用例 A/B、§6 关键产品规则）
 - 🔌 HTTP 契约与错误码：`docs/api/README.md`、`docs/api/error-codes.md`

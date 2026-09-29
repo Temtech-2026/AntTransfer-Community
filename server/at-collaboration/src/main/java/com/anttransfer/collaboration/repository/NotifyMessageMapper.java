@@ -17,6 +17,7 @@ package com.anttransfer.collaboration.repository;
 
 import com.anttransfer.collaboration.model.entity.NotifyMessage;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -117,6 +118,12 @@ public interface NotifyMessageMapper extends BaseMapper<NotifyMessage> {
      * 前者返回 BIGINT，与 {@code Long unreadCount} 天然对齐；{@code sum()} 在 MySQL 返回 DECIMAL，
      * 要依赖 JDBC 的隐式数值转换，属无谓的风险。</p>
      *
+     * <p><b>提及未读数与未读数在同一次分组扫描里算出</b>：{@code mentionUnreadCount} 只是把
+     * 同一个 {@code read_status = 0} 判定再叠加一个 {@code mentioned = 1}——两列都在被扫描的行上，
+     * 不产生额外回表、也不产生第二次查询。这不是为了省一次往返而硬塞，而是因为「有人 @ 我」
+     * 本就是「未读」的一个子集，拆成两条 SQL 反而会让两次结果在并发下互相矛盾
+     * （一条消息在两次查询之间被置读，就会算出「未读 0 条、其中 1 条点名了我」这种不可能的组合）。</p>
+     *
      * <p>条数上限由调用方先按 {@code notify.chat-conversation-limit} 收敛再传入——
      * 只有把 {@code limit} 下推到 SQL，才能真正省掉「查出来再丢掉」的开销。</p>
      *
@@ -128,7 +135,8 @@ public interface NotifyMessageMapper extends BaseMapper<NotifyMessage> {
             select chat_scope                                  as chatScope,
                    chat_target_id                              as chatTargetId,
                    max(id)                                     as lastMessageId,
-                   count(case when read_status = 0 then 1 end) as unreadCount
+                   count(case when read_status = 0 then 1 end) as unreadCount,
+                   count(case when read_status = 0 and mentioned = 1 then 1 end) as mentionUnreadCount
             from sys_notify_message
             where recipient_user_id = #{userId}
               and notify_type in (6, 7)
@@ -377,4 +385,47 @@ public interface NotifyMessageMapper extends BaseMapper<NotifyMessage> {
             """)
     NotifyMessage selectQuotableMessage(@Param("recipientUserId") Long recipientUserId,
                                         @Param("clientMsgId") String clientMsgId);
+
+    /**
+     * 物理删除超过保留期的会话消息（保留期清理的写侧，见 {@code ChatRetentionScheduler}）。
+     *
+     * <p><b>为什么是物理删除而不是逻辑删除：</b>保留期的目的是「让消息表不无限增长」，
+     * 而逻辑删除（{@code deleted = 1}）只是把行标记成不可见——表体积、索引体积、备份体积
+     * 一个都不会降，反倒是每次查询还要多带一个 {@code deleted = 0} 谓词。
+     * 因此这里必须绕过 MyBatis-Plus 的逻辑删除，直接走注解 SQL。</p>
+     *
+     * <p><b>刻意不限定 {@code deleted = 0}：</b>已被逻辑删除的残留行同样是超期数据，
+     * 一并收走才是「清理」的完整语义；只清可见行会让这张表长期同时堆积两代垃圾。</p>
+     *
+     * <p><b>只清会话消息（{@code chat_scope > 0}）：</b>收件箱通知的保留期涉及待办中心与
+     * 审批留痕——「待办在用户没处置前不能消失」是既定产品口径
+     * （见 {@code NotifyMessageService} 类注），故本方法不触碰它们（口径见 {@code V18} ③）。</p>
+     *
+     * <p><b>分批（{@code limit}）而不是一次删完：</b>单条 DELETE 会持有行锁并写 undo log / binlog，
+     * 一次删几十万行既可能撑爆事务日志，也会与写入路径长时间抢锁。分批由调用方循环驱动，
+     * 每批一个独立短事务。</p>
+     *
+     * <p><b>{@code order by create_time} 的作用</b>是让批次从最老的数据开始推进，
+     * 避免「每批随机删掉一些、最老的数据长期幸存」。走 V18 新增的 {@code idx_scope_created} 时，
+     * 索引顺序本就是 {@code (chat_scope, create_time)}，排序几乎无额外代价。</p>
+     *
+     * <p><b>保留期下限由调用方保证</b>：本方法只按传入的 {@code cutoff} 执行，
+     * 不做任何「不得少于 30 天」的保护——那条口径属策略层（{@code NotifyProperties}），
+     * 在这里再判一次会让「到底以哪一行代码为准」变得含糊。</p>
+     *
+     * @param cutoff 保留期截止时刻（{@code create_time} 早于它的会话消息视为超期）
+     * @param limit  单批删除行数上限
+     * @return 实际删除行数（{@code < limit} 表示已无超期数据，调用方可结束循环）
+     * @implNote {@code delete ... order by ... limit} 是 MySQL 语法；PG 方言需改写为
+     * {@code delete ... where id in (select id ... order by create_time limit ?)}。
+     */
+    @Delete("""
+            delete from sys_notify_message
+            where chat_scope > 0
+              and create_time < #{cutoff}
+            order by create_time
+            limit #{limit}
+            """)
+    int deleteExpiredChatMessages(@Param("cutoff") LocalDateTime cutoff,
+                                  @Param("limit") int limit);
 }

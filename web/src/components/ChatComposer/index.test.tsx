@@ -27,6 +27,9 @@ const PLACEHOLDER = t('chat.composer.placeholder');
 const EMOJI_LABEL = t('chat.composer.emoji');
 const SEND_LABEL = t('chat.action.send');
 const RECENT_TAB = t('chat.composer.group.recent');
+const MENTION_LABEL = t('chat.composer.mention');
+const MENTION_PANEL_LABEL = t('chat.composer.mentionPanel');
+const MENTION_EMPTY = t('chat.composer.mentionEmpty');
 
 /** 受控组件的测试夹具：正文由外部持有，才观察得到 onChange 的结果 */
 function Harness({
@@ -210,5 +213,168 @@ describe('ChatComposer 表情', () => {
     fireEvent.mouseDown(emojiToggle());
     fireEvent.click(emojiToggle());
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+  });
+});
+
+/* ------------------------------- @ 提及 ------------------------------- */
+
+const ZHANG_SAN = { userId: '1', displayName: '张三' };
+const LI_SI = { userId: '2', displayName: '李四' };
+const MENTIONABLES = [ZHANG_SAN, LI_SI];
+
+/** 提及场景的夹具：正文与「已上报的提及 ID」都由外部持有，才观察得到上报结果 */
+function MentionHarness({
+  onSend = vi.fn(),
+  onMentionChange = vi.fn(),
+}: {
+  onSend?: () => void;
+  onMentionChange?: (userIds: string[]) => void;
+}) {
+  const [value, setValue] = useState('');
+  return (
+    <ChatComposer
+      value={value}
+      onChange={setValue}
+      onSend={onSend}
+      placeholder={PLACEHOLDER}
+      sendLabel={SEND_LABEL}
+      mentionables={MENTIONABLES}
+      onMentionChange={onMentionChange}
+    />
+  );
+}
+
+const mentionToggle = () => screen.getByRole('button', { name: MENTION_LABEL });
+const mentionPanel = () => screen.getByRole('listbox', { name: MENTION_PANEL_LABEL });
+/** 候选的无障碍名就是昵称（面板把装饰性的头像首字符挡在无障碍名之外） */
+const mentionOptions = () =>
+  screen.queryAllByRole('option').map((item) => item.getAttribute('aria-label'));
+
+/** 打字：change 之后把光标放到末尾，再 keyUp 触发「光标前有没有 @」的重算 */
+function typeText(next: string) {
+  fireEvent.change(textarea(), { target: { value: next } });
+  textarea().setSelectionRange(next.length, next.length);
+  fireEvent.keyUp(textarea(), { key: 'x' });
+}
+
+describe('ChatComposer 提及', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it('没有候选成员时不给 @ 入口（单聊没有点名语义）', () => {
+    render(<Harness onSend={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: MENTION_LABEL })).not.toBeInTheDocument();
+  });
+
+  it('有候选成员时出现 @ 入口，点击即落下 @ 并展开候选', () => {
+    render(<MentionHarness />);
+    fireEvent.click(mentionToggle());
+
+    expect(textarea().value).toBe('@');
+    expect(mentionPanel()).toBeInTheDocument();
+    expect(mentionOptions()).toEqual(['张三', '李四']);
+  });
+
+  it('自己敲 @ 也会展开候选，并按查询词收窄', () => {
+    render(<MentionHarness />);
+    typeText('@张');
+    expect(mentionOptions()).toEqual(['张三']);
+  });
+
+  it('没有匹配成员时面板留在原地并给出提示（不消失，免得像功能坏了）', () => {
+    render(<MentionHarness />);
+    typeText('@王五');
+    expect(screen.getByText(MENTION_EMPTY)).toBeInTheDocument();
+  });
+
+  it('选中成员：把 @查询词 换成 @昵称，并把 ID 报给调用方', () => {
+    const onMentionChange = vi.fn();
+    render(<MentionHarness onMentionChange={onMentionChange} />);
+
+    typeText('@张');
+    fireEvent.click(screen.getByRole('option', { name: /张三/ }));
+
+    expect(textarea().value).toBe('@张三 ');
+    // 正文里的 @昵称 是给人看的，服务端认的是这份 ID 列表
+    expect(onMentionChange).toHaveBeenLastCalledWith(['1']);
+    // 选完就收起，面板不该继续挡着消息流
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
+  it('上下键换高亮、回车确认（焦点始终留在输入框里）', () => {
+    const onMentionChange = vi.fn();
+    render(<MentionHarness onMentionChange={onMentionChange} />);
+
+    typeText('@');
+    fireEvent.keyDown(textarea(), { key: 'ArrowDown' });
+    fireEvent.keyDown(textarea(), { key: 'Enter' });
+
+    expect(textarea().value).toBe('@李四 ');
+    expect(onMentionChange).toHaveBeenLastCalledWith(['2']);
+  });
+
+  it('输入法组合中的回车让给输入法：既不选人也不发送', () => {
+    const onSend = vi.fn();
+    const onMentionChange = vi.fn();
+    render(<MentionHarness onSend={onSend} onMentionChange={onMentionChange} />);
+
+    typeText('@张');
+    fireEvent.keyDown(textarea(), { key: 'Enter', keyCode: 229 });
+
+    expect(textarea().value).toBe('@张');
+    expect(onMentionChange).not.toHaveBeenCalled();
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('把 @昵称 从正文里删掉后这条提及随之失效（上报空名单）', () => {
+    const onMentionChange = vi.fn();
+    render(<MentionHarness onMentionChange={onMentionChange} />);
+
+    typeText('@');
+    fireEvent.click(screen.getByRole('option', { name: /张三/ }));
+    expect(onMentionChange).toHaveBeenLastCalledWith(['1']);
+
+    typeText('');
+    expect(onMentionChange).toHaveBeenLastCalledWith([]);
+  });
+
+  it('只删掉 @ 符号也失效：服务端认的是被点名，不是正文里出现过这个名字', () => {
+    const onMentionChange = vi.fn();
+    render(<MentionHarness onMentionChange={onMentionChange} />);
+
+    typeText('@');
+    fireEvent.click(screen.getByRole('option', { name: /张三/ }));
+    typeText('张三 ');
+    expect(onMentionChange).toHaveBeenLastCalledWith([]);
+  });
+
+  it('按 Esc 收起候选，正文不动', () => {
+    render(<MentionHarness />);
+    typeText('@');
+    expect(mentionPanel()).toBeInTheDocument();
+
+    fireEvent.keyDown(textarea(), { key: 'Escape' });
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(textarea().value).toBe('@');
+  });
+
+  it('点面板外面收起候选', () => {
+    render(<MentionHarness />);
+    fireEvent.click(mentionToggle());
+    expect(mentionPanel()).toBeInTheDocument();
+
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
+  it('@ 面板与表情面板互斥：开一个必收另一个（同一块位置）', () => {
+    render(<MentionHarness />);
+    openEmojiPanel();
+    expect(screen.getByRole('tablist')).toBeInTheDocument();
+
+    fireEvent.click(mentionToggle());
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+    expect(mentionPanel()).toBeInTheDocument();
   });
 });

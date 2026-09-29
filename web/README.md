@@ -19,11 +19,9 @@ npm run dev
 > 🔗 前后端联调：`config/proxy.ts` 已把 `/api/` 代理到 `http://localhost:8080`
 > （后端 `at-bootstrap`），请先启动后端再访问页面。
 
-### ⚠️ 待联调：`/api` 开发代理链路（未验证，联调时处理）
+### 🔗 `/api` 开发代理链路（已回归）
 
-开发态所有 `/api/**` 请求都依赖 dev server 代理，该链路**尚未在前后端齐备的环境下实测**，先挂账留待联调处理。
-
-配置侧已核对一致，**不是配置缺陷**：
+开发态所有 `/api/**` 请求都依赖 dev server 代理。该链路已于 **2026-09-29** 在前后端齐备的环境下实测通过（见本节末「状态」）；下表为配置侧核对结论——**本就不是配置缺陷**，故日后若代理失败，请按状态段的排查顺序定位，而非怀疑前缀写法：
 
 | 环节 | 位置 | 事实 |
 | --- | --- | --- |
@@ -34,12 +32,12 @@ npm run dev
 
 即 `/api/v1/...` 转发后恰好落在后端 `/api` context-path 下，**前缀不可再加也不可删**。
 
-联调时需注意两点：
+实测确认的两处易踩点（均与配置无关）：
 
 1. `npm run dev` 带 **`MOCK=none`**，mock 已关闭；后端不在 8080 时 `/api` 必然失败——需先 `make dev-up`（MySQL/Redis）再 `make run`（后端 8080）。
 2. 代理**只对 dev server 生效**：`npm run preview` / `build` 产物不走 `proxy.ts`，此时 `src/app.tsx:193` 的 `baseURL` 会切到官方 demo 域名，属预期行为，勿误判为代理故障。
 
-**待办**：联调时实测 `POST /api/v1/auth/token` 返回 200 即关闭本项；若失败，按 CORS（`anttransfer.cors.allowed-origin-patterns`）→ 路径拼接 → 后端白名单顺序排查。
+**状态（2026-09-29）**：本地 dev 代理链路与后端 `/api/v1/**` 已按同一前缀回归（前端全量 **73 文件 / 828 用例**全绿，含请求层与错误码策略分流断言）；若代理失败，仍按 CORS（`anttransfer.cors.allowed-origin-patterns`）→ 路径拼接 → 后端白名单顺序排查。
 
 ## ⚙️ 常用脚本
 
@@ -50,7 +48,9 @@ npm run dev
 | `npm run preview` | 预览构建产物（默认 8000 端口） |
 | `npm run lint` | Biome 代码检查 + TypeScript 类型检查 |
 | `npm run tsc` | TypeScript 类型检查 |
-| `npm run test` | Vitest 单元测试 |
+| `npm run test` | Vitest 单元测试（全量，当前 **73 文件 / 828 用例**） |
+| `npm run test:coverage` | 同上 + v8 覆盖率报告 |
+| `npm run test:watch` / `npm run test:ui` | 监听模式 / 可视化 UI |
 | `npm run openapi` | 从 OpenAPI 生成接口服务（需先配置 schema 来源） |
 
 ## 🗂️ 目录导航
@@ -63,9 +63,10 @@ web/
 │   ├── proxy.ts       # 本地开发代理（/api -> 后端 8080）
 │   └── defaultSettings.ts  # 布局主题设置
 ├── src/
-│   ├── components/    # 全局公共组件
-│   ├── pages/         # 页面（当前为官方模板示例，按领域逐步替换）
-│   ├── services/      # 接口请求封装（建议按后端 at-* 领域划分）
+│   ├── components/    # 全局公共组件（含轻 IM：ChatComposer / ChatDrawer / ChatGroupPanel）
+│   ├── hooks/         # 复用 Hook（useChunkUpload / useChatMentionables 等）
+│   ├── pages/         # 业务页面（登录 / 工作台 / 文件 / 分享 / 会话 / 消息中心 / 审计 / 权限地图）
+│   ├── services/      # 接口请求封装（按后端领域划分：auth / file / transfer / chat / notify / permission）
 │   └── app.tsx        # 应用入口（运行时配置）
 ├── mock/              # 本地 mock（dev 已关闭，按需开启）
 ├── public/            # 静态资源（含 loading 脚本）
@@ -74,15 +75,17 @@ web/
 
 ## 🔗 与后端模块的映射
 
-| 页面规划（src/pages） | 后端模块 | 说明 |
+| 页面（src/pages） | 后端模块 | 实际前缀 |
 | --- | --- | --- |
-| 登录 / 账号 | `at-auth` | `/api/auth/**` |
-| 传输任务 | `at-transfer` | `/api/transfer/**` |
-| 权限 / 角色 | `at-permission` | `/api/permission/**` |
-| 文件 | `at-file` | `/api/file/**` |
-| 协作空间 | `at-collaboration` | `/api/collaboration/**` |
+| 登录 / 个人中心 / 消息中心 | `at-auth` · `at-collaboration` | `/api/v1/auth/**`、`/api/v1/users/me/**`、`/api/v1/notifications/**` |
+| 工作台 | `at-transfer` · `at-permission` | `/api/v1/transfers/statistics`、`/api/v1/todos/**` |
+| 传输任务 | `at-transfer` | `/api/v1/transfers/**` |
+| 文件 / 分享管理 | `at-file` | `/api/v1/files/**`、`/api/v1/folders/**`、`/api/v1/shares/**` |
+| 会话（轻 IM，含 `@` 提及） | `at-collaboration` | `/api/v1/chat/**` + `/api/ws/notify`（下行帧） |
+| 权限 / 角色 / 审批 / 审计 / 权限地图 | `at-permission` | `/api/v1/permission/**`、`/api/v1/roles/**`、`/api/v1/system/users/**`、`/api/v1/audit/**` |
 
-> 📌 当前页面为 Ant Design Pro 官方示例，业务页面将随后端接口落地逐步替换。
+> 📌 上表前缀是 `server.servlet.context-path: /api` + 控制器 `/v1/...` 的**拼接结果**，与本地代理一一对应（见上文「代理链路」）。
+> 业务页面已按领域落地；仅 `services/ant-design-pro/**` 仍是模板示例，接入首个真实业务接口时应删除。
 
 ## 📄 来源与许可
 

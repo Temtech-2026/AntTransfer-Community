@@ -105,6 +105,12 @@ services:
       # ③ 存储路径：与上方挂载点严格一致（显式声明，不再依赖 Dockerfile 的 WORKDIR=/app 隐式默认）
       ANTTRANSFER_FILE_STORAGE_ROOT: /app/data/files
       TRANSFER_STAGING_ROOT: /app/data/transfer-staging
+      # ④ 站内轻 IM 消息保留期与清理任务（三项，均有 application.yml 默认值）。
+      #    保留期默认 30 天，**小于 30 会被硬钳制为 30**且不回写配置；
+      #    清理任务默认每日 04:20，与文件域清理（03:30）错峰；多实例时由 Redis 锁 at:chat:retention-lock 保证只跑一份。
+      ANTTRANSFER_COLLABORATION_NOTIFY_MESSAGE_RETENTION_DAYS: ${ANTTRANSFER_COLLABORATION_NOTIFY_MESSAGE_RETENTION_DAYS:-30}
+      ANTTRANSFER_COLLABORATION_NOTIFY_MESSAGE_CLEANUP_CRON: "${ANTTRANSFER_COLLABORATION_NOTIFY_MESSAGE_CLEANUP_CRON:-0 20 4 * * ?}"
+      ANTTRANSFER_COLLABORATION_NOTIFY_MESSAGE_CLEANUP_BATCH_SIZE: ${ANTTRANSFER_COLLABORATION_NOTIFY_MESSAGE_CLEANUP_BATCH_SIZE:-1000}
     depends_on:
       mysql:
         condition: service_healthy

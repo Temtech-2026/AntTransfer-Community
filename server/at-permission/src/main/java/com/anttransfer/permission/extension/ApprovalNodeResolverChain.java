@@ -15,7 +15,8 @@
  */
 package com.anttransfer.permission.extension;
 
-import com.anttransfer.permission.model.ApprovalContext;
+import com.anttransfer.common.spi.approval.ApprovalContext;
+import com.anttransfer.common.spi.approval.ApprovalNodeResolver;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.AnnotationAwareOrderComparator;
 import org.springframework.stereotype.Component;

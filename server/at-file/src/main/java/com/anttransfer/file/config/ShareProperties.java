@@ -94,4 +94,25 @@ public class ShareProperties {
      * 合规要求不高、又频繁误伤正常业务文件名时。留空即「不做文件名敏感词判定」，不代表关闭后缀黑名单。</p>
      */
     private List<String> sensitiveWords = List.of("机密", "绝密", "身份证", "薪酬");
+
+    /**
+     * 到期前提醒窗口：链接剩余有效期进入该窗口时提醒创建者一次（默认 24h）。
+     *
+     * <p>取「运维可调」而非写死：默认有效期 7 天、硬上限 30 天（见上），
+     * 24h 窗口对两者都成立——既不会刚创建就误报，又留有足够处置时间。
+     * 提醒及时性由本窗口与 {@code expire-notify-cron} 的扫描周期共同决定。</p>
+     */
+    private Duration expireSoonWindow = Duration.ofHours(24);
+
+    /**
+     * 到期提醒幂等窗口：同一链接在该窗口内只提醒一次（默认 7d）。
+     *
+     * <p>仅抑制重复通知（幂等键丢失最多多提醒一次），不影响链接状态与到期判定（P-8）；
+     * 默认值取自 {@link RedisKeyConstants#SHARE_EXPIRE_NOTIFY_TTL_SECONDS}。</p>
+     */
+    private Duration expireNotifyIdempotentWindow =
+            Duration.ofSeconds(RedisKeyConstants.SHARE_EXPIRE_NOTIFY_TTL_SECONDS);
+
+    /** 到期提醒扫描单批条数上限（默认 200）：限制单个扫描周期的通知量与内存占用 */
+    private int expireNotifyBatchSize = 200;
 }

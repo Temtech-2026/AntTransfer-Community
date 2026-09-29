@@ -39,6 +39,16 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "anttransfer.collaboration.notify")
 public class NotifyProperties {
 
+    /**
+     * 会话消息保留期下限（天）。
+     *
+     * <p>PRD §4 P1「站内轻 IM」把「消息持久化 ≥ 30 天」写成了对用户的产品承诺，
+     * 因此它不是可自由下调的运维参数：配置低于本值时，清理任务按本值执行
+     * （钳制点在 {@code ChatRetentionScheduler}，理由见 {@link #messageRetentionDays}）。
+     * 声明为 {@code public} 常量是为了让清理任务与单测引用同一处口径，而不是各自写一个 30。</p>
+     */
+    public static final int MIN_MESSAGE_RETENTION_DAYS = 30;
+
     /** 邮件渠道开关（P1，默认关闭；打开时须配置 spring.mail.host，否则仅降级记录日志） */
     private boolean emailEnabled = false;
 
@@ -65,4 +75,32 @@ public class NotifyProperties {
 
     /** 通知标题长度上限（对齐 {@code sys_notify_message.title} 的 varchar(128)，超出截断） */
     private int titleMaxLength = 128;
+
+    /**
+     * 会话消息保留期（天）——PRD §4 P1「消息持久化 ≥ 30 天」的落地参数。
+     *
+     * <p><b>它是「可上调的下限」而不是「想设多少就多少」</b>：默认 30 天即
+     * {@link #MIN_MESSAGE_RETENTION_DAYS}，调大永远安全（只多花存储），
+     * 调小于 30 会被清理任务钳回 30（钳制点在 {@code ChatRetentionScheduler}）。
+     * 保护刻意不写在这里的 setter 里：让「配置文件写了什么」与「实际按什么执行」
+     * 在排查时能分别看到——若在 setter 里静默改写，运维在配置文件里看到的就永远是一个
+     * 与实际行为不符的数字，而这恰恰是最难自查的一类问题。</p>
+     *
+     * <p><b>为什么放在通知配置下而不是单开一个 {@code im.*} 前缀：</b>会话消息与站内通知
+     * 共用 {@code sys_notify_message} 一张表（见 {@code NotifyMessage} 类注），
+     * 保留期、条数上限、正文长度这些「这张表的量级与生命周期参数」本就该在一起，
+     * 拆开只会让「调消息表策略」需要在两个配置前缀之间来回找。</p>
+     */
+    private int messageRetentionDays = MIN_MESSAGE_RETENTION_DAYS;
+
+    /**
+     * 保留期清理单批删除行数。
+     *
+     * <p>分批的理由见 {@code NotifyMessageMapper#deleteExpiredChatMessages}：
+     * 单批过大等于「一次长事务 + 长时间行锁」，过小则批次数量上升、任务跑得久。
+     * 1000 是「单事务在毫秒级完成」与「一天内能清完百万级积压」之间的折中——
+     * 任务按 {@code MAX_ROUNDS} 循环，单次触发的上限为
+     * {@code 1000 × 100 = 10 万行}，足够追上日常增量。</p>
+     */
+    private int messageCleanupBatchSize = 1000;
 }

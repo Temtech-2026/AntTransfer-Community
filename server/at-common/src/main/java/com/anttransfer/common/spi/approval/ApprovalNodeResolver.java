@@ -13,22 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.anttransfer.permission.extension;
-
-import com.anttransfer.permission.model.ApprovalContext;
+package com.anttransfer.common.spi.approval;
 
 import java.util.List;
 
 /**
  * 审批节点解析扩展点（SPI）。
  *
- * <p><b>CE</b>：{@link SingleNodeApprovalResolver} 返回单节点审批（资源属主 → 兜底安全管理员）。
+ * <p><b>CE</b>：{@code SingleNodeApprovalResolver} 返回单节点审批（资源属主 → 兜底安全管理员）。
  * <b>EE</b>：实现本接口并按 {@code @Order} 优先注册即可替换为多级 / 会签 / 按组织架构动态解析，
  * 业务侧（{@code ApprovalNodeResolverChain}）无需改动——这是 schema 中 {@code node_seq} /
  * {@code node_type} 预留多级的落地入口。</p>
  *
  * <p>扩展点只解析「应由谁审」，不参与状态流转判断；解析结果为空视为「无法确定审批人」，
  * 由调用方决定是拒绝申请还是置空待管理员认领，不得静默放行。</p>
+ *
+ * <p><b>C 组归位</b>：本接口原定义在 {@code at-permission} 的 {@code extension} 包，现已上收至
+ * {@code at-common} 的 SPI 包——EE 只需依赖 {@code at-common} 即可实现。</p>
  *
  * @author AntTransfer CE
  */

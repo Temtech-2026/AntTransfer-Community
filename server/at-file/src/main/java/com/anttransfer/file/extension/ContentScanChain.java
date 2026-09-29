@@ -15,6 +15,7 @@
  */
 package com.anttransfer.file.extension;
 
+import com.anttransfer.common.spi.scan.ContentScanInterceptor;
 import com.anttransfer.file.config.ShareProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

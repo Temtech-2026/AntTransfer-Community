@@ -4,8 +4,8 @@
  * <p>未读三口径的权威定义在 {@code NotifyMessageMapper}（SQL 为准），前端逐条对齐：
  * <ul>
  *   <li>{@code inbox} —— {@code read_status=0 and notify_type not in (6,7)}：系统通知红点，
- *       注意**含 type=8 传输完成**（`NotifyType.isInbox()` 注释写的是 1~5，与 SQL 不一致，
- *       以 SQL 为准——它才是红点上显示的数字）；</li>
+ *       注意**含 type=8 传输完成与 type=9 取件回执**（后端的 `NotifyType.isInbox()` 已在
+ *       2026-09-29 随 9 扩段修正为与 SQL 同口径，此前的 1~5 区间判断已不再存在）；</li>
  *   <li>{@code todo} —— {@code notify_type in (1,2,8)}：待办中心角标；</li>
  *   <li>{@code chat} —— {@code notify_type in (6,7)}：会话角标，与红点<b>互不重叠</b>。</li>
  * </ul>
@@ -45,6 +45,8 @@ export const NotifyType = {
   IM_GROUP: 7,
   /** 传输完成提醒。 */
   TRANSFER_COMPLETED: 8,
+  /** 外发链接被取件回执（→ 链接创建者）。 */
+  SHARE_ACCESSED: 9,
 } as const;
 
 /** 会话范围（与后端 {@code ChatScope} 对齐）。 */
@@ -150,6 +152,18 @@ export interface NotifyMessage {
   readStatus?: number | null;
   readTime?: string | null;
   /**
+   * 本条消息是否<b>点名了本行接收人</b>（{@code @} 提及）。
+   *
+   * <p><b>与 {@link readStatus} 同一维度：都是「相对本行接收人」的属性</b>。
+   * 写扩散下同一条群消息落 N 行，只有被 @ 的那个人收到的那份为 {@code true}——
+   * 因此绝不能把它理解成「这条消息提到了谁」，它回答的只是「<b>提到我了吗</b>」。
+   * 想渲染正文里的 `@昵称` 高亮，用消息正文自身即可，不必依赖本字段。</p>
+   *
+   * <p>服务端只会对「别人 @ 我」置位（发送人自己那一行恒为 false），
+   * 所以渲染层不必再判一次方向。缺失（老接口 / 系统通知）按 {@code false} 处理。</p>
+   */
+  mentioned?: boolean | null;
+  /**
    * 撤回状态：0-正常 1-已撤回（见 {@link RecallStatus}）。
    *
    * <p><b>不要用「content 为空」判定撤回</b>：空正文是合法状态（文件 / 审批类消息的
@@ -200,7 +214,7 @@ export function isTodoNotify(notifyType: number): boolean {
   );
 }
 
-/** 是否计入系统通知红点（≠6/7，即含 1~5 与 8）。 */
+/** 是否计入系统通知红点（≠6/7，即含 1~5、8、9）。 */
 export function isInboxNotify(notifyType: number): boolean {
   return !isChatNotify(notifyType);
 }

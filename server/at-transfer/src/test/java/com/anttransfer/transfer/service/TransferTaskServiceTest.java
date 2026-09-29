@@ -21,6 +21,7 @@ import com.anttransfer.common.file.FileIngestResult;
 import com.anttransfer.common.result.ErrorCode;
 import com.anttransfer.transfer.MybatisPlusTestSupport;
 import com.anttransfer.transfer.config.TransferProperties;
+import com.anttransfer.transfer.event.TransferEventPublisher;
 import com.anttransfer.transfer.model.dto.MergeRequest;
 import com.anttransfer.transfer.model.dto.PrecheckRequest;
 import com.anttransfer.transfer.model.entity.TransferTask;
@@ -99,6 +100,9 @@ class TransferTaskServiceTest {
     @Mock
     private FileIngestPort fileIngestPort;
 
+    @Mock
+    private TransferEventPublisher eventPublisher;
+
     private TransferProperties properties;
     private TransferTaskService service;
 
@@ -111,7 +115,8 @@ class TransferTaskServiceTest {
     @BeforeEach
     void setUp() {
         properties = new TransferProperties();
-        service = new TransferTaskService(transferTaskMapper, stateStore, chunkStore, properties, fileIngestPort);
+        service = new TransferTaskService(transferTaskMapper, stateStore, chunkStore, properties, fileIngestPort,
+                eventPublisher);
     }
 
     // ---------------------------------------------------------------- 预检
@@ -339,6 +344,36 @@ class TransferTaskServiceTest {
         assertThat(vo.nodeId()).isEqualTo("1111");
         assertThat(vo.sha256()).isEqualTo(SHA);
         verify(chunkStore).deleteTaskDir(1004L);
+        // 完成事件是通知域的输入，其前提是「状态已提交为完成」——这一条断言把它钉在成功分支上
+        verify(eventPublisher).publishCompleted(any(TransferTask.class));
+    }
+
+    @Test
+    @DisplayName("合并期间被并发取消：状态未落完成则不发完成事件（不能通知一笔已被取消的传输「已完成」）")
+    void shouldNotPublishCompletedWhenCancelledDuringMerge(@TempDir Path tempDir) throws IOException {
+        Path merged = tempDir.resolve("merged.bin");
+        Files.write(merged, new byte[UNIT]);
+
+        given(transferTaskMapper.selectById(1005L))
+                .willReturn(task(1005L, TransferTask.STATUS_UPLOADING, UNIT, 1, (long) UNIT, "[0]"));
+        given(chunkStore.hasChunk(1005L, 0)).willReturn(true);
+        // 抢占合并权成功……
+        given(stateStore.transition(anyLong(), any(), eq(TransferTask.STATUS_MERGING), any(), any(), anyLong()))
+                .willReturn(true);
+        // ……但落「完成」态时被并发 DELETE 抢先（CAS 落在已取消状态上失败）
+        given(stateStore.transition(anyLong(), any(), eq(TransferTask.STATUS_COMPLETED), any(), any(), anyLong()))
+                .willReturn(false);
+        given(chunkStore.merge(1005L, 1)).willReturn(merged);
+        given(chunkStore.sha256(merged)).willReturn(SHA);
+        given(fileIngestPort.ingest(any(), any())).willReturn(new FileIngestResult(998L, 1110L, false));
+
+        MergeResultVO vo = service.merge(USER_ID, 1005L, new MergeRequest(SHA, 1, (long) UNIT));
+
+        // 内容已落库、暂存已清理（不回滚跨事务边界的内容），但状态没落完成
+        assertThat(vo.fileId()).isEqualTo("998");
+        verify(chunkStore).deleteTaskDir(1005L);
+        // 不能通知一笔已被取消的传输「已完成」
+        verify(eventPublisher, never()).publishCompleted(any(TransferTask.class));
     }
 
     @Test

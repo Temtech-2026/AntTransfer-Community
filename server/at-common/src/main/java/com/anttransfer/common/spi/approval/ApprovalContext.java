@@ -13,13 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.anttransfer.permission.model;
+package com.anttransfer.common.spi.approval;
 
 /**
- * 审批人解析上下文——{@link com.anttransfer.permission.extension.ApprovalNodeResolver} 的入参。
+ * 审批人解析上下文——{@link ApprovalNodeResolver} 的入参。
  *
  * <p>CE 由申请单信息 + 调用方给出的建议审批人（如资源属主）组装；EE 的动态解析（按部门 /
  * 密级 / 组织架构）亦可从中取用，无需依赖任何跨模块类型（模块间只经 at-common 契约）。</p>
+ *
+ * <p><b>C 组归位</b>：本类型原定义在 {@code at-permission} 的 {@code model} 包，现已上收至
+ * {@code at-common} 的 SPI 包（它已无任何模块内依赖）。</p>
  *
  * @param applicationId       申请单 ID（新建前为 null）
  * @param applicantId         申请人用户 ID

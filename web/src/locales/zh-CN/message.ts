@@ -53,5 +53,6 @@ export default {
   'message.type.4': '链接到期',
   'message.type.5': '安全提醒',
   'message.type.8': '传输完成',
+  'message.type.9': '取件回执',
   'message.type.unknown': '系统通知',
 } as const;

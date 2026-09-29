@@ -24,10 +24,11 @@ import java.time.LocalDateTime;
  * 该提醒纳入待办中心（见 {@code NotifyType#isTodo}）。事件<b>不含文件字节</b>，
  * 只承载可推送的元信息摘要。</p>
  *
- * <p><b>落地状态（AT-DIFF-11）：</b>at-transfer 当前尚未实现（CE 传输主线未开工），
- * 本事件先由 at-common 定义契约、at-collaboration 侧监听器就绪；at-transfer 实现时
- * 只需在合并成功后 {@code afterCommit} 发布本事件即可自动打通通知与待办，
- * 无需再改动通知域。</p>
+ * <p><b>落地状态（2026-09-29 收口）：</b>已由 at-transfer 在分片合并成功后发布
+ * （{@code TransferEventPublisher#publishCompleted}，状态提交后触发），
+ * at-collaboration 侧监听器就绪、直接转「传输完成」站内提醒与待办投影。
+ * 此前「契约先行、发布方待补」的悬空状态结束；发布失败只留痕，
+ * 不影响已落库的传输结果。</p>
  *
  * @param transferId 传输任务 ID（{@code sys_upload_task.id} 或其演进后的传输任务表）
  * @param userId     传输发起人用户 ID（接收提醒者）

@@ -52,6 +52,11 @@ import java.util.List;
  * @param bizId           关联业务 ID
  * @param readStatus      阅读状态：0-未读 1-已读（<b>仅指本行接收人</b>，口径见下方 {@code @implNote}）
  * @param readTime        阅读时间
+ * @param mentioned       本条消息是否<b>点名了本行接收人</b>（{@code @} 提及）。行级属性，
+ *                        与 {@code readStatus} 同维度：群聊里同一条消息发给 N 个人，
+ *                        只有被点名者收到的那份为 {@code true}。前端据此渲染「@我」高亮，
+ *                        会话列表则用它的未读计数画「有人 @ 我」角标
+ *                        （{@code ConversationVO#mentionUnreadCount}）
  * @param recallStatus    撤回状态：0-正常 1-已撤回（1 时 {@code content} 已清空，
  *                        前端应渲染为「已撤回」占位而不是空气泡）
  * @param recallTime      撤回时间（未撤回为 null）
@@ -93,6 +98,7 @@ public record NotifyMessageVO(
         Long bizId,
         Integer readStatus,
         LocalDateTime readTime,
+        boolean mentioned,
         Integer recallStatus,
         LocalDateTime recallTime,
         String quoteClientMsgId,
@@ -151,6 +157,7 @@ public record NotifyMessageVO(
                 message.getBizId(),
                 message.getReadStatus(),
                 message.getReadTime(),
+                message.isMentioned(),
                 message.getRecallStatus(),
                 message.getRecallTime(),
                 message.getQuoteClientMsgId(),

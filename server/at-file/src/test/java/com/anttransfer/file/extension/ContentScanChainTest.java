@@ -15,6 +15,7 @@
  */
 package com.anttransfer.file.extension;
 
+import com.anttransfer.common.spi.scan.ContentScanInterceptor;
 import com.anttransfer.file.config.ShareProperties;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

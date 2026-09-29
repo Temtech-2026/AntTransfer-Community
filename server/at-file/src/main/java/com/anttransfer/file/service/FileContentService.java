@@ -17,7 +17,9 @@ package com.anttransfer.file.service;
 
 import com.anttransfer.common.exception.BusinessException;
 import com.anttransfer.common.result.ErrorCode;
+import com.anttransfer.common.spi.scan.VirusScanner;
 import com.anttransfer.file.config.FileProperties;
+import com.anttransfer.file.extension.FileScanPipeline;
 import com.anttransfer.file.model.dto.InstantUploadRequest;
 import com.anttransfer.file.model.vo.FileVersionVO;
 import com.anttransfer.file.model.vo.UploadResultVO;
@@ -28,6 +30,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.util.Locale;
 
 /**
@@ -50,6 +53,7 @@ public class FileContentService {
     private final FileNodeService fileNodeService;
     private final FileVersionService fileVersionService;
     private final FileProperties properties;
+    private final FileScanPipeline fileScanPipeline;
 
     /**
      * 秒传：仅做一次磁盘探测（事务外），命中则交由 {@link FileNodeService} 建引用。
@@ -102,6 +106,9 @@ public class FileContentService {
             log.error("文件落盘失败：sha256={}, sizeBytes={}", normalizedSha, sizeBytes, e);
             throw new BusinessException(ErrorCode.FILE_UPLOAD_FAIL, e);
         }
+        // 入库安全闸门：CE 的默认扫描器恒放行且不读盘（与接入前逐字节一致）；EE 命中时在此拒绝登记。
+        // 注意此处不删物理内容——内容寻址是共享的，删它会连带破坏引用同一份字节的其他文件
+        fileScanPipeline.assertClean(scanContext(normalizedSha, name, sizeBytes, ownerUserId));
         return fileNodeService.registerStoredContent(ownerUserId, name, folderId, level,
                 contentType, normalizedSha, sizeBytes, relativePath);
     }
@@ -142,7 +149,27 @@ public class FileContentService {
             log.error("新版本落盘失败：nodeId={}, sha256={}, sizeBytes={}", nodeId, normalizedSha, sizeBytes, e);
             throw new BusinessException(ErrorCode.FILE_UPLOAD_FAIL, e);
         }
+        // 版本上传同样过闸门；此路径未加载条目名，扩展名留空（EE 若依赖扩展名可按内容嗅探）
+        fileScanPipeline.assertClean(scanContext(normalizedSha, null, sizeBytes, ownerUserId));
         return fileVersionService.createVersion(ownerUserId, nodeId, contentType, normalizedSha,
                 sizeBytes, relativePath, remark);
+    }
+
+    /**
+     * 构造入库扫描上下文。
+     *
+     * <p>内容访问器是惰性的：CE 的默认扫描器恒放行且不打开流，所以「没有杀毒能力的部署」
+     * 不会因为这个接缝多出一次读盘。</p>
+     */
+    private VirusScanner.VirusScanContext scanContext(String normalizedSha, String name,
+                                                     long sizeBytes, Long ownerUserId) {
+        return new VirusScanner.VirusScanContext(normalizedSha, name, FileTypePolicy.extOfName(name),
+                sizeBytes, ownerUserId, () -> {
+            try {
+                return fileStorage.contentResource(normalizedSha).getInputStream();
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        });
     }
 }

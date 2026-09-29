@@ -19,6 +19,7 @@
 import {
   BellOutlined,
   CheckOutlined,
+  DownloadOutlined,
   LinkOutlined,
   ReloadOutlined,
   SafetyOutlined,
@@ -82,6 +83,7 @@ const NOTIFY_TYPE_ICON: Record<number, ReactNode> = {
   [NotifyType.SHARE_LOCKED]: <LinkOutlined />,
   [NotifyType.SHARE_EXPIRE_SOON]: <LinkOutlined />,
   [NotifyType.TRANSFER_COMPLETED]: <CheckOutlined />,
+  [NotifyType.SHARE_ACCESSED]: <DownloadOutlined />,
 };
 
 const KNOWN_NOTIFY_TYPES: number[] = [
@@ -91,6 +93,7 @@ const KNOWN_NOTIFY_TYPES: number[] = [
   NotifyType.SHARE_EXPIRE_SOON,
   NotifyType.ABNORMAL_LOGIN,
   NotifyType.TRANSFER_COMPLETED,
+  NotifyType.SHARE_ACCESSED,
 ];
 
 /** 通知类型 → 文案 id（后端已下发 title 时以 title 为准）。 */

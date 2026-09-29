@@ -61,7 +61,8 @@ npm install
 npm run dev
 ```
 
-前端默认端口与后端代理约定见 `web/` 工程内的 `config`（README 最后会更新导航）。
+前端默认端口 **8000**，dev 代理把 `/api` 转发到后端 **8080**（后端端口由 `SERVER_PORT` 控制）；
+端口与代理规则见 `web/config/config.ts` 与 `web/config/proxy.ts`，接口前缀与页面映射见 [`web/README.md`](../../web/README.md)。
 
 ## ❓ 常见问题
 

@@ -66,9 +66,10 @@ import java.util.Map;
 @Service
 public class NotifyMessageService {
 
-    /** 纯提醒类系统通知（非待办段）：外发链接锁定 / 到期提醒 / 异常登录告警 */
+    /** 纯提醒类系统通知（非待办段）：外发链接锁定 / 到期提醒 / 取件回执 / 异常登录告警 */
     private static final List<Integer> REMINDER_TYPES =
-            List.of(NotifyType.SHARE_LOCKED, NotifyType.SHARE_EXPIRE_SOON, NotifyType.ABNORMAL_LOGIN);
+            List.of(NotifyType.SHARE_LOCKED, NotifyType.SHARE_EXPIRE_SOON,
+                    NotifyType.SHARE_ACCESSED, NotifyType.ABNORMAL_LOGIN);
 
     /** 待办段：待我审批 / 审批结果 / 传输完成 */
     private static final List<Integer> TODO_TYPES =
@@ -223,6 +224,30 @@ public class NotifyMessageService {
             scheduleReadReceipts(userId, scope, targetId, unreadRows);
         }
         return affected;
+    }
+
+    /**
+     * 保留期清理：物理删除早于 {@code cutoff} 的会话消息，单批最多 {@code batchSize} 行。
+     *
+     * <p><b>为什么放在 Service 而不是让调度器直接调 Mapper：</b>分层上，「清理是什么语义」
+     * 属服务层（它与 {@code NotifyMessage} 的写扩散形态、逻辑删除口径强相关），
+     * 而「什么时候清、循环几轮」属调度层。数据动作留在这里，调度层就只剩策略与日志，
+     * 两边的改动不会互相牵连。</p>
+     *
+     * <p><b>刻意不加 {@code @Transactional}：</b>本方法是单条 DELETE，其自身即一个原子事务；
+     * 外面再包一层只会把「每批一个短事务」变成「一个事务里连续多批」——那正是分批想要
+     * 避免的长事务。故调用方（{@code ChatRetentionScheduler}）的循环外不得有事务上下文。</p>
+     *
+     * <p><b>不在这里钳制保留期下限：</b>下限是产品口径（{@code NotifyProperties}
+     * 的 {@code MIN_MESSAGE_RETENTION_DAYS}），由调度层在算出 {@code cutoff} 之前统一应用，
+     * 避免同一个 30 在两处各写一遍。</p>
+     *
+     * @param cutoff    保留期截止时刻（{@code create_time} 早于它的会话消息视为超期）
+     * @param batchSize 单批删除行数上限（小于 1 时按 1 处理）
+     * @return 实际删除行数；小于 {@code batchSize} 表示已无超期数据
+     */
+    public int purgeExpiredChatMessages(LocalDateTime cutoff, int batchSize) {
+        return notifyMessageMapper.deleteExpiredChatMessages(cutoff, Math.max(batchSize, 1));
     }
 
     /**

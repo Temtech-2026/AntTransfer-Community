@@ -139,8 +139,10 @@ public class CollaborationEventListener {
     /**
      * 传输完成 → 发起人「传输已完成」提醒（{@code notify_type=8}，纳入待办中心）。
      *
-     * <p>这是本事件在 CE 的<b>主路径</b>：at-transfer 目前未实现，事件契约与监听器先行就绪；
-     * at-transfer 落地后只需在分片合并 afterCommit 发布事件，通知与待办自动打通。</p>
+     * <p><b>本事件在 CE 的主路径已于 2026-09-29 打通</b>：at-transfer 在分片合并成功后
+     * 经 {@code TransferEventPublisher} 发布（发布发生在 {@code transition} 事务提交之后，
+     * 事件失败不回滚已落库的内容），本监听器随即补上通知与待办。此前的「契约与监听器先行就绪、
+     * 发布方待补」悬空状态结束。</p>
      */
     @EventListener
     public void onTransferCompleted(TransferCompletedEvent event) {
@@ -169,7 +171,8 @@ public class CollaborationEventListener {
      * 授权到期回收 —— <b>CE 有意不转站内通知</b>（显式决策，非遗漏）。
      *
      * <p>原因：{@link NotifyType} 的编码分段是 US-08 的产品白名单
-     * （1~5 系统通知、6~7 会话、8 传输完成），其中<b>没有</b>「授权到期回收」的位置。
+     * （1~5 系统通知、6~7 会话、8~9 业务提醒：8 传输完成、9 取件回执），
+     * 其中<b>没有</b>「授权到期回收」的位置。
      * 若强行映射到 {@code APPROVAL_RESULT}(2)，会在待办中心出现一条语义错误的
      * 「审批结果」，比不发更糟（用户会以为审批状态变了）。</p>
      *

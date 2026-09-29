@@ -53,5 +53,6 @@ export default {
   'message.type.4': 'Link expiring',
   'message.type.5': 'Security alert',
   'message.type.8': 'Transfer completed',
+  'message.type.9': 'File retrieved',
   'message.type.unknown': 'Notification',
 } as const;

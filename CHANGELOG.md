@@ -7,6 +7,90 @@
 
 ### ✨ Added（新增）
 
+- 🧩 **CE/EE 差异化扩展点全量落地：7 个 SPI 建为真实接缝（2026-09-29 · [A-6 / D-2](docs/architecture/architecture.md) 收口）**：
+  PRD §8 的 Won't 项此前只有「预留扩展点位置」的**设计约定**，接口在代码中零命中（`A-6`）；
+  同一批接口在附录 C 与 PRD §8 之间存在**两套命名**（`D-2`）。本轮把 7 个接缝**同批建立**，
+  每个都带「接口 + CE 默认实现 + 装配门禁 + 实际消费点 + 回归测试」五项，杜绝「接口建了没人调用」的假接缝。
+  - **接口全部上收 `at-common` 的 `spi` 子包**（`identity` / `scan` / `crypto` / `watermark` / `approval` / `transport`）：
+    业务模块仍只依赖 `at-common`；EE 只需依赖 `at-common` 即可实现**任一**扩展点，
+    不必反向依赖某个业务模块。`ContentScanInterceptor`（原在 `at-file`）与
+    `ApprovalNodeResolver` / `ApprovalContext`（原在 `at-permission`）随之**上移**，
+    `AT-DIFF-09` 按方案 B 收口（CE 的 `SuffixAndKeywordScanInterceptor` 留在 `at-file` 且**继续真实生效**，
+    未退化为 Noop PASS）。
+  - **CE 默认实现**：`LocalIdentityProvider`（at-auth）、`SuffixAndKeywordScanInterceptor`（at-file）、
+    `NoopVirusScanner` / `NoopWatermarkProvider` / `PlainCryptoCodec`（at-file）、
+    `SingleNodeApprovalResolver`（at-permission）、`HttpTransportStrategy`（at-gateway）。
+  - **装配门禁：能力差异只由 Bean 是否存在表达**，全批**零 `if (eeEnabled)`**。
+    六个接缝用类型级 `@ConditionalOnMissingBean` 顶替；**`TransportStrategy` 是唯一例外，改用 Bean 名称级**
+    （`httpTransportStrategy`）——协议是**集合**而非单点能力，按类型顶替会让 EE 只新增一个 QUIC 实现就把
+    CE 的 HTTP 挤掉，部署随即失去 HTTP 通道，那是功能回退而不是差异化。新增协议与 CE 的 HTTP **共存**，
+    由新增的 `TransportStrategyRegistry` 按 `@Order` 选协议，并在**启动期拒绝重复 `protocol()`**
+    （配置错误即启动失败，而不是让某次请求随机走另一个实现）。同理 `ContentScanInterceptor` **不设 Noop 兜底**
+    ——它是 CE 必须生效的外发闸门，EE 的 DLP 以 `@Order` 叠加而非替换。
+  - **消费点（接缝真的被读）**：`AuthService.login()` → `IdentityProviderChain`（首个 `supports` 命中即止，
+    避免一次登录触发多次远端认证）；`ShareLinkService` → `ContentScanChain`；
+    `FileContentService` 入库前 → `FileScanPipeline.assertClean`；`FileDownloadService.stream(...)`（下载与匿名分享下载）
+    → `WatermarkResource`；`LocalFileStorage` 读写两侧 → `CodecResource`；`PermissionApplicationService` → `ApprovalNodeResolverChain`。
+  - **两条新增设计口径**：① **认证失败的计数留在编排层**（`AuthService` 只对 `BAD_CREDENTIALS` 计数，
+    `1004` / `1005` 不计数），身份源只回答「是不是本人」——否则换 SSO 后「错 5 次锁 30 分钟」会因身份源不同而失效；
+    ② **内容寻址下扫描命中不删物理内容**，只拒绝本次登记并落审计（同一 sha256 的字节被多个文件记录共享，
+    删除会连带破坏其它引用）。
+  - **回归证据**：新增 `IdentityProviderChainTest` / `LocalIdentityProviderTest` / `IdentitySpiConfigTest`（at-auth）、
+    `ApprovalResolverSpiTest`（at-permission）、`FileSpiDefaultsTest`（at-file）、
+    `TransportStrategyRegistryTest`（at-gateway，含 `ApplicationContextRunner` 验证「CE 不加配置可启动」
+    与「EE 声明实现即顶替」）；**本轮后端全量 8 模块共 661 例全绿**（at-common 30 / at-gateway 55 / at-auth 55 /
+    at-transfer 46 / at-permission 225 / at-file 148 / at-collaboration 72 / at-bootstrap 30），
+    **前端 73 个测试文件 / 828 例全绿**（`npm test`，均为 2026-09-29 实跑）。
+  - **文档同步**：[architecture.md §2.2 实际签名与 §2.3 落地登记](docs/architecture/architecture.md)（契约草案 → 与代码逐行一致，
+    差异逐条标注）、[PRD §8 命名回写](docs/prd/README.md)、[AT-DIFF-09 关闭](docs/development/AT-DIFF-todos.md)。
+    残留：附录 C 原文仍未入库（仅影响溯源，不阻塞开发），`FileStore` / `AuditSink` / 组织边界抽象**不预建空接口**。
+- 💬 **站内轻 IM：`@` 提及 + 消息保留 ≥ 30 天（2026-09-29 · [GAP-08](docs/development/AT-DIFF-todos.md) 全量收口）**：
+  PRD §4.1 P1 的「站内轻 IM（会话与 **@ 提及**）；**消息持久化 ≥ 30 天**」两项验收此前均无落点。
+  新增 `sql/V18__chat_mention_and_retention.sql`（`notify_message.mentioned` 列 + 保留期清理索引）。
+  - **`@` 提及按「行」记，不按「条」记**：群消息是写扩散的（一条消息落 N 行），
+    故 `mentioned` 是**每接收人一行**的标记，而非消息级属性 ——
+    于是「有人 @ 我」退化成 `mentioned = 1 and read_status = 0` 的等值查询，
+    **完全不需要解析正文里的昵称**（重名、昵称含空格、正文改字都不会误判）。
+  - **上行契约**：`POST /api/v1/chat/messages` 新增可空 `mentionUserIds`（≤ 500 项）。
+    服务端与**群成员求交集**，非成员 / 发送人自己 / 重复项**静默剔除**：
+    点名失败不该让整句话发不出去，而客户端手里的成员名单本来就可能是旧快照。
+  - **下行**：`CHAT` 帧载荷 `NotifyMessageVO` 新增 `mentioned`（只对被点名者那一行为 `true`，
+    发送人自己恒为 `false`）；会话列表 `ConversationVO` 新增 `mentionUnreadCount`
+    —— 它是 `unreadCount` 的**子集，两个数不能相加**（角标数字仍取 `unreadCount`，仅在 > 0 时染强调色）。
+    **不额外写站内信**：同一句话若在「会话未读」与「站内信未读」各算一次，
+    用户点任一处都清不掉另一处（产品若要消息中心留痕，须先定未读合并口径）。
+  - **前端**：输入框 `@` 选人（`resolveMentionTrigger` / `filterMentionCandidates` / `insertMention` /
+    `pushMention` / `retainActiveMentions` 五个纯函数 + `MentionPanel` 候选面板，支持 ↑↓ + Enter、Esc、点外面收起）、
+    气泡「有人@我」标记 + 描边（描边用 `box-shadow` 内阴影，避免与非文本气泡的左边框争夺样式优先级）、
+    会话列表摘要前缀 `[有人@我]`（对齐微信）；候选名单由 `useChatMentionables` 统一提供
+    （群成员 → 候选，按群 ID 常驻缓存，**切群不串群**，拉不到成员时静默降级为空名单 = 不显示 `@` 入口）。
+    **生效提及靠正文匹配**（用户删掉 `@昵称` 即失效），不跟踪插入位置。
+  - **保留期清理**：`ChatRetentionScheduler`（`anttransfer.collaboration.notify.message-cleanup-cron`，默认 `0 20 4 * * ?`，与文件域清理 03:30 错峰）
+    → `NotifyMessageService#purgeExpiredChatMessages` → `NotifyMessageMapper#deleteExpiredChatMessages`
+    （`order by create_time limit` **分批物理删除**：保留期是留存承诺，不是软删除开关）。
+    **30 天下限硬钳制**（`NotifyProperties.MIN_MESSAGE_RETENTION_DAYS`，配置下探无效且**不回写配置**，
+    便于发现管理员配错）；并发用 Redis `SETNX at:chat:retention-lock`（TTL 15 min、**不主动释放**、
+    实例崩溃靠 TTL 兜底），**Redis 异常时降级放行**（清理幂等，而「锁坏了就不清理」会让保留期悄悄失效）。
+    参照 `at-file` 的 `FileCleanupScheduler` 而非 D-10 的 `AuditArchiveScheduler`（后者至今未落地）。
+  - **回归护栏**：后端 `ChatServiceRecallTest` + `PlatformIdJsonContractTest`（`mentionUnreadCount` 保持数字、不下发字符串）；
+    前端 5 个相关测试文件 **149 例全绿**（`npm test -- …`）：`ChatComposer/composer.test.ts`（提及纯函数）、
+    `ChatComposer/index.test.tsx`（输入框交互）、`hooks/useChatMentionables.test.tsx`（候选名单与缓存）、
+    `services/chat/messages.test.ts`（未读 / 提及未读派生）、`services/chat/types.test.ts`（摘要前缀）。
+  - **文档同步**：[AT-DIFF-todos GAP-08 关闭](docs/development/AT-DIFF-todos.md)、[PRD §4.1](docs/prd/README.md)、
+    [API 契约 `CHAT` 帧与 `mentionUserIds`](docs/api/README.md)。
+- 🔔 **通知接线三件（2026-09-29）**：补齐三处「契约已定、发送方缺失」的通知缺口 ——
+  ① **传输完成提醒**：at-transfer 在分片合并成功后发布 `TransferCompletedEvent`
+  （新增 `TransferEventPublisher`，状态提交后发布、发布失败只留痕，不影响已落库的传输结果），
+  打通 at-collaboration 侧早已就绪的监听器（此前无任何 `publishEvent` 调用）；
+  ② **外发链接到期前提醒**：新增 at-file `ShareExpireNotifyScheduler`
+  （`cron` 默认每小时第 25 分）+ `ShareLinkMapper#selectExpiringActive`，
+  幂等为「Redis 占位键 + `existsForBiz` 兜底」两层，且**发送失败会释放占位键**以便下轮重试；
+  ③ **取件回执**：`ShareAccessService#redeem` 成功后回推链接创建者（免登录访客无账号，
+  这是创建者唯一能感知「链接真的被用了」的通道，此前只能自己去翻取件审计）；
+  提取码锁定提醒改为在计数**恰好跨过阈值**时发出一次（避免脚本连打把创建者收件箱刷满）。
+  同步：`NotifyType` 新增 **9 = SHARE_ACCESSED**（计入站内信未读、**不进待办**；
+  `isInbox()` 一并修正为与未读 SQL 同口径）、`NotificationCommand` 新增 3 个工厂方法、
+  `V17__share_access_notify_type.sql` 同步列注释、前端消息中心图标与中英文案。
 - 🧱 仓库由「脚手架单体」演进为 AntTransfer CE 模块化单体：`server/` 下 8 个 Maven 模块
   （`at-common` / `at-gateway` / `at-auth` / `at-transfer` / `at-permission` / `at-file` / `at-collaboration` / `at-bootstrap`）。
 - ⚖️ Apache-2.0 `LICENSE`，全部 Java/pom 文件许可证头，Spotless `verify` 阶段自动校验。

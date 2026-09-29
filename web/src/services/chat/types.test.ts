@@ -5,8 +5,10 @@ import { ChatScope, MessageType } from '@/services/notify/types';
 import { buildFileCardContent } from './fileCard';
 import {
   type Conversation,
+  type ConversationSummaryLabels,
   conversationInitial,
   conversationSummary,
+  hasUnreadMention,
   messageSenderInitial,
   messageSenderLabel,
   messageSummary,
@@ -68,6 +70,76 @@ describe('conversationSummary 与会话项字段口径一致', () => {
   });
 });
 
+/**
+ * 「有人 @ 我」的两条对外口径：会话摘要前缀、角标强调判定。
+ *
+ * <p>这里钉的是「未读 @ 是未读的子集」——两个数不能相加，判定必须同源。</p>
+ */
+describe('hasUnreadMention 与摘要的「有人@我」前缀', () => {
+  const labels: ConversationSummaryLabels = { mentionMe: '有人@我' };
+  const summaryOf = (
+    overrides: Partial<Conversation>,
+    maxLength?: number,
+  ) =>
+    conversationSummary(
+      {
+        chatScope: 1,
+        targetId: '9',
+        lastContent: '在吗',
+        lastMessageType: MessageType.TEXT,
+        unreadCount: 0,
+        mentionUnreadCount: 0,
+        ...overrides,
+      } as Conversation,
+      labels,
+      maxLength,
+    );
+
+  it('还有未读的点名时才算「有人@我」', () => {
+    expect(hasUnreadMention({ mentionUnreadCount: 0 })).toBe(false);
+    expect(hasUnreadMention({ mentionUnreadCount: 1 })).toBe(true);
+  });
+
+  it('字段缺失（老列表项）按「没有点名」处理，不炸也不误报', () => {
+    const legacy = { mentionUnreadCount: undefined } as unknown as Pick<
+      Conversation,
+      'mentionUnreadCount'
+    >;
+    expect(hasUnreadMention(legacy)).toBe(false);
+  });
+
+  it('未读 @ 在摘要前面加前缀（对齐微信的 [有人@我] 张三：…）', () => {
+    expect(summaryOf({ mentionUnreadCount: 2 })).toBe('[有人@我] 在吗');
+  });
+
+  it('没有未读 @ 时摘要不带任何前缀', () => {
+    expect(summaryOf({})).toBe('在吗');
+    expect(summaryOf({ unreadCount: 5 })).toBe('在吗');
+  });
+
+  it('前缀由调用方注入文案（英文界面不出现中文）', () => {
+    expect(
+      conversationSummary(
+        {
+          chatScope: 1,
+          targetId: '9',
+          lastContent: '在吗',
+          lastMessageType: MessageType.TEXT,
+          unreadCount: 1,
+          mentionUnreadCount: 1,
+        } as Conversation,
+        { mentionMe: 'Mentioned you' },
+      ),
+    ).toBe('[Mentioned you] 在吗');
+  });
+
+  it('前缀不计入长度上限：摘要是标记，被截断就失去意义', () => {
+    const long = '好'.repeat(60);
+    const summary = summaryOf({ lastContent: long, mentionUnreadCount: 1 }, 5);
+    expect(summary).toBe(`[有人@我] ${'好'.repeat(5)}…`);
+  });
+});
+
 /** 对端头像地址带缓存版本号，与服务端拼出来的形状一致。 */
 const PEER_AVATAR = 'http://localhost:8080/v1/users/900000000000000009/avatar?v=2';
 
@@ -80,6 +152,7 @@ describe('resolveSessionDisplay 把会话名带进详情态', () => {
       targetAvatarUrl: PEER_AVATAR,
       lastMessageId: '900000000000000100',
       unreadCount: 0,
+      mentionUnreadCount: 0,
     },
     {
       chatScope: 2,
@@ -89,6 +162,7 @@ describe('resolveSessionDisplay 把会话名带进详情态', () => {
       targetAvatarUrl: null,
       lastMessageId: '900000000000000101',
       unreadCount: 0,
+      mentionUnreadCount: 0,
     },
   ];
 

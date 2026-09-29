@@ -978,6 +978,7 @@ describe('聊天页 · 头像', () => {
         targetAvatarUrl: PEER_AVATAR,
         lastMessageId: '900000000000000920',
         unreadCount: 0,
+        mentionUnreadCount: 0,
       },
     ]);
     const { container } = openPrivate([
@@ -998,6 +999,7 @@ describe('聊天页 · 头像', () => {
         targetAvatarUrl: PEER_AVATAR,
         lastMessageId: '900000000000000920',
         unreadCount: 0,
+        mentionUnreadCount: 0,
       },
     ]);
     // 历史消息里没有发送人头像（老数据）：全靠回查会话列表补
@@ -1029,6 +1031,7 @@ describe('聊天页 · 头像', () => {
         targetName: '系统管理员',
         lastMessageId: '900000000000000920',
         unreadCount: 0,
+        mentionUnreadCount: 0,
       },
     ]);
     const { container } = openPrivate([peerMessage({ senderDisplayName: '系统管理员' })]);

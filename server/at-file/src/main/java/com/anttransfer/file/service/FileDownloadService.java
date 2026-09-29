@@ -17,6 +17,7 @@ package com.anttransfer.file.service;
 
 import com.anttransfer.common.exception.BusinessException;
 import com.anttransfer.common.result.ErrorCode;
+import com.anttransfer.common.spi.watermark.WatermarkProvider;
 import com.anttransfer.file.config.FileProperties;
 import com.anttransfer.file.model.entity.FileNode;
 import com.anttransfer.file.model.entity.FileObject;
@@ -25,6 +26,7 @@ import com.anttransfer.file.security.FileOwnershipGuard;
 import com.anttransfer.file.service.FileDownloadTicketService.FileTicketPayload;
 import com.anttransfer.file.storage.BandwidthLimiter;
 import com.anttransfer.file.storage.FileStorage;
+import com.anttransfer.file.storage.WatermarkResource;
 import com.anttransfer.file.util.TextPreviewDecoder;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -101,6 +103,7 @@ public class FileDownloadService {
     private final FileTypePolicy typePolicy;
     private final FileDownloadTicketService ticketService;
     private final FileAuditLogger auditLogger;
+    private final WatermarkProvider watermarkProvider;
 
     /**
      * 把文件内容写入响应（支持 Range）。
@@ -156,7 +159,7 @@ public class FileDownloadService {
         writeHeaders(response, node.getName(), contentTypeFor(node, inline), inline,
                 total, start, end, length, partial);
 
-        stream(node, sha256, start, length, taskLimit, response);
+        stream(node, sha256, start, length, taskLimit, inline, response);
     }
 
     /**
@@ -293,8 +296,10 @@ public class FileDownloadService {
                 inline, total, start, end, length, partial);
 
         String bucketKey = TASK_BUCKET_PREFIX + "share:" + file.getId() + ":" + UUID.randomUUID();
-        StreamOutcome outcome = pump(fileStorage.contentResource(sha256), bucketKey, start, length,
-                taskLimit, response, "shareFileId=" + file.getId());
+        StreamOutcome outcome = pump(
+                watermarked(fileStorage.contentResource(sha256), file.getId(), file.getOriginalName(),
+                        file.getUploadUserId(), inline),
+                bucketKey, start, length, taskLimit, response, "shareFileId=" + file.getId());
         if (!outcome.ok()) {
             log.warn("分享取件下发未完成：fileId={}, sent={}, reason={}",
                     file.getId(), outcome.sent(), outcome.failureReason());
@@ -442,14 +447,30 @@ public class FileDownloadService {
         return type + "; filename=\"" + asciiFallback + "\"; filename*=UTF-8''" + encoded;
     }
 
+    /**
+     * 织入水印扩展点。
+     *
+     * <p>CE 的 {@code NoopWatermarkProvider} 原样返回入流：字节不变，响应头（在取流之前就已按
+     * 原始长度写出）也不变。EE 启用明水印时，下载者身份由 EE 实现自行从安全上下文读取——
+     * 本方法只传文件侧信息，避免为了填两个字段而在<b>匿名分享下载</b>这条必须放行匿名请求的
+     * 链路上调用「当前登录用户」而引入新的异常面。</p>
+     */
+    private Resource watermarked(Resource raw, Long fileId, String originalName,
+                                 Long ownerUserId, boolean inline) {
+        return new WatermarkResource(raw, watermarkProvider,
+                new WatermarkProvider.WatermarkContext(fileId, originalName, ownerUserId, null, null, inline));
+    }
+
     /* ============================== 流式输出 ============================== */
 
     private void stream(FileNode node, String sha256, long start, long length,
-                        long taskLimit, HttpServletResponse response) {
+                        long taskLimit, boolean inline, HttpServletResponse response) {
         // 每一条下载流一个独立桶：任务粒度 = 一次传输，避免并发下载互相抢同一份额度
         String bucketKey = TASK_BUCKET_PREFIX + node.getId() + ":" + UUID.randomUUID();
-        StreamOutcome outcome = pump(fileStorage.contentResource(sha256), bucketKey, start, length,
-                taskLimit, response, "nodeId=" + node.getId());
+        StreamOutcome outcome = pump(
+                watermarked(fileStorage.contentResource(sha256), node.getId(), node.getName(),
+                        node.getOwnerUserId(), inline),
+                bucketKey, start, length, taskLimit, response, "nodeId=" + node.getId());
         if (outcome.ok()) {
             auditSuccess(node, outcome.sent());
         } else {

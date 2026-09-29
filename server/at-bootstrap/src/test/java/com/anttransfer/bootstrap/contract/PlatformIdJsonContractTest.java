@@ -141,9 +141,13 @@ class PlatformIdJsonContractTest {
     void countFieldsStayNumeric() throws Exception {
         JsonNode conversation = objectMapper.readTree(objectMapper.writeValueAsString(
                 new ConversationVO(1, SNOWFLAKE, "张三", null, SNOWFLAKE, "在吗", 1, SNOWFLAKE,
-                        false, null, 3L)));
+                        false, null, 3L, 2L)));
         assertTrue(conversation.get("unreadCount").isNumber(), "会话未读数是计数值，应保持数字");
         assertEquals(3L, conversation.get("unreadCount").asLong());
+        // 提及未读是同维度的计数值，必须与未读一样保持数字——一旦被连带字符串化，
+        // 前端 `mentionUnreadCount > 0` 的比较会在 "2" > 0 上静默成立，反倒更隐蔽
+        assertTrue(conversation.get("mentionUnreadCount").isNumber(), "提及未读数是计数值，应保持数字");
+        assertEquals(2L, conversation.get("mentionUnreadCount").asLong());
 
         JsonNode unread = objectMapper.readTree(objectMapper.writeValueAsString(
                 new UnreadCountVO(1L, 2L, 3L)));
@@ -156,7 +160,7 @@ class PlatformIdJsonContractTest {
     @DisplayName("回归：会话 targetId 字符串过线，回传后端不再查无此人")
     void conversationTargetIdSurvivesRoundTrip() throws Exception {
         ConversationVO vo = new ConversationVO(1, SNOWFLAKE, "李四", null, SNOWFLAKE, "收到", 1,
-                SNOWFLAKE, false, null, 0L);
+                SNOWFLAKE, false, null, 0L, 0L);
 
         JsonNode json = objectMapper.readTree(objectMapper.writeValueAsString(vo));
 

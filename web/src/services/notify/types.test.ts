@@ -31,6 +31,19 @@ describe('未读口径判定', () => {
     expect(isInboxNotify(6)).toBe(false);
     expect(isInboxNotify(7)).toBe(false);
   });
+
+  it('取件回执 9：计入红点，但不进待办、不属于会话', () => {
+    // 9 是「有人取走了文件」的正向回执，与 8 同属交付类提醒：该出现在导航栏红点里
+    expect(isInboxNotify(NotifyType.SHARE_ACCESSED)).toBe(true);
+    // 它不是「等我去处理的事」——进了待办就会变成永远清不掉的噪音
+    expect(isTodoNotify(NotifyType.SHARE_ACCESSED)).toBe(false);
+    expect(isChatNotify(NotifyType.SHARE_ACCESSED)).toBe(false);
+    expect(applyIncomingMessage(EMPTY_UNREAD, NotifyType.SHARE_ACCESSED)).toEqual({
+      inbox: 1,
+      todo: 0,
+      chat: 0,
+    });
+  });
 });
 
 describe('normalizeUnread', () => {

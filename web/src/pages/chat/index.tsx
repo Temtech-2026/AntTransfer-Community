@@ -60,6 +60,7 @@ import EmptyState from '@/components/EmptyState';
 import SectionCard from '@/components/SectionCard';
 import UserAvatar from '@/components/UserAvatar';
 import useChatAttachmentDraft from '@/hooks/useChatAttachmentDraft';
+import useChatMentionables from '@/hooks/useChatMentionables';
 import useChatPresence from '@/hooks/useChatPresence';
 import useCurrentUserAvatar from '@/hooks/useCurrentUserAvatar';
 import useWebSocket from '@/hooks/useWebSocket';
@@ -68,6 +69,7 @@ import {
   type ChatSession,
   type ChatTarget,
   type Conversation,
+  type ConversationSummaryLabels,
   type ConversationTitleLabels,
   type MessageSenderLabels,
   applyReadReceipt,
@@ -79,6 +81,7 @@ import {
   fetchChatHistory,
   fetchChatGroups,
   fetchConversations,
+  hasUnreadMention,
   isMine,
   isRecalled,
   isReceiptOfSession,
@@ -218,6 +221,16 @@ const ChatPage = () => {
    * 切换会话时必须清掉——留着会让下一条消息被误挂到另一个会话的引用上。</p>
    */
   const [quote, setQuote] = useState<ChatQuoteDraft | null>(null);
+  /**
+   * 本次正文里<b>仍然有效</b>的 {@code @} 提及对象（用户 ID）。
+   *
+   * <p>唯一写入方是输入框的 {@code onMentionChange}：用户删掉 {@code @昵称} 时它会把该人移除，
+   * 因此这里不需要（也不该）跟着正文再算一遍——两份判定迟早会分叉，而分叉的后果是
+   * 「@了却没人被点名」（见 components/ChatComposer/composer.ts 的 retainActiveMentions）。</p>
+   *
+   * <p>发送成功后正文被清空，输入框会再报一次空名单，所以这里不必自己清。</p>
+   */
+  const [mentionUserIds, setMentionUserIds] = useState<string[]>([]);
   // 待发文件、用途限制、拖拽投放与「先建授权再发消息」与即时通讯抽屉共用同一份实现，
   // 两个入口因此不会各走各的（见 hooks/useChatAttachmentDraft 文件头）
   const {
@@ -229,6 +242,8 @@ const ChatPage = () => {
     dropZoneProps,
     buildMessage,
   } = useChatAttachmentDraft();
+  // 可 @ 的群成员：单聊 / 未选中会话时是空名单，输入框据此不显示 @ 入口
+  const mentionables = useChatMentionables(activeSession);
 
   // —— 新建会话 ——
   const [newOpen, setNewOpen] = useState(false);
@@ -307,6 +322,16 @@ const ChatPage = () => {
     [labels],
   );
 
+  /**
+   * 摘要里「有人@我」前缀的文案（同样由页面注入 intl，纯函数不硬编码语言）。
+   *
+   * <p>列表渲染与关键字过滤共用同一份：过滤若少带这个前缀，
+   * 用户搜「有人@我」时会看到「明明列表里写着，却搜不到」。</p>
+   */
+  const summaryLabels = useMemo<ConversationSummaryLabels>(
+    () => ({ mentionMe: intl.formatMessage({ id: 'chat.mention.me' }) }),
+    [intl],
+  );
   const scrollToBottom = useCallback((smooth = false) => {
     const node = streamRef.current;
     if (!node) {
@@ -494,7 +519,12 @@ const ChatPage = () => {
       // 幂等键与授权建立都在共用草稿机里（含仅预览传 0、群聊不建授权等规则）；
       // 引用键也只在这里回传，服务端据此校验并把「谁说的 + 快照」写进这条消息
       const saved = await sendChatMessage(
-        await buildMessage(session, content, quote?.clientMsgId),
+        await buildMessage(
+          session,
+          content,
+          quote?.clientMsgId,
+          mentionUserIds,
+        ),
       );
       setInput('');
       // 引用随发送成功一起清掉：失败时保留，让用户改完正文能直接重试同一句引用
@@ -976,9 +1006,9 @@ const ChatPage = () => {
     return conversations.filter(
       (item) =>
         titleOf(item).toLowerCase().includes(query) ||
-        conversationSummary(item).toLowerCase().includes(query),
+        conversationSummary(item, summaryLabels).toLowerCase().includes(query),
     );
-  }, [conversations, keyword, titleOf]);
+  }, [conversations, keyword, summaryLabels, titleOf]);
 
   /** 我自己的头像（登录态）：气泡里「我发的」那一行不走消息载荷，见 `useCurrentUserAvatar`。 */
   const myAvatar = useCurrentUserAvatar();
@@ -1251,12 +1281,22 @@ const ChatPage = () => {
       message,
       messageSenderLabel(message.senderUserId, message, senderLabels),
     );
+    /**
+     * 这条消息是否点了我。
+     *
+     * <p>{@code mentioned} 是<b>行级</b>标记（写扩散下同一条消息每人一行），服务端只在
+     * 被点名者那一行置 1，所以「我这一行是 1」就等于「有人 @ 了我」，不需要解析正文里的昵称。
+     * 自己发的行恒为 0（服务端不会给自己打标记），因此不必再判方向。</p>
+     *
+     * <p>已撤回的排除在外：正文已经清空，再挂一个「有人@我」会让人以为撤回的那句话还读得到。</p>
+     */
+    const mentioned = !recalled && message.mentioned === true;
     // 已撤回的气泡不叠 `bubbleSelf`：撤回后两个方向长得一样是刻意的（见 index.style）
     const bubbleClass = recalled
       ? `${styles.bubble} ${styles.bubbleRecalled}`
       : `${styles.bubble}${mine ? ` ${styles.bubbleSelf}` : ''}${
           !mine && typed ? ` ${styles.bubbleTyped}` : ''
-        }`;
+        }${mentioned ? ` ${styles.bubbleMentioned}` : ''}`;
     return (
       <div
         key={messageKey(message)}
@@ -1293,6 +1333,15 @@ const ChatPage = () => {
             onQuote={() => setQuote(quoteDraft)}
           >
             <div className={bubbleClass}>
+              {/*
+                「有人@我」标记放在正文之前：光有一圈描边是说不清原因的
+                ——用户只会看到一条「不知为何被框起来」的消息（色盲 / 高对比度下更是毫无信息）
+              */}
+              {mentioned ? (
+                <span className={styles.bubbleMention}>
+                  {intl.formatMessage({ id: 'chat.mention.me' })}
+                </span>
+              ) : null}
               {recalled ? (
                 recalledText(message)
               ) : card ? (
@@ -1495,6 +1544,11 @@ const ChatPage = () => {
                           count={item.unreadCount}
                           size="small"
                           overflowCount={99}
+                          /* 有人 @ 我时把角标染成错误色：数字仍是未读总数
+                             （未读 @ 是它的子集，相加会报出比实际更多的未读数） */
+                          color={
+                            hasUnreadMention(item) ? token.colorError : undefined
+                          }
                         >
                           <UserAvatar
                             size={40}
@@ -1529,7 +1583,7 @@ const ChatPage = () => {
                             </span>
                           </div>
                           <div className={styles.itemSummary}>
-                            {conversationSummary(item)}
+                            {conversationSummary(item, summaryLabels)}
                           </div>
                         </div>
                       </button>
@@ -1597,6 +1651,10 @@ const ChatPage = () => {
                     allowEmpty={Boolean(attachment)}
                     maxLength={MAX_CONTENT}
                     autoSize={{ minRows: 3, maxRows: 6 }}
+                    /* 群成员名单为空（单聊 / 未选中会话）时输入框自然不显示 @ 入口 */
+                    mentionables={mentionables}
+                    /* setState 引用恒定：输入框内部按正文重算生效提及，只在内容变化时上报 */
+                    onMentionChange={setMentionUserIds}
                     placeholder={intl.formatMessage({
                       id: attachment
                         ? 'chat.attach.placeholder'

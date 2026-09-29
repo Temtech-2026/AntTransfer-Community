@@ -15,6 +15,7 @@
  */
 package com.anttransfer.file.storage;
 
+import com.anttransfer.common.spi.crypto.CryptoCodec;
 import com.anttransfer.file.config.FileProperties;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -52,6 +53,9 @@ public class LocalFileStorage implements FileStorage {
 
     private final FileProperties properties;
 
+    /** 内容编解码扩展点：CE 不加密透传，EE 接入 KMS 信封加密（读写两侧在此统一织入） */
+    private final CryptoCodec cryptoCodec;
+
     /** 归一化后的存储根（绝对路径），避免运行期反复 resolve 相对路径 */
     private Path root;
 
@@ -76,8 +80,11 @@ public class LocalFileStorage implements FileStorage {
         Files.createDirectories(target.getParent());
         Path tmp = target.getParent().resolve(sha256 + "." + UUID.randomUUID() + ".part");
         try {
-            try (OutputStream out = Files.newOutputStream(tmp)) {
-                in.transferTo(out);
+            try (OutputStream out = Files.newOutputStream(tmp);
+                 OutputStream encoded = cryptoCodec.encrypt(out, new CryptoCodec.CryptoContext(sha256, -1L))) {
+                // CE 的 PlainCryptoCodec 原样返回 out（关闭两次对 FileOutputStream 无副作用），
+                // 因此这段代码在 CE 与接入本扩展点之前的行为逐字节一致
+                in.transferTo(encoded);
             }
             try {
                 Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE);
@@ -114,7 +121,8 @@ public class LocalFileStorage implements FileStorage {
 
     @Override
     public Resource contentResource(String sha256) {
-        return new FileSystemResource(contentPath(sha256));
+        // 解密在读入口统一织入：CE 直通（字节不变），EE 启用加密后所有读取方自动拿到明文
+        return new CodecResource(new FileSystemResource(contentPath(sha256)), cryptoCodec, sha256);
     }
 
     @Override

@@ -73,6 +73,15 @@ export default {
   'chat.composer.group.objects': 'Objects and activities',
   'chat.composer.group.symbols': 'Symbols',
 
+  // @ mentions: the entry point only shows up in group chats (a direct chat has
+  // nobody to single out — see ChatComposer.mentionEnabled)
+  'chat.composer.mention': 'Mention someone',
+  'chat.composer.mentionPanel': 'Members you can mention',
+  'chat.composer.mentionEmpty': 'No matching member',
+  // "Mentioned you": shared by the conversation-list summary prefix, the badge
+  // emphasis and the mark on the message bubble
+  'chat.mention.me': 'Mentioned you',
+
   'chat.new.title': 'New conversation',
   'chat.new.scope.label': 'Conversation type',
   'chat.new.scope.private': 'Direct',

@@ -53,4 +53,16 @@ public class ConversationSummary {
 
     /** 该会话下我的未读条数（已读行不计入） */
     private Long unreadCount;
+
+    /**
+     * 该会话下「点名了我」的未读条数（{@code mentioned = 1 and read_status = 0}）。
+     *
+     * <p>与 {@link #unreadCount} 是<b>包含关系</b>而非并列关系：被点名的消息本身也是一条未读，
+     * 它同时计入两者。前端的用法因此是「未读角标显示 {@code unreadCount}，
+     * 若 {@code mentionUnreadCount > 0} 则把角标换成『有人 @ 我』的强调样式」，
+     * 而不是把两个数相加。</p>
+     *
+     * <p>聚合里两个 count 取自同一行、同一遍分组扫描，不额外增加一次查询。</p>
+     */
+    private Long mentionUnreadCount;
 }

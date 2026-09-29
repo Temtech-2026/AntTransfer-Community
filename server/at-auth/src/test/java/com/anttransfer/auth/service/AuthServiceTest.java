@@ -16,6 +16,8 @@
 package com.anttransfer.auth.service;
 
 import com.anttransfer.auth.config.AuthProperties;
+import com.anttransfer.auth.extension.IdentityProviderChain;
+import com.anttransfer.auth.extension.LocalIdentityProvider;
 import com.anttransfer.auth.model.LoginUser;
 import com.anttransfer.auth.model.dto.AuthDtos.ChangePasswordRequest;
 import com.anttransfer.auth.model.vo.AuthVos.TokenResponse;
@@ -25,6 +27,9 @@ import com.anttransfer.auth.security.JwtTokenProvider;
 import com.anttransfer.common.audit.OperationLog;
 import com.anttransfer.common.exception.AuthException;
 import com.anttransfer.common.exception.BusinessException;
+import com.anttransfer.common.security.AuthenticatedUser;
+import com.anttransfer.common.spi.identity.AuthenticationRequest;
+import com.anttransfer.common.spi.identity.IdentityProvider;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -79,6 +84,11 @@ class AuthServiceTest {
         props.setLoginLockDuration(Duration.ofMinutes(15));
         properties = props;
 
+        // 装配真实的 CE 身份源链（本地账号 + BCrypt），使编排测试同时覆盖 SPI 接缝：
+        // 身份源只负责「证明是不是本人」，失败计数 / 锁定 / 令牌签发仍由 AuthService 负责
+        IdentityProviderChain chain = new IdentityProviderChain(
+                List.of(new LocalIdentityProvider(userMapper, passwordEncoder)));
+
         authService = new AuthService(
                 userMapper,
                 passwordEncoder,
@@ -86,7 +96,8 @@ class AuthServiceTest {
                 sessionService,
                 attemptService,
                 props,
-                auditLogger);
+                auditLogger,
+                chain);
     }
 
     @AfterEach
@@ -118,6 +129,7 @@ class AuthServiceTest {
     void loginSuccess_shouldIssueTokensAndResetFailureCounter() {
         SysUser user = normalUser(1L, "alice");
         when(userMapper.selectByUsername("alice")).thenReturn(user);
+        when(userMapper.selectById(1L)).thenReturn(user);
         when(passwordEncoder.matches("pwd", user.getPasswordHash())).thenReturn(true);
         when(attemptService.isLocked("alice")).thenReturn(false);
         when(userMapper.selectRoleCodes(1L)).thenReturn(java.util.List.of("USER"));
@@ -186,6 +198,47 @@ class AuthServiceTest {
         AuthException e = assertThrows(AuthException.class, () -> authService.login("ghost", "x"));
         assertEquals(1007, e.getErrorCode().getCode());
         verify(attemptService, times(1)).recordFailure("ghost");
+    }
+
+    @Test
+    void customIdentityProvider_shouldAuthenticateAndLoadAuthoritativeLocalRow() {
+        // EE 场景：企业身份源认领 alice@corp.example，CE 本地口令链路完全不参与
+        SysUser user = normalUser(7L, "sso-user");
+        when(attemptService.isLocked("alice@corp.example")).thenReturn(false);
+        when(userMapper.selectById(7L)).thenReturn(user);
+        when(userMapper.selectRoleCodes(7L)).thenReturn(List.of("USER"));
+
+        IdentityProvider enterprise = new IdentityProvider() {
+            @Override
+            public String providerId() {
+                return "test-enterprise";
+            }
+
+            @Override
+            public boolean supports(AuthenticationRequest request) {
+                return request.username().endsWith("@corp.example");
+            }
+
+            @Override
+            public AuthenticatedUser authenticate(AuthenticationRequest request) {
+                LoginUser principal = new LoginUser();
+                principal.setId(7L);
+                principal.setUsername("sso-user");
+                return principal;
+            }
+        };
+        AuthService ssoService = new AuthService(userMapper, passwordEncoder, new JwtTokenProvider(properties),
+                sessionService, attemptService, properties, auditLogger,
+                new IdentityProviderChain(List.of(enterprise)));
+
+        TokenResponse response = ssoService.login("alice@corp.example", "whatever");
+
+        assertNotNull(response.accessToken());
+        // 换身份源不得触碰本地口令校验，也不得回落到本地账号查询
+        verify(passwordEncoder, never()).matches(anyString(), anyString());
+        verify(userMapper, never()).selectByUsername(anyString());
+        // 但令牌与角色仍取本地权威行
+        verify(sessionService).openSession(eq(7L), eq(3L), anyString());
     }
 
     @Test

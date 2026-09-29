@@ -13,9 +13,25 @@
  *
  * <p>表情面板不依赖任何第三方库：正文是纯文本，表情就是 Unicode 字符，
  * 长度口径与后端 {@code @Size(max = 1000)} 完全一致（详见 ./emoji.ts 的文件头说明）。</p>
+ *
+ * <p><b>{@code @} 提及只在群聊启用</b>（由调用方传 {@link ChatComposerProps.mentionables} 决定，
+ * 单聊不传即无此入口）：输入 {@code @} 或点工具栏的 {@code @} 按钮弹出成员候选，
+ * 选中后往正文里插入 {@code @昵称 }，并把该成员的 ID 通过
+ * {@link ChatComposerProps.onMentionChange} 报给调用方，由调用方在发送时随消息带上。
+ * 正文里写的 {@code @昵称} 是给人看的，ID 列表才是服务端用来给被点名者打标记的依据
+ * （理由见 ./composer.ts 的 {@link insertMention}）。</p>
+ *
+ * <p><b>提及只在正文里留痕、不进入任何本地状态机</b>：哪些 {@code @} 仍然有效，
+ * 完全由「{@code @昵称} 这段文本还在不在正文里」决定（
+ * {@link retainActiveMentions}），组件本身不记录插入位置——用户删掉它的方式太多，
+ * 记住位置的方案总有一种编辑方式会失效。</p>
  */
 
-import { ClockCircleOutlined, SendOutlined, SmileOutlined } from '@ant-design/icons';
+import {
+  ClockCircleOutlined,
+  SendOutlined,
+  SmileOutlined,
+} from '@ant-design/icons';
 import { useIntl } from '@umijs/max';
 import { createStyles } from 'antd-style';
 import { Button, Input, Tooltip } from 'antd';
@@ -31,13 +47,21 @@ import {
 
 import {
   type EmojiStorage,
+  type MentionCandidate,
+  type MentionTrigger,
+  filterMentionCandidates,
   insertAtCaret,
+  insertMention,
+  pushMention,
   pushRecentEmoji,
   readRecentEmoji,
   resolveComposerKey,
+  resolveMentionTrigger,
+  retainActiveMentions,
   writeRecentEmoji,
 } from './composer';
 import { EMOJI_GROUPS, type EmojiGroup } from './emoji';
+import MentionPanel from './MentionPanel';
 
 /** 「最近使用」分组在页签里的键（与静态分组区分开）。 */
 const RECENT_GROUP_KEY = 'recent';
@@ -143,6 +167,22 @@ const useStyles = createStyles(({ token }) => ({
     },
   },
 
+  /**
+   * {@code @} 入口按钮。
+   *
+   * <p>{@code @ant-design/icons} 里没有 {@code At} 图标，用文字 {@code @} 而不是找个
+   * 「大概像」的图标顶替：提及的语义符号就是 {@code @} 本身，用户一眼能对上，
+   * 换成人形 / 团队图标反而要靠猜（图标的可访问名还得另写一遍）。</p>
+   */
+  mentionButton: {
+    height: 32,
+    minWidth: 32,
+    padding: 0,
+    fontSize: 16,
+    fontWeight: 600,
+    lineHeight: 1,
+  },
+
   /** 分类页签（微信把分类放在面板底部）。 */
   tabs: {
     display: 'flex',
@@ -222,6 +262,25 @@ export interface ChatComposerProps {
    * 放在框内工具栏而不是框外，是为了对齐微信的手感——入口与发送按钮同属输入框。</p>
    */
   tools?: ReactNode;
+  /**
+   * 可 {@code @} 的成员（群聊传入；单聊 / 不传 = 不启用提及入口）。
+   *
+   * <p>由调用方传入而不是组件自己去拉：「谁是本会话可点名的人」属会话上下文，
+   * 调用方（聊天页 / 抽屉）本就持有群成员；组件再拉一次会出现
+   * 「输入框的名单比页面标题晚一拍」这类不一致。空数组与不传等价。</p>
+   */
+  mentionables?: readonly MentionCandidate[];
+  /**
+   * 当前生效的提及对象（用户 ID 列表）变化时回调，调用方在发送时随消息带上。
+   *
+   * <p><b>调用方请用稳定引用</b>（{@code useCallback}）：正文每次变化都会重算生效提及，
+   * 内联箭头函数会让这个回调在父组件每次渲染时换引用。组件内部已用 ref 兜住
+   * 「回调换了引用就重算」的循环，但入参抖动仍会让父组件自己的依赖数组失去意义。</p>
+   *
+   * <p>不传 = 调用方不关心提及（如只读预览）；此时正文照样可以写 {@code @昵称}，
+   * 只是不会有人被真正点名。</p>
+   */
+  onMentionChange?: (userIds: string[]) => void;
   /** 窄容器（即时通讯抽屉）用紧凑内边距。 */
   compact?: boolean;
   /** 无外壳（弹窗里内嵌使用）：去掉输入区自身的内边距与上分隔线。 */
@@ -250,6 +309,8 @@ const ChatComposer = ({
   sendLabel,
   header,
   tools,
+  mentionables,
+  onMentionChange,
   compact = false,
   bare = false,
 }: ChatComposerProps) => {
@@ -261,10 +322,31 @@ const ChatComposer = ({
   const [recent, setRecent] = useState<readonly string[]>([]);
   const [activeGroup, setActiveGroup] = useState<string>(EMOJI_GROUPS[0].key);
 
+  /**
+   * 有候选成员才启用 {@code @}：单聊没有「点名」语义，
+   * 给它一个永远弹不出人的入口只会让用户以为功能坏了。
+   */
+  const mentionEnabled = (mentionables?.length ?? 0) > 0;
+  /** 当前正在输入中的 `@` 查询词；`null` = 候选面板未打开。 */
+  const [mentionTrigger, setMentionTrigger] = useState<MentionTrigger | null>(null);
+  /** 候选面板的高亮项（鼠标悬停与上下键共用同一个「当前项」）。 */
+  const [mentionIndex, setMentionIndex] = useState(0);
+  /** 已确认插入、且正文里仍然留着的提及。 */
+  const [mentions, setMentions] = useState<readonly MentionCandidate[]>([]);
+
   const domRef = useRef<HTMLTextAreaElement | null>(null);
   const caretRef = useRef<{ start: number; end: number } | null>(null);
   /** 整个输入区的根节点：用来判定「点的是面板外面」。 */
   const rootRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * {@code onMentionChange} 经 ref 调用：回调若来自内联箭头函数，每次父渲染都会换引用，
+   * 直接写进 effect 依赖会让「上报提及」在父组件每次渲染时重跑，
+   * 而它又要 setState 到父组件——那就是一个渲染环。ref 让 effect 只依赖提及本身。
+   */
+  const mentionChangeRef = useRef(onMentionChange);
+  mentionChangeRef.current = onMentionChange;
+  /** 上一次上报过的 ID 串：内容没变就不上报，免得父组件白渲染一次。 */
+  const reportedMentionsRef = useRef('');
 
   /** 同一页可能有多处输入框（页 + 抽屉），面板与页签的关联 id 必须唯一。 */
   const panelId = useId();
@@ -282,6 +364,8 @@ const ChatComposer = ({
   };
 
   const togglePanel = useCallback(() => {
+    // 表情面板与提及候选共用输入框下方这块位置：开一个必须收另一个，否则会叠在一起
+    setMentionTrigger(null);
     setPanelOpen((open) => {
       if (open) {
         return false;
@@ -294,6 +378,133 @@ const ChatComposer = ({
     });
   }, [storage]);
 
+  /* ------------------------------- @ 提及 ------------------------------- */
+
+  /** 候选：只在面板打开时按查询词过滤（面板没开时算出来也没有消费者）。 */
+  const mentionCandidates = useMemo(
+    () =>
+      mentionTrigger
+        ? filterMentionCandidates(mentionables ?? [], mentionTrigger.query)
+        : [],
+    [mentionables, mentionTrigger],
+  );
+
+  /**
+   * 同步 `@` 触发上下文，且**只在内容真的变化时才 setState**。
+   *
+   * <p>它在每次按键（{@code onKeyUp}）后都会被调用：方向键、Home/End 都会移动光标，
+   * 而「光标前有没有正在输入的 {@code @}」正是由光标位置决定的。若每次按键都写入一个
+   * 新对象，按一下方向键就会重渲染一次整个输入框。</p>
+   */
+  const syncMentionTrigger = useCallback(
+    (text: string, caret: number) => {
+      if (!mentionEnabled) {
+        return;
+      }
+      setMentionTrigger((prev) => {
+        const next = resolveMentionTrigger(text, caret);
+        if (prev === null && next === null) {
+          return prev;
+        }
+        if (
+          prev !== null &&
+          next !== null &&
+          prev.start === next.start &&
+          prev.query === next.query
+        ) {
+          return prev;
+        }
+        return next;
+      });
+      // 查询词变了，高亮项回到第一个（值本已是 0 时 React 会自行跳过这次重渲染）
+      setMentionIndex(0);
+    },
+    [mentionEnabled],
+  );
+
+  /** 把光标落回指定位置：受控输入框重渲染后会丢选区，只能等 DOM 落地再自己设。 */
+  const focusCaret = useCallback((caret: number) => {
+    window.requestAnimationFrame(() => {
+      const dom = domRef.current;
+      if (!dom) {
+        return;
+      }
+      dom.focus();
+      dom.setSelectionRange(caret, caret);
+    });
+  }, []);
+
+  /**
+   * 选中候选成员：把 `@查询词` 就地换成 `@昵称 `，并记下这条提及。
+   *
+   * <p>插入后立刻收起面板——用户选完人就该继续打字，面板再杵着只会挡住消息流。</p>
+   */
+  const handlePickMention = useCallback(
+    (member: MentionCandidate) => {
+      if (!mentionTrigger) {
+        return;
+      }
+      const next = insertMention(value, mentionTrigger, member);
+      onChange(next.value);
+      setMentions((prev) => pushMention(prev, next.mention));
+      setMentionTrigger(null);
+      caretRef.current = { start: next.caret, end: next.caret };
+      focusCaret(next.caret);
+    },
+    [focusCaret, mentionTrigger, onChange, value],
+  );
+
+  /**
+   * 点工具栏的 {@code @}：在光标处插入一个 `@` 并把候选面板打开。
+   *
+   * <p>不直接弹出「全部成员」列表，而是先落下 `@` 字符——这样按钮与「用户自己敲 @」
+   * 走的是完全同一条路径（同一个触发解析、同一个过滤），不必为按钮单开一套状态。</p>
+   */
+  const handleOpenMention = useCallback(() => {
+    if (mentionTrigger) {
+      setMentionTrigger(null);
+      return;
+    }
+    setPanelOpen(false);
+    const { start } = caretRef.current ?? {};
+    const at = start ?? value.length;
+    const next = insertAtCaret(value, '@', at, at);
+    onChange(next.value);
+    caretRef.current = { start: next.caret, end: next.caret };
+    setMentionTrigger({ start: at, query: '' });
+    setMentionIndex(0);
+    focusCaret(next.caret);
+  }, [focusCaret, mentionTrigger, onChange, value]);
+
+  /**
+   * 正文变化后剔除「已经被删掉」的提及。
+   *
+   * <p>没有变化时返回原数组引用，避免「每敲一个字就多一次重渲染」。</p>
+   */
+  useEffect(() => {
+    if (!mentionEnabled) {
+      return;
+    }
+    setMentions((prev) => {
+      const active = retainActiveMentions(value, prev);
+      return active.length === prev.length ? prev : active;
+    });
+  }, [mentionEnabled, value]);
+
+  /** 把生效提及报给调用方（它会在发送时随消息带上）。内容没变就不上报。 */
+  useEffect(() => {
+    if (!mentionEnabled) {
+      return;
+    }
+    const userIds = mentions.map((item) => item.userId);
+    const signature = userIds.join(',');
+    if (signature === reportedMentionsRef.current) {
+      return;
+    }
+    reportedMentionsRef.current = signature;
+    mentionChangeRef.current?.(userIds);
+  }, [mentionEnabled, mentions]);
+
   /**
    * 面板收起的两条「不用找按钮」的路子：点面板外面、按 Esc。
    *
@@ -305,7 +516,7 @@ const ChatComposer = ({
    * （用户可能刚点过分类页签），挂在输入框上的那份会漏掉。</p>
    */
   useEffect(() => {
-    if (!panelOpen) {
+    if (!panelOpen && mentionTrigger === null) {
       return undefined;
     }
     const handlePointerDown = (event: MouseEvent | TouchEvent) => {
@@ -316,10 +527,12 @@ const ChatComposer = ({
         return;
       }
       setPanelOpen(false);
+      setMentionTrigger(null);
     };
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setPanelOpen(false);
+        setMentionTrigger(null);
       }
     };
     document.addEventListener('mousedown', handlePointerDown);
@@ -330,7 +543,7 @@ const ChatComposer = ({
       document.removeEventListener('touchstart', handlePointerDown);
       document.removeEventListener('keydown', handleEscape);
     };
-  }, [panelOpen]);
+  }, [mentionTrigger, panelOpen]);
 
   /** 「最近使用」置顶后写入本地，下次打开直接可用。 */
   const rememberEmoji = useCallback(
@@ -387,12 +600,45 @@ const ChatComposer = ({
    */
   const handleSend = useCallback(() => {
     setPanelOpen(false);
+    setMentionTrigger(null);
     onSend();
   }, [onSend]);
 
+  /**
+   * 键盘事件的第一优先级是「提及候选面板」。
+   *
+   * <p><b>输入法组合期必须整块让行</b>：中文昵称的拼音还没上屏时，回车是「选词」、
+   * 上下键是「翻候选词页」——被我们抢去当确认键，用户就根本打不出中文。
+   * 判定同时看 {@code isComposing} 与 {@code keyCode === 229}
+   * （Safari 在 compositionend 之后 isComposing 已为 false，只剩 229 可判），
+   * 与 {@link resolveComposerKey} 同一口径。</p>
+   */
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Escape' && panelOpen) {
+    const composing =
+      event.nativeEvent.isComposing ||
+      (event.nativeEvent as KeyboardEvent).keyCode === 229;
+    if (mentionTrigger && mentionCandidates.length > 0 && !composing) {
+      const total = mentionCandidates.length;
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setMentionIndex((index) => (index + 1) % total);
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setMentionIndex((index) => (index - 1 + total) % total);
+        return;
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        // 下标可能因候选收窄而越界，兜底取第一项
+        handlePickMention(mentionCandidates[mentionIndex] ?? mentionCandidates[0]);
+        return;
+      }
+    }
+    if (event.key === 'Escape' && !composing && (panelOpen || mentionTrigger)) {
       setPanelOpen(false);
+      setMentionTrigger(null);
       return;
     }
     const action = resolveComposerKey({
@@ -437,12 +683,28 @@ const ChatComposer = ({
           showCount={showCount}
           disabled={disabled}
           placeholder={placeholder}
-          onChange={(event) => onChange(event.target.value)}
+          onChange={(event) => {
+            rememberCaret(event.target);
+            onChange(event.target.value);
+            syncMentionTrigger(
+              event.target.value,
+              event.target.selectionStart ?? event.target.value.length,
+            );
+          }}
           onKeyDown={handleKeyDown}
           onFocus={(event) => rememberCaret(event.target)}
           onSelect={(event) => rememberCaret(event.target)}
-          // 纯键盘移动光标（方向键、Home/End）不走 select，得靠 keyUp 补上
-          onKeyUp={(event) => rememberCaret(event.target)}
+          // 纯键盘移动光标（方向键、Home/End）不走 select，得靠 keyUp 补上；
+          // 而光标一动，「光标前是不是正在输入 @」也可能跟着变，故一并重算提及上下文
+          onKeyUp={(event) => {
+            // currentTarget 才带 textarea 的类型：target 是 EventTarget，取不到 value / selectionStart
+            const element = event.currentTarget;
+            rememberCaret(element);
+            syncMentionTrigger(
+              element.value,
+              element.selectionStart ?? element.value.length,
+            );
+          }}
         />
         <div className={styles.toolbar}>
           <div className={styles.tools}>
@@ -459,6 +721,23 @@ const ChatComposer = ({
                 onClick={togglePanel}
               />
             </Tooltip>
+            {mentionEnabled ? (
+              <Tooltip
+                title={intl.formatMessage({ id: 'chat.composer.mention' })}
+              >
+                <Button
+                  type="text"
+                  className={styles.mentionButton}
+                  aria-label={intl.formatMessage({ id: 'chat.composer.mention' })}
+                  aria-expanded={mentionTrigger !== null}
+                  // 同上：按下不抢焦点，光标留在正文里，提及才插得准
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={handleOpenMention}
+                >
+                  @
+                </Button>
+              </Tooltip>
+            ) : null}
             {tools}
           </div>
           <Tooltip title={intl.formatMessage({ id: 'chat.composer.sendHint' })}>
@@ -532,6 +811,22 @@ const ChatComposer = ({
             })}
           </div>
         </div>
+      ) : null}
+
+      {/*
+        提及候选：与表情面板互斥（togglePanel 与 handleOpenMention 各收对方），
+        因此这里不会再与表情面板叠在一起。
+        空候选也照常渲染——面板突然消失会让用户以为 @ 功能坏了，留一句「没有匹配成员」更清楚。
+      */}
+      {mentionTrigger !== null ? (
+        <MentionPanel
+          candidates={mentionCandidates}
+          activeIndex={mentionIndex}
+          panelLabel={intl.formatMessage({ id: 'chat.composer.mentionPanel' })}
+          emptyLabel={intl.formatMessage({ id: 'chat.composer.mentionEmpty' })}
+          onHover={setMentionIndex}
+          onPick={handlePickMention}
+        />
       ) : null}
     </div>
   );

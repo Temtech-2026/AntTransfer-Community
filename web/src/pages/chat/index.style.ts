@@ -239,6 +239,26 @@ const useStyles = createStyles(({ token }) => ({
   },
 
   /**
+   * 被点名（{@code @} 了我）的气泡：加一道强调描边。
+   *
+   * <p><b>为什么用 {@code box-shadow} 而不是 {@code border}：</b>非文本消息的
+   * {@link bubbleTyped} 也占用了边框（左侧竖条），两个类同时出现时谁覆盖谁取决于样式插入顺序，
+   * 而插入顺序由「哪个类先被用过」决定——那不是可以依赖的东西。内阴影不参与边框计算，
+   * 两者可以共存。</p>
+   */
+  bubbleMentioned: {
+    boxShadow: `inset 0 0 0 1px ${token.colorError}`,
+  },
+
+  /** 气泡内的「有人@我」标记：文字必须给出来，描边只是加速扫视（同文件头「不能只靠颜色」）。 */
+  bubbleMention: {
+    display: 'block',
+    marginBottom: 2,
+    color: token.colorError,
+    fontSize: token.fontSizeSM,
+  },
+
+  /**
    * 已撤回气泡：底色与正文色一起退到「这不是一句话」的层级。
    *
    * <p><b>为什么不能只靠文字：</b>同一条消息撤回前后占的是同一个位置，正文却被清空了，

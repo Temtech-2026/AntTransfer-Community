@@ -62,11 +62,16 @@ export interface ChatAttachmentDraft {
    * @param session          发往哪个会话
    * @param text             正文；带附件时是附言，可以为空
    * @param quoteClientMsgId 被引用消息的幂等键（选填，非空即「引用回复」）
+   * @param mentionUserIds   {@code @} 提及对象的用户 ID 列表（选填，仅群聊生效）。
+   *                         由输入框的回调给出（见 {@code ChatComposer}），
+   *                         这里只做「非群聊一律不带」的收敛——单聊没有点名语义，
+   *                         让一个永远无效的字段在载荷里流动，排查时只会误导
    */
   buildMessage: (
     session: ChatSession,
     text: string,
     quoteClientMsgId?: string | null,
+    mentionUserIds?: readonly string[] | null,
   ) => Promise<ChatSendPayload>;
 }
 
@@ -109,6 +114,9 @@ const useChatAttachmentDraft = (): ChatAttachmentDraft => {
       // 是为了让「引用」与「附件授权」共用同一个 clientMsgId——两者同源是既定口径
       // （见下方幂等键注释），分成两处拼接早晚会漂移
       quoteClientMsgId?: string | null,
+      // @ 提及对象（选填，仅群聊）。它不影响 clientMsgId / 授权的任何口径，
+      // 只是随正文一起过线的「点名名单」，故单独作为末位参数而不并入上面的对象
+      mentionUserIds?: readonly string[] | null,
     ): Promise<ChatSendPayload> => {
       // 幂等键同源：一条消息与它携带的授权必须共用同一个键。各生成一个随机键的话，
       // 重试时消息被去重了、授权却会多出一条，发送方列表里凭空多一份额度
@@ -149,6 +157,11 @@ const useChatAttachmentDraft = (): ChatAttachmentDraft => {
           : text,
         clientMsgId,
         quoteClientMsgId: quoteClientMsgId ?? undefined,
+        // 非群聊一律不带：服务端对单聊的提及是静默忽略的，前端也不该把无效字段发出去
+        mentionUserIds:
+          session.chatScope === ChatScope.GROUP && mentionUserIds?.length
+            ? [...mentionUserIds]
+            : undefined,
       };
     },
     [attachment, policy],

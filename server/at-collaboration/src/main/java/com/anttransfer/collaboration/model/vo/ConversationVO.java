@@ -51,6 +51,10 @@ import java.time.LocalDateTime;
  * @param lastMessageMine  最后一条消息是否我发的（前端据此渲染「我：」前缀）
  * @param lastTime         最后一条消息时间
  * @param unreadCount      该会话未读数（0 表示无未读，前端不渲染角标）
+ * @param mentionUnreadCount 该会话未读里「点名了我」的条数（{@code @} 提及）。
+ *                        <b>与 {@code unreadCount} 是包含关系</b>：被点名的消息也是未读，
+ *                        同时计入两者——前端据此把角标换成强调样式，而不是把两个数相加。
+ *                        0 表示这个会话里没有「有人 @ 我」的未读
  * @author AntTransfer CE
  * @implNote ID 字段以字符串过线，理由见 {@code UserVO}；此处漏标即「点已有会话发消息报
  * 目标用户不存在」的直接根因——targetId 被前端舍入后再回传，后端自然查无此人。
@@ -69,5 +73,6 @@ public record ConversationVO(
         Long lastSenderUserId,
         boolean lastMessageMine,
         LocalDateTime lastTime,
-        long unreadCount) {
+        long unreadCount,
+        long mentionUnreadCount) {
 }

@@ -15,8 +15,9 @@
  */
 package com.anttransfer.permission.extension;
 
+import com.anttransfer.common.spi.approval.ApprovalContext;
+import com.anttransfer.common.spi.approval.ApprovalNodeResolver;
 import com.anttransfer.permission.config.ApprovalProperties;
-import com.anttransfer.permission.model.ApprovalContext;
 
 import java.util.List;
 import java.util.Objects;

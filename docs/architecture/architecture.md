@@ -239,19 +239,20 @@ server/at-<module>/src/main/java/com/anttransfer/<module>/
 
 > **原则**：CE 不实现的能力，**在架构上留出接缝**——先定接口，CE 提供默认实现（或不装配），EE 立项时按同一接口插入，**不改已发布业务代码**。
 > 📌 权威接口命名以**附录 C** 为准：`IdentityProvider` / `ContentScanInterceptor` / `WatermarkProvider` / `CryptoCodec` / `VirusScanner` / `ApprovalNodeResolver` / `TransportStrategy`。
-> ⚠️ **落地状态（2026-09-13）**：以下接口**当前全部尚未在代码中建立**（PRD §8 已自认该缺口）；建立时机见 §2.3。
+> ✅ **落地状态（2026-09-29）**：7 个接口**已全部在 `at-common` 的 `spi` 包建立**，CE 默认实现与 `@ConditionalOnMissingBean` 装配门禁**同批落地**（实际签名见 §2.2，落地清单见 §2.3，测试入口见 §2.3 末列）。据此 **`A-6` / `D-2` 的「接口未建」部分关闭**；`D-2` 残留「附录 C 原文入库」一项见 §2.4。
+> ⚠️ 本文原 2026-09-13 记录「以下接口当前全部尚未在代码中建立」——该状态**已失效**，保留为历史沿革。
 
 ### 2.1 扩展点总表
 
 | # | 接口 | 承载能力（Won't 项） | 归属模块 | 接口位置 | CE 默认实现 | EE 计划实现 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 | `IdentityProvider` | SSO / OIDC / LDAP / SAML | `at-auth` | `at-common` SPI | `LocalIdentityProvider`（账号密码 + BCrypt） | `OidcIdentityProvider` / `LdapIdentityProvider` |
-| 2 | `ContentScanInterceptor` | AI DLP（内容扫描 / 敏感词 / 涉密识别） | `at-file` | `at-common` SPI（**CE 暂落 `at-file` 模块内**，见 [AT-DIFF-09](../development/AT-DIFF-todos.md#at-diff-09-contentscaninterceptor-落点)） | **`SuffixAndKeywordScanInterceptor`**（后缀黑名单 + 文件名敏感词，命中即 4007 并审计） | `DlpContentScanInterceptor` |
-| 3 | `WatermarkProvider` | 盲水印 / DRM | `at-transfer`（下载）、`at-file`（分享下载；原规划 at-collaboration，见 [AT-DIFF-06](../development/AT-DIFF-todos.md#at-diff-06-外发分享模块归属)） | `at-common` SPI | `NoopWatermarkProvider`（原样输出流） | `BlindWatermarkProvider` / `DrmWatermarkProvider` |
+| 2 | `ContentScanInterceptor` | AI DLP（内容扫描 / 敏感词 / 涉密识别） | `at-file` | `at-common` SPI（**✅ 2026-09-29 上收**，原 CE 暂落 `at-file`，见 [AT-DIFF-09](../development/AT-DIFF-todos.md#at-diff-09-contentscaninterceptor-落点)） | **`SuffixAndKeywordScanInterceptor`**（后缀黑名单 + 文件名敏感词，命中即 4007 并审计；实现留在 `at-file`） | `DlpContentScanInterceptor` |
+| 3 | `WatermarkProvider` | 盲水印 / DRM | `at-file`（下载与分享下载；`at-transfer` 为**计划位**，其链路上目前无流式渲染点，见 §2.3 注） | `at-common` SPI | `NoopWatermarkProvider`（原样返回输入流） | `BlindWatermarkProvider` / `DrmWatermarkProvider` |
 | 4 | `CryptoCodec` | KMS 存储加密（信封加密） | `at-file`（存储层） | `at-common` SPI | `PlainCryptoCodec`（明文直通） | `KmsEnvelopeCodec` |
 | 5 | `VirusScanner` | 杀毒 / 木马扫描 | `at-file` | `at-common` SPI | `NoopVirusScanner`（PASS） | `ClamAvVirusScanner` |
-| 6 | `ApprovalNodeResolver` | 动态多级审批 / 会签 | `at-permission` | `at-common` SPI | `SingleNodeApprovalResolver`（CE 固定 `node_seq=1`） | `MultiNodeApprovalResolver`（读 `sys_approval_node`） |
-| 7 | `TransportStrategy` | QUIC / HTTP3 | `at-gateway` + `at-transfer` | `at-common` SPI | `HttpTransportStrategy` | `QuicTransportStrategy` |
+| 6 | `ApprovalNodeResolver` | 动态多级审批 / 会签 | `at-permission` | `at-common` SPI（**✅ 2026-09-29 上收**） | `SingleNodeApprovalResolver`（CE 固定 `node_seq=1`） | `MultiNodeApprovalResolver`（读 `sys_approval_node`） |
+| 7 | `TransportStrategy` | QUIC / HTTP3 | `at-gateway` + `at-transfer` | `at-common` SPI | `HttpTransportStrategy`（落 `at-gateway`；**装配为 Bean 名称级**，EE 新增协议与 HTTP **共存**而非顶替，见 §2.3） | `QuicTransportStrategy` |
 
 > 🔗 **与 PRD §8 命名的映射**（两处口径需统一，见 §2.4）：
 >
@@ -266,66 +267,97 @@ server/at-<module>/src/main/java/com/anttransfer/<module>/
 > | （附录 C 未列） | `FileStore`（存储抽象）、`AuditSink`（审计出口）、组织边界抽象 | **保留 PRD 现名**；`FileStore` 见 §2.2-8 |
 > | （附录 C 未列） | 多租户「组织边界抽象」 | CE 不建租户列，仅约定账号/组织模型不写死单租户假设 |
 
-### 2.2 接口契约草案（示意签名）
+### 2.2 接口契约（**已落地**，与代码一致）
 
-> 以下为**待建立的契约草案**，用于锁定 EE 接缝形状；实现时可按需微调，但**包位置与语义不得漂移**。
+> **✅ 2026-09-29**：以下签名已落地，与 `server/at-common/src/main/java/com/anttransfer/common/spi/` 下源码一致；业务方按本节理解接缝即可，不必再翻源码。
+> 变更纪律：**包位置与语义不得漂移**；确需改签名时同步回写本节与 §2.1。原「契约草案（示意签名）」措辞作废——草案与实际实现的差异已在下方逐条标注，是本节的价值所在。
 
 ```java
-package com.anttransfer.common.spi;
+package com.anttransfer.common.spi;      // 实际按子包组织：identity / scan / crypto / watermark / approval / transport
 
-// 1) 认证入口：CE 本地账号，EE 接 SSO/OIDC/LDAP
+// 1) 认证入口（spi.identity）：CE 本地账号，EE 接 SSO / OIDC / LDAP
 public interface IdentityProvider {
-    String providerId();                                          // "local" / "oidc" / "ldap"
+    String providerId();                                             // "local" / "oidc" / "ldap"
     boolean supports(AuthenticationRequest request);
-    AuthenticatedUser authenticate(AuthenticationRequest request); // 失败抛 AuthException
+    AuthenticatedUser authenticate(AuthenticationRequest request);    // 失败抛 AuthException
 }
+record AuthenticationRequest(String username, String rawPassword) {}
 
-// 2) 文件入库后处理管道：CE 空管道，EE 插入 DLP
+// 2) 外发内容扫描（spi.scan）：CE「后缀黑名单 + 文件名敏感词」，EE 接 AI DLP
+//    ⚠️ 与草案差异：去掉 `int order()` 与 `ScanVerdict`，改由 @Order 排序 + ScanResult.deny(reason)
 public interface ContentScanInterceptor {
-    int order();                                                  // 有序管道，值小者先执行
-    ScanVerdict inspect(ScanContext context);                     // PASS / REJECT / QUARANTINE
+    ScanResult scan(ScanContext context);      // 有序管道 + Deny 优先 + fail-closed（抛异常按拒绝）
 }
+record ScanContext(Long fileId, String originalName, String extension, long sizeBytes, Long ownerUserId) {}
+record ScanResult(boolean denied, String reason) { allow(); deny(String reason); }
 
-// 3) 病毒扫描：可作为 ContentScanInterceptor 的一个实现
+// 3) 病毒扫描（spi.scan）：入库前管道，CE Noop PASS，EE 接 ClamAV 等
 public interface VirusScanner {
-    ScanVerdict scan(FileHandle file);                            // 未装配 = 跳过（CE）
+    String scannerId();
+    VirusScanResult scan(VirusScanContext context);
 }
+record VirusScanContext(String sha256, String originalName, String extension, long sizeBytes,
+                        Long ownerUserId, ContentAccess content) {}    // content 为惰性访问器：不读则零开销
+record VirusScanResult(boolean infected, String threat) { clean(); infected(String threat); }
 
-// 4) 下载渲染管线：CE 原样输出，EE 加水印/DRM
+// 4) 下载渲染（spi.watermark）：CE 原样透传，EE 加水印 / DRM
+//    ⚠️ 与草案差异：包装的是**输入流**，而非草案的 OutputStream——直接改响应体/响应头会把水印语义
+//       与 HTTP 细节（Content-Length / Range / 背压）纠缠在一起；包输入流让所有写出路径共享实现
 public interface WatermarkProvider {
-    WatermarkKind kind();                                         // TEXT / BLIND / DRM
-    OutputStream wrap(OutputStream sink, WatermarkContext ctx);
+    String providerId();
+    InputStream wrap(InputStream source, WatermarkContext context);
 }
+record WatermarkContext(Long fileId, String originalName, Long ownerUserId,
+                        Long requesterUserId, String requesterName, boolean inline) {}
 
-// 5) 存储编解码：CE 明文直通，EE 接 KMS 信封加密
+// 5) 存储编解码（spi.crypto）：CE 明文直通，EE 接 KMS 信封加密；由存储层读写两侧织入
 public interface CryptoCodec {
-    String codecId();                                             // "none" / "aes-gcm-envelope"
-    OutputStream encrypt(OutputStream sink, CryptoContext ctx);
-    InputStream decrypt(InputStream source, CryptoContext ctx);
+    String codecId();                                                // "plain" / "aes-gcm-kms"
+    OutputStream encrypt(OutputStream sink, CryptoContext context);
+    InputStream decrypt(InputStream source, CryptoContext context);
 }
+record CryptoContext(String storageKey, long sizeBytes) {}           // storageKey = 内容寻址键（明文摘要）
 
-// 6) 审批链解析：CE 固定单节点，EE 支持多级/会签
+// 6) 审批节点解析（spi.approval）：CE 单节点，EE 多级 / 会签 / 按组织架构动态解析
+//    ⚠️ 与草案差异：`ApprovalRequestContext` → `ApprovalContext`，`ApprovalNode` → `ResolvedNode`
 public interface ApprovalNodeResolver {
-    boolean supports(ApprovalRequestContext ctx);
-    List<ApprovalNode> resolve(ApprovalRequestContext ctx);        // CE 恒返回单个 node_seq=1
+    boolean supports(ApprovalContext context);
+    List<ResolvedNode> resolve(ApprovalContext context);             // CE 恒 1 个 nodeSeq=1
 }
+record ApprovalContext(Long applicationId, Long applicantId, String applyType,
+                       String resourceType, Long resourceId, int level, Long suggestedApproverId) {}
+record ResolvedNode(Long approverId, int nodeSeq, int nodeType) { single(Long approverId); }
 
-// 7) 传输协议策略：CE 仅 HTTP(S)，EE 可插 QUIC
+// 7) 传输协议策略（spi.transport）：CE 仅 HTTP(S)，EE 可插 QUIC
 public interface TransportStrategy {
-    String protocol();                                            // "http" / "quic"
+    String protocol();                                              // "http" / "quic"
     boolean supports(TransportRequest request);
 }
+record TransportRequest(String scheme, int port, boolean secure) {}
 
-// 8) 存储抽象（PRD §8 命名，附录 C 未列，保留）
-public interface FileStore {
-    StoredObject put(FileHandle file, StorageKey key);
-    InputStream get(StorageKey key, ByteRange range);
-    void delete(StorageKey key);
-    // CryptoCodec 作为其内层包装器注入，切换加密方案不改调用方
-}
+// 8) 存储抽象（PRD §8 命名，附录 C 未列）：**CE 未单列 `FileStore` 接口**
+//    CE 实际为 at-file 的 `FileStorage`（接口）+ `LocalFileStorage`（本地磁盘实现）；
+//    `CryptoCodec` 在存储层读写两侧织入（写包 OutputStream、读包 InputStream），
+//    「切换加密方案不改调用方」已由 `CryptoCodec` 达成，故未再加一层 FileStore。
+//    EE 接对象存储时再评估是否引入（§2.4-3）。
 ```
 
-**装配方式**：CE 用 `@ConditionalOnMissingBean` 提供 Noop / 默认实现，EE 实现类以同类型 Bean 覆盖；**接口全部定义在 `at-common` 的 `spi` 包**，实现方在各自模块内——业务模块仍只依赖 `at-common`（满足 R1）。
+**装配方式**：CE 用 `@ConditionalOnMissingBean` 提供默认实现，EE 实现类以同类型 Bean 顶替；**接口全部定义在 `at-common` 的 `spi` 子包**，实现方在各自模块内——业务模块仍只依赖 `at-common`（满足 R1）。
+
+| SPI | CE 默认实现（所在模块） | CE 装配类 | 顶替方式 |
+| --- | --- | --- | --- |
+| `IdentityProvider` | `LocalIdentityProvider`（at-auth，BCrypt 本地账号） | `IdentitySpiConfig` | 类型级 `@ConditionalOnMissingBean` |
+| `ContentScanInterceptor` | `SuffixAndKeywordScanInterceptor`（at-file） | 直接 `@Component` 进 `ContentScanChain` | **有序叠加**（`@Order`，不顶替——CE 规则必须继续生效） |
+| `VirusScanner` | `NoopVirusScanner`（at-file） | `FileSpiConfig` | 类型级 |
+| `WatermarkProvider` | `NoopWatermarkProvider`（at-file） | `FileSpiConfig` | 类型级 |
+| `CryptoCodec` | `PlainCryptoCodec`（at-file） | `FileSpiConfig` | 类型级 |
+| `ApprovalNodeResolver` | `SingleNodeApprovalResolver`（at-permission） | `ApprovalResolverConfig` | 类型级 |
+| `TransportStrategy` | `HttpTransportStrategy`（at-gateway） | `TransportSpiConfig` | **Bean 名称级**（`httpTransportStrategy`）——见下方注 |
+
+> **装配注（2026-09-29）**：
+> ① 上表「类型级」即架构原则的原始口径；**`TransportStrategy` 例外用 Bean 名称级**——协议是**集合**而非单点能力，若按类型顶替，EE 只新增一个 QUIC 实现就会把 CE 的 HTTP 挤掉，部署随即失去 HTTP 通道（功能回退，不是差异化）。故：EE **替换** HTTP 通道 → 声明同名 Bean `httpTransportStrategy`；EE **新增**协议（QUIC / 私有隧道）→ 任意 Bean 名声明，与 CE 的 HTTP **共存**，由 `TransportStrategyRegistry` 按 `@Order` 选协议并在**启动期拒绝重复 protocol**（配置错误即启动失败，而不是让请求随机走一个实现）。
+> ② `ContentScanInterceptor` 同理不设 Noop 兜底：它不是「能力开关」，而是 CE 必须生效的外发闸门（后缀黑名单），EE 的 DLP 以 `@Order` 叠加而非替换它。
+> ③ 共同红线：**能力差异只由 Bean 是否存在表达**，业务代码禁止 `if (eeEnabled)`（§2.3 / G-11）。
 
 ### 2.3 建立时机与门禁
 
@@ -336,11 +368,32 @@ public interface FileStore {
 | **接缝不引入运行时分支** | 通过 `List<XxxSpi>` 有序管道 + `@ConditionalOnMissingBean` 装配，禁止在业务代码里 `if (eeEnabled)` |
 | **建立即登记** | 新增 SPI 时在 §2.1 登记，并在 `red-team-review.md` 回改清单留痕 |
 
+#### ✅ 落地登记（2026-09-29）
+
+七个接缝**同批建立**（而非各自随功能零散落），同时锁定「接口 + CE 默认实现 + 装配门禁 + 消费点 + 回归测试」五项，避免出现「接口建了但没人调用」的假接缝。
+
+| SPI | 接口 | CE 默认实现 | 消费点（谁读它） | 回归测试入口 |
+| --- | --- | --- | --- | --- |
+| `IdentityProvider` | `common.spi.identity` | `at-auth/extension/LocalIdentityProvider` | `AuthService.login()` → `IdentityProviderChain`（`@Order` 取首个 `supports`） | `IdentityProviderChainTest` / `LocalIdentityProviderTest` / `IdentitySpiConfigTest` |
+| `ContentScanInterceptor` | `common.spi.scan` | `at-file/extension/SuffixAndKeywordScanInterceptor` | `ShareLinkService` → `ContentScanChain`（Deny 优先 + fail-closed） | `ContentScanChainTest`（既有） |
+| `VirusScanner` | `common.spi.scan` | `at-file/extension/NoopVirusScanner` | `FileContentService` 入库前 → `FileScanPipeline.assertClean` | `FileSpiDefaultsTest` |
+| `WatermarkProvider` | `common.spi.watermark` | `at-file/extension/NoopWatermarkProvider` | `FileDownloadService.stream(...)`（下载 + 分享下载，经 `WatermarkResource`） | `FileSpiDefaultsTest` |
+| `CryptoCodec` | `common.spi.crypto` | `at-file/extension/PlainCryptoCodec` | `LocalFileStorage` 写盘 / 取流两侧（经 `CodecResource`） | `FileSpiDefaultsTest` |
+| `ApprovalNodeResolver` | `common.spi.approval` | `at-permission/extension/SingleNodeApprovalResolver` | `PermissionApplicationService` → `ApprovalNodeResolverChain` | `ApprovalResolverSpiTest` |
+| `TransportStrategy` | `common.spi.transport` | `at-gateway/transport/HttpTransportStrategy` | `TransportStrategyRegistry`（装配校验 + 选协议；**CE 侧不读取**，属 EE 接线点） | `TransportStrategyRegistryTest` |
+
+> **两条设计口径（本批新增，后续 SPI 沿用）**：
+> ① **认证失败的计数留在编排层**（`AuthService`），身份源只回答「是不是本人」——否则换 SSO 后「错 5 次锁 30 min」会因身份源不同而失效或误锁；链内实现互斥、取首个匹配而非串行试错（避免一次登录触发多次远端认证）。
+> ② **内容寻址存储下，扫描命中不删物理内容**：同一 sha256 的字节被多个文件记录共享，删除会连带破坏其它引用；命中只**拒绝本次登记**并落审计。
+>
+> **注（WatermarkProvider 归属）**：CE 的实际渲染点在 `at-file`（下载与匿名分享下载共用 `FileDownloadService`）；`at-transfer` 当前链路是分片落盘（`ChunkStore`），无流式渲染点，故其 §2.1 归属为**计划位**——EE 若在传输侧做实时加水印，再接该点，接口无需改动。
+
 ### 2.4 待统一项
 
-1. 附录 C 原文**未入库**（全仓库检索 7 个接口名零命中）——本文按用户给定命名落地，需把附录 C 补进 `docs/` 或确认命名权威源；
-2. PRD §8 的接口名与附录 C 不一致，需按 §2.1 映射表回写 PRD §8（或反向确认）；
-3. `AuditSink` / 组织边界抽象在附录 C 中缺失，暂保留 PRD 命名待裁决。
+1. ⏳ **唯一残留**：附录 C 原文**仍未入库**（全仓库检索 7 个接口名，除本次落地代码与文档外无外部原文命中）——命名已按附录 C 落地到**代码与文档**（`at-common` SPI 子包 + §2.1 / §2.2 / PRD §8 三处一致），故「实现时接口名反复」的风险**已实际消除**；仍需在附录 C 可得时补入 `docs/`（或明确放弃该溯源要求）。原 [A-2] 的实质影响已解除，仅剩溯源留痕；
+2. ✅ **已收口（2026-09-29）**：PRD §8 的接口名已按 §2.1 映射表回写（`AuthenticationProvider` → `IdentityProvider`；「后处理管道 Hook」→ `ContentScanInterceptor` + `VirusScanner`；「内容渲染处理器」→ `WatermarkProvider`；「`FileStore` 信封加密包装器接口」→ `CryptoCodec`；审批链 `Policy` → `ApprovalNodeResolver`；「传输网关协议层抽象」→ `TransportStrategy`）；
+3. ⏳ `AuditSink` / 组织边界抽象在附录 C 中缺失，暂保留 PRD 命名待裁决；
+4. ⏳ **`FileStore` 未以接口形式建立**（§2.2-8）：CE 由 `FileStorage` + `CryptoCodec` 覆盖其职责。EE 接对象存储时需判断是「新增 `FileStore` 抽象」还是「`FileStorage` 再出一个实现」——**届时按最小改动裁决**，不预建空接口（预建接口而无消费方，正是 §2.3「建立时机」要避免的假接缝）。
 
 ---
 
@@ -367,11 +420,11 @@ public interface FileStore {
 | # | 事项 | 现状 | 影响 | 建议裁决 |
 | --- | --- | --- | --- | --- |
 | A-1 | 「跨模块只走事件总线」vs「SPI + 单事务」 | 本文采纳读写分道（§1.3） | 若改纯事件总线，将重开 [T-01]/[T-02]（S0） | 维持读写分道；若坚持事件总线须同步改 `use-case-flows` §1.1-7 / §2.3-5 |
-| A-2 | 附录 C 原文缺失 | 7 个接口名全仓库零命中 | 扩展点命名无权威源 | 补入 `docs/` 或确认以 PRD §8 为准 |
-| A-3 | PRD §8 命名与附录 C 不一致 | 两套名字并存 | 实现时接口名反复 | 按 §2.1 映射表回写 PRD §8 |
+| A-2 | 附录 C 原文缺失 | 🟡 **已降级**：7 个接口名已按附录 C 落地到代码与文档（`at-common` SPI + §2.1/§2.2/PRD §8 三处一致），仅剩「原文溯源」留痕 | 「实现时接口名反复」的风险已实际消除 | 附录 C 可得时补入 `docs/`，或明确放弃该溯源要求（见 §2.4-1） |
+| A-3 | PRD §8 命名与附录 C 不一致 | ✅ **已收口（2026-09-29）**：PRD §8 按 §2.1 映射表回写 | — | 无需动作（若后续新增 Won't 项，按 §2.1 映射表同批回写） |
 | A-4 | `system-design.md` §1.3 写 `mapper` | 实测为 `repository` | 新人按文档建包会跑偏 | 回写 §1.3 为四层 + `repository` |
 | A-5 | 多副本部署前置条件 | 未补调度锁 / Redis 限流 | 水平扩展会重复扫描 / 通知 | 扩展前先落 [C-04] / [C-10] |
-| A-6 | SPI 接口尚未建立 | 全部为契约草案 | EE 化时可能被迫改已发布接口 | 按 §2.3「不晚于首个功能落地」执行 |
+| A-6 | SPI 接口尚未建立 | ✅ **已收口（2026-09-29）**：7 个接口 + CE 默认实现 + 装配门禁同批落地（§2.3 落地登记） | — | 无需动作。后续新增 SPI 按 §2.3 四项门禁执行 |
 
 ### ⏸ 延期登记（2026-09-13 裁决：先记录、**不阻塞当前开发**，待系统功能基本成型后回头完成）
 
@@ -383,7 +436,7 @@ public interface FileStore {
 | 延期内编号 | 口径 | 当前临时采用（不阻塞开发） | 回头需完成 | 触发时机 / 判据 |
 | --- | --- | --- | --- | --- |
 | **D-1**（= A-1） | 跨模块协作口径：「只走事件总线」vs「读走 SPI + 写走单事务」 | 按本文 §1.3 读写分道（`P-3`）实现；SPI 定义在 `at-common`，事件只承载副作用 | 与外部计划书对齐最终口径；**若坚持纯事件总线**，须重审 [T-01] / [T-02] / [T-03]，并同步改 `use-case-flows` §1.1-7 / §2.3-5 与对应集成测试 | 三条主线跑通后；或外部计划书给出权威口径时 |
-| **D-2**（= A-2 / A-3） | CE/EE 扩展点命名的权威源：附录 C 7 接口 vs PRD §8 现名 | 暂以附录 C 命名为准（§2.1），并附 PRD §8 映射表；接口本身仍未建 | ① 将附录 C 原文补入 `docs/`（或明确放弃）；② 按 §2.1 映射表回写 `docs/prd/README.md` §8，消除双名并存 | 附录 C 原文可得时；或 `at-file` / `at-permission` 首个 SPI 落地前（§2.3 门禁） |
+| **D-2**（= A-2 / A-3） | CE/EE 扩展点命名的权威源：附录 C 7 接口 vs PRD §8 现名 | 🟡 **主体已收口（2026-09-29）**：7 个接口已按附录 C 命名落地到 `at-common` SPI（§2.3 落地登记）；② **已完成**——`docs/prd/README.md` §8 已按 §2.1 映射表回写，双名并存消除 | ① **残留**：将附录 C 原文补入 `docs/`（或明确放弃）——仅影响溯源，不再影响实现 | 附录 C 原文可得时（不阻塞任何开发） |
 | **D-3** | 红队 v1.1「待回改项」是否代为改动 | 已在 [红队评审·回改清单](./red-team-review.md) 登记但**未改动** | 回改 `system-design.md` §1.3（`mapper` → `repository`）、`docs/prd/README.md` §8、`docs/api/README.md`（幂等键 / 分页上界 / 免登录端点防刷 / 秒传预检语义）、`docs/development/AT-DIFF-todos.md` AT-DIFF-04、`web/src/utils/result.ts` | 随首轮功能实现一并回改；**「对外契约 4 项」按发布门禁第 7 条须在写首个 Controller 前完成** |
 | **D-4**（= D-3「对外契约 4 项」 · DoD-3） | 统一响应体 / 分页 / 错误码的「对外契约」收口与「经前后端确认」留痕：`Result<T>` / `PageResult<T>` / 错误码表已定稿并被遵守，但 **API-03 写接口幂等键尚无定义**（`docs/api/README.md` 全文无 `Idempotency-Key`），免登录端点「集中化白名单 + 防刷」未补齐，「经前后端确认」只有「已完成改造」的事实描述、**无评审结论与日期** | `Result<T>`、分页 `PageResult<T>`（默认 20 / 上限 100，由 `MybatisPlusConfig` 强制收敛）、错误码表 + A~H 策略**按现状实现**（后端 `ErrorCode` 为单一权威源，前端 `result.ts` 镜像策略表 + 20 例单测）；免登录端点已列 §5 表、秒传预检语义已明确 | ① 在 `docs/api/README.md` 补 **`Idempotency-Key` 写接口幂等键**定义（适用范围 / 生成规则 / 重放响应）；② 补免登录端点「集中化白名单 + 防刷约定」；③ 补一份前后端确认留痕（评审结论 + 日期），使「经确认」可追溯 | 写第一个 Controller 之前（**硬前置**，发布门禁第 7 条；与 D-3 同源，此处按 DoD-3 收口口径单列） |
 | **D-5**（DoD-4） | **审批线**核心接口未「定稿」，尚不足支撑 Phase 4 直接照做（上传线已于 2026-09-14 落地收口） | **上传线 ✅ 已落地**（五端点 + 字段级 schema 由实现定稿：multipart 字段 `chunk` / `hash`、索引取路径、`precheck` 用 JSON body、`received` 回索引数组）；**剩余仅审批线**——按 §2.3 已定的 `POST /api/v1/permission/applications` 单端点推进 | ① 补齐审批线缺失端点：审批动作（approve / reject / reassign，**路径未定**，仅红队 [V-03] 出现过一次 `PATCH applications/{id}`）、撤销、待办 / 我的申请 / 详情查询、审批规则配置；② 为**审批线**补字段级 schema（DTO 字段名 / 类型 / 必填；上传线的 `chunk` / `hash` 载体与 `precheck` JSON body 已由 2026-09-14 实现定稿），消除 Phase 4 歧义；③ `docs/api/README.md` §1 前缀表补 `at-permission` 的 `/permission/applications` 与 `/permission/menus`（动态菜单，见 **D-9**）；④ 解除两份文档 `draft` 标记并落「定稿」版本；⑤ 与 **D-9** 合并推进：为 `GET /api/v1/permission/menus` 补字段级 schema（节点 `routePath` / `component` / `icon` / `visible`、父子层级、排序与权限过滤口径） | 进入 Phase 4 编码前（**硬前置**） |
@@ -399,27 +452,31 @@ public interface FileStore {
 >
 > - 🟢 **口径 / 文档类**（延后无损）：**D-1**（跨模块口径）、**D-2**（扩展点命名）、**D-6**（范围书面冻结）、**D-7**（0.3 节逐项核对）——只影响认知与文档一致性，不影响继续开发。
 > - 🔴 **有兼容成本类**（须前置）：**D-4**（幂等键 / 免登录端点防刷 / 前后端确认留痕）、**D-5**（审批端点 + 字段级 schema）——延期到「系统差不多」之后再补，会回头改已实现的 Controller、前端策略表与已定契约；其中 **D-4 须在写首个 Controller 前、D-5 须在进入 Phase 4 前**落掉。D-3 的文档勘误部分可延后。
-> - ⚠️ **接缝类**：**A-6 / D-2** 的 7 个 **CE/EE 扩展点**当前**代码尚未建立**（§2.1 仍为契约草案），按 §2.3「不晚于首个功能落地」执行。注意区分：§1.3 的 `FileIngestPort` 属**跨模块协作端口**（模块间依赖倒置），已随分片上传主线落地，**不等于** CE/EE 扩展点已就绪，两者勿混谈。
+> - ✅ **接缝类·已落地（2026-09-29）**：**A-6 已收口**——7 个 **CE/EE 扩展点**（含 CE 默认实现、`@ConditionalOnMissingBean` 装配门禁、消费点与回归测试）已同批建立并写入 §2.3 落地登记；**D-2** 主体收口，仅剩「附录 C 原文入库」的溯源残留。仍须区分：§1.3 的 `FileIngestPort` 属**跨模块协作端口**（模块间依赖倒置，随分片上传主线落地），与 CE/EE 扩展点是两回事，勿混谈。
+> - 📌 **能力差异的表达方式（新增红线）**：CE/EE 差异**只由 Bean 是否存在表达**，业务代码禁止 `if (eeEnabled)`（§2.3 / G-11）。本轮唯一偏离「类型级顶替」的是 `TransportStrategy`（改用 Bean 名称级，理由是协议为集合、类型级顶替会造成功能回退），已登记在 §2.2 装配注。
 > - ✅ **已收口**：**D-8**（`at:share:lock` TTL 裁定 **30 min**）——2026-09-13 当场裁决，项目内本已一致，**无需回改**。
 > - 🏗️ **结构已落地 / 实现待补**：**D-9**（菜单路由列 + 菜单接口）、**D-10**（审计归档任务）、**D-11**（成员 / 空间两表 + at-collaboration 消费）、**D-12**（`user_type` 列 + 协作者口径）——DDL 已随 `sql/V4__menu_route_user_type_and_collaboration.sql` 落地，Java 侧实现与契约补全按各自触发时机执行；其中 **D-9 的接口契约随 D-5 前置**，**D-12 的 CE 口径已定**（维持 PRD，列仅作 EE 预留，不阻塞）。**D-11 的群组侧消费已于 2026-09-26 落地**（`SysGroup` / `SysGroupMapper` / `ChatGroupService` + `POST`/`GET /api/v1/chat/groups` + 会话群名解析，权限点 `chat:group:create` 见 `sql/V14`），**空间侧（`sys_space`）仍待落地**。
 
-> **📌 配套清单（2026-09-14）**：以 `server/` 实际代码复核 `docs/prd/README.md` §4.1 后端现状时，
+> **📌 配套清单（2026-09-14，2026-09-29 更新）**：以 `server/` 实际代码复核 `docs/prd/README.md` §4.1 后端现状时，
 > 另识别出 **8 项实现缺口**（~~上传上限未配置~~、停用未联动吊销会话、无自助改密、健康检查与优雅启停缺失、
-> 角色互斥无校验、敏感级别无变更审计、全文索引未建、轻 IM 缺 @ 提及与保留期），已登记在
+> 角色互斥无校验、敏感级别无变更审计、全文索引未建、~~轻 IM 缺 @ 提及与保留期~~），已登记在
 > [`docs/development/AT-DIFF-todos.md`](../development/AT-DIFF-todos.md) § 🧱 后端功能缺口登记（GAP-01 ~ GAP-08），
 > 与本节 **D-x 同批关闭**（时机：三条主线跑通后的加固期）。其中 **GAP-01「上传上限」已随分片上传主线落地（2026-09-14）**：
 > `spring.servlet.multipart`（单文件 64 MB / 单请求 80 MB / 阈值 0）与 `anttransfer.transfer.*`（默认分片 8 MiB / 单分片上限
 > 64 MiB / 片数上限 1024，超限 4006）已配置，单用户进行中任务上限 4103 ——「默认 1 MB 挡掉大文件」已不复存在
 > （剩余 Nginx `client_max_body_size` 与前端前置校验待补）。
 > 共享空间 / 审批端点 / 分片上传三项已由 **D-11 / D-5** 覆盖，未重复登记。
+> ✅ **GAP-08「轻 IM 缺 @ 提及与保留期」已于 2026-09-29 关闭**：`sql/V18__chat_mention_and_retention.sql`
+> 落 `notify_message.mentioned` 行级标记 + 保留期清理索引，上行 `mentionUserIds`、下行 `mentioned` / `mentionUnreadCount`，
+> 并由 `ChatRetentionScheduler` 按 ≥30 天下限物理分批清理（详见 [AT-DIFF-todos GAP-08](../development/AT-DIFF-todos.md)）。
 
-### 🎯 本阶段 DoD 现状对照（2026-09-13 核对）
+### 🎯 本阶段 DoD 现状对照（2026-09-13 核对；2026-09-29 复核对）
 
 核对口径来源：`docs/prd/README.md`（§1.1 范围表 / §3 用户故事 / §4 功能清单 / §8 Won't）、`docs/api/README.md`（§2 返回体 / §3 分页 / §5 免登录端点）、`docs/api/error-codes.md`、`docs/architecture/use-case-flows.md`（§1.1 上传 / §2.3 审批）。
 
 | # | 完成标准（DoD） | 当前状态 | 证据 | 缺口 → 对应延期项 |
 | --- | --- | --- | --- | --- |
-| 1 | CE/EE 功能边界书面冻结；P0/P1 清单与 0.3 节逐项对应无遗漏；Won't 项只留扩展点不排期 | 🟡 **部分达成** | PRD §1.1 范围表 + §4 功能清单 + §8 Won't 三表齐备且**内部自洽**（§1.1 P0 8 类 / P1 12 项被 §4 全覆盖；§8 Won't 9 项与 §1.1 Won't 栏一一对应；§2.1 覆盖全部 9 个 Won't 能力）；Won't 未排期（§9 延至 M3 评估） | ① 未「冻结」（仍标 `v0.2-draft · 待评审`，无评审结论 / 日期）→ **D-6**；② 战略规划书 0.3 节原文未入库，逐项核对**不可验证** → **D-7**；③ 7 个 SPI 接缝**代码尚未建立** → **A-6 / D-2**（文档层位置已留） |
+| 1 | CE/EE 功能边界书面冻结；P0/P1 清单与 0.3 节逐项对应无遗漏；Won't 项只留扩展点不排期 | 🟡 **部分达成** | PRD §1.1 范围表 + §4 功能清单 + §8 Won't 三表齐备且**内部自洽**（§1.1 P0 8 类 / P1 12 项被 §4 全覆盖；§8 Won't 9 项与 §1.1 Won't 栏一一对应；§2.1 覆盖全部 9 个 Won't 能力）；Won't 未排期（§9 延至 M3 评估） | ① 未「冻结」（仍标 `v0.2-draft · 待评审`，无评审结论 / 日期）→ **D-6**；② 战略规划书 0.3 节原文未入库，逐项核对**不可验证** → **D-7**；③ ~~7 个 SPI 接缝代码尚未建立~~ → ✅ **2026-09-29 已建立**（7 个 SPI 落地 + CE 默认实现 + 装配门禁，见 §2.3；**A-6 收口**、**D-2 主体收口**，仅剩「附录 C 原文入库」的溯源残留） |
 | 2 | 至少 6 个核心用户故事带可测试验收标准 | ✅ **达成（超额）** | PRD §3 共 **13** 个（US-01~US-13），P0 占 9 个，各含独立「验收标准」且多为数值化判据：8 MiB 分片 / 并发 ≤ 5 / 秒传 P95 < 5 s / 错 5 次锁 30 min / access 30 min + refresh 7 d / 首屏 P95 < 1 s | 无硬缺口。可优化项：US-10 统计中心未给数据口径与延迟，属定性表述 |
 | 3 | 统一响应体、分页、错误码表经前后端确认，后续代码一律遵守 | 🟡 **基本达成** | `Result<T>` + `PageResult<T>` + `error-codes.md` 全表与 A~H 策略**已定稿**；后端 `ErrorCode` 单一权威源、前端 `result.ts` 镜像策略表 + 20 例单测；分页上界（默认 20 / 上限 100）由分页插件强制收敛；免登录端点表（§5）、秒传预检语义（§2 示例 + §7 B 类）已明确 | ① **API-03 写接口幂等键未定义**（`docs/api/README.md` 全文无 `Idempotency-Key`）→ **D-4**；② 「经前后端确认」无评审结论 / 日期留痕，仅「已完成改造」事实描述 → **D-4**。**属发布门禁第 7 条硬前置** |
 | 4 | 分片上传、审批两组核心接口契约定稿（Phase 4 直接照做） | 🟡 **部分达成（上传线 ✅ / 审批线待 D-5）** | 上传线：**✅ 已落地（2026-09-14）**——`use-case-flows` §1.1 的 5 端点（`precheck` / `GET parts` / `PUT parts` / `merge` / `DELETE`）+ 字段级 schema（`chunk` / `hash`、索引取路径、`received` 回索引数组）+ 错误码 + 7 态状态机 + 事务口径，均有控制器 / 服务层测试兜底（25 例）；审批线：§2.3 已定 `POST /api/v1/permission/applications` + 三选一审批 + 申请 5 态 / 授权 3 态 + 事件 + 到期回收 | ① **审批动作端点路径缺失**（approve / reject / reassign / 撤销 / 待办 / 列表 / 详情查询）；② **审批线字段级 schema 缺失**（上传线 `precheck` JSON body 与 `parts` 的 `chunk` / `hash` 载体已由 2026-09-14 实现定稿）；③ `docs/api/README.md` §1 前缀表缺 `/permission/applications`；④ 两份文档仍标 `draft` → **D-5**（**剩余仅审批线**）。**属 Phase 4 硬前置** |

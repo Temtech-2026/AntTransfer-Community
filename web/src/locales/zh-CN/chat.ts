@@ -70,6 +70,13 @@ export default {
   'chat.composer.group.objects': '物品与活动',
   'chat.composer.group.symbols': '符号',
 
+  // @ 提及：入口只在群聊出现（单聊没有点名语义，见 ChatComposer.mentionEnabled）
+  'chat.composer.mention': '提及成员',
+  'chat.composer.mentionPanel': '可提及的成员',
+  'chat.composer.mentionEmpty': '没有匹配的成员',
+  // 「有人@我」：会话列表的摘要前缀与角标强调、消息气泡上的标记共用一句
+  'chat.mention.me': '有人@我',
+
   'chat.new.title': '发起会话',
   'chat.new.scope.label': '会话类型',
   'chat.new.scope.private': '单聊',

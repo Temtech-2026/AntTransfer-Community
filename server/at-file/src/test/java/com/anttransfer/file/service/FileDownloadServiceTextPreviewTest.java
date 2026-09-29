@@ -16,6 +16,7 @@
 package com.anttransfer.file.service;
 
 import com.anttransfer.common.exception.BusinessException;
+import com.anttransfer.common.spi.watermark.WatermarkProvider;
 import com.anttransfer.file.config.FileProperties;
 import com.anttransfer.file.model.entity.FileObject;
 import com.anttransfer.file.security.FileOwnershipGuard;
@@ -66,7 +67,8 @@ class FileDownloadServiceTextPreviewTest {
                 mock(FileOwnershipGuard.class),
                 new FileTypePolicy(properties),
                 mock(FileDownloadTicketService.class),
-                mock(FileAuditLogger.class));
+                mock(FileAuditLogger.class),
+                mock(WatermarkProvider.class));
     }
 
     /* ==================== 文本：UTF-8 / GBK 都能正确显示 ==================== */
