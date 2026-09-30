@@ -1087,6 +1087,32 @@
 
 ### 🔄 Changed（变更）
 
+- 🧹 **用户可见文案不再标注「CE 版 / EE 能力」，并撤下顶栏的模板残留「历史版本」入口（2026-09-30）**：
+  界面此前把「这一项为什么不能点」答成了版本号：分享弹窗给「指定接收人」「动态水印」挂 `<Tag>EE</Tag>`、
+  组织切换器菜单尾部与顶栏搜索提示各写一段「属 EE 能力 / CE 版未提供」、群组与部门两个只读页的标题
+  也以「CE 版未提供…」开头。对使用者这是**无效信息**——他只关心「现在能不能用」，不关心版本划分；
+  而能力一旦下放 / 上收，散落在各处的版本口径必然漂移成「同一能力一处说没有、一处说能做」。本轮统一为
+  **只说现状、不报版本**：
+  - **删键而非留空值**：`component.globalSearch.scopeEe`、`component.version.history`、
+    `component.org.eeHint` 三键连同使用点一并移除，**7 个语言包同批删除**——留空值会留下
+    「键还在、某语漏删」的漂移，空串还会在界面上撑出一行空白；
+  - **改写 4 键**（`file.share.audience.memberHint` / `file.share.watermark.description` /
+    `system.group.alert.title` / `system.dept.alert.title`，同为 7 语）：`CE 版未提供` → `当前尚未提供`、
+    `the CE edition does not provide` → `not available yet`，把「缺什么」讲成**待补**而不是**版本差异**
+    （两种写法的用户动作相同：先换别的方式；但后者会让人误以为「买了另一个版本就能用」）；
+  - **顶栏撤下「历史版本」下拉**：它是 **Ant Design Pro 脚手架的残留**——菜单项是 `v5-pro.ant.design` /
+    `v4` / `v2` / `v1`（模板自己的历史版本站），与 AntTransfer 的版本、与**文件历史版本**都无关；
+    披着 `component.version.history`（「历史版本」）的标签挂在全局顶栏，既会被读成「本应用的版本记录」，
+    又是一个点了就离开本站的**不受控外链**。产品侧真正的文件历史版本走后端
+    `GET|POST /v1/files/{nodeId}/versions`（权限点 `file:version`），前端界面入口尚未接入，
+    **并不依赖**这个顶栏下拉，故直接删除 `components/RightContent/VersionDropdown.tsx` 及
+    `components/index.ts` / `app.tsx` 两处装配；
+  - **有意保留**：产品名仍为 **AntTransfer CE**（`config/defaultSettings.ts` 站点标题、`config/config.ts`、
+    `public/manifest.json` 的 PWA 名称、欢迎页标题与 `Footer` 版权行）——版本是**发布物身份**，该留；
+    被删的只是**能力差异在界面上的标注**；
+  - 🧪 回归：`app.test.tsx` 去掉 `VersionDropdown` 的 mock；前端 **77 文件 / 1090 例全绿**，
+    `tsc` 与 `biome lint` 通过。
+
 - 🧹 **回滚留底约定由「保留最近一次」改为「保留最近两份」（2026-09-29）**：
   `docs/deployment/发版与回滚手册.md` 第六章原写「确认稳定运行几天后，只保留最近一次」，
   但落地后一轮维护就攒到四份（其中三份是同一小时内的连续备份），且该约定本身自相矛盾：

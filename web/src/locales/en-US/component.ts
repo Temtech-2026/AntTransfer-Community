@@ -23,14 +23,9 @@ export default {
   'component.globalSearch.scopeAria': 'Search scope',
   'component.globalSearch.scopeTitle':
     'Scope: file names and tags (jumps to the file workspace).',
-  'component.globalSearch.scopeEe':
-    'Full-text search inside file contents requires extraction and indexing, an EE capability.',
 
   // Header docs entry
   'component.docLink.title': 'Documentation',
-
-  // Header version-history entry
-  'component.version.history': 'Version history',
 
   // Article list content (template component)
   'component.articleList.publishedAt': 'published at',
@@ -99,8 +94,6 @@ export default {
   'component.org.current': 'Current deployment',
   'component.org.create': 'New organization / team',
   'component.org.switch': 'Switch to another organization',
-  'component.org.eeHint':
-    'Cross-organization isolation (multiple organizations, seat licensing) is an EE capability; CE is a single-organization self-hosted deployment.',
   'component.org.tooltip': 'Current organization: {name}',
 
   // Drop / click file zone

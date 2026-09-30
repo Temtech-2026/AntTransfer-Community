@@ -252,7 +252,7 @@ export default {
     '링크와 추출 코드를 가진 사람은 누구나 로그인 없이 볼 수 있어 외부 협력사에 보내기 적합합니다. 신원 확인을 하지 않으므로 “일회성, 횟수 제한” 상황에 더 알맞습니다.',
   'file.share.audience.member': '지정 수신자',
   'file.share.audience.memberHint':
-    '이메일, 휴대폰 번호 또는 조직도 기준으로 정확히 권한을 부여하고 지정된 사람만 볼 수 있습니다. 서버의 내부 권한 부여 API가 필요하지만 현재 CE 버전에는 없어 선택할 수 없습니다.',
+    '이메일, 휴대폰 번호 또는 조직도 기준으로 정확히 권한을 부여하고 지정된 사람만 볼 수 있습니다. 서버의 내부 권한 부여 API가 필요하지만 현재 제공되지 않아 선택할 수 없습니다.',
   'file.share.block.policy': '권한 및 보안 정책',
   'file.share.field.codeLabel': '접근 비밀번호(추출 코드)',
   'file.share.field.codeRequired': '추출 코드를 입력하세요',
@@ -274,7 +274,7 @@ export default {
     '강제 적용: 다운로드마다 계정(비로그인 방문자는 IP와 UA), 시간, 파일을 기록하며 감사 로그에서 추적할 수 있고 끌 수 없습니다.',
   'file.share.watermark.label': '미리보기에 동적 워터마크',
   'file.share.watermark.description':
-    '서버가 워터마크 스위치와 렌더링 기능을 제공해야 하며 현재 CE 버전에는 없습니다. 여기서 선택하지 않으면 해당 파일의 외부 링크에는 워터마크 보호가 없다는 뜻입니다.',
+    '서버가 워터마크 스위치와 렌더링 기능을 제공해야 하며 현재 제공되지 않습니다. 여기서 선택하지 않으면 해당 파일의 외부 링크에는 워터마크 보호가 없다는 뜻입니다.',
   'file.share.block.expire': '유효 기간',
   'file.share.field.expireLabel': '링크 유효 기간',
   'file.share.field.expireRequired': '유효 기간을 선택하세요',

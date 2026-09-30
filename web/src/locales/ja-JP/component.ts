@@ -25,14 +25,9 @@ export default {
   'component.globalSearch.scopeAria': '検索範囲の説明',
   'component.globalSearch.scopeTitle':
     '検索範囲：ファイル名、タグ（ファイルワークベンチへ移動します）。',
-  'component.globalSearch.scopeEe':
-    'ファイル内容の全文検索には内容抽出とインデックスが必要で、EE の機能です。',
 
   // トップバーのドキュメント入口
   'component.docLink.title': 'ドキュメント',
-
-  // トップバーの過去バージョン入口
-  'component.version.history': '過去のバージョン',
 
   // 記事リストの内容（テンプレートコンポーネント）
   'component.articleList.publishedAt': '公開日',
@@ -101,8 +96,6 @@ export default {
   'component.org.current': '現在のデプロイ',
   'component.org.create': '組織 / チームを作成',
   'component.org.switch': '他の組織に切り替え',
-  'component.org.eeHint':
-    '組織間のデータ完全分離（マルチ組織・席数の販売）は EE の機能です。CE 版は単一組織のセルフホスト構成です。',
   'component.org.tooltip': '現在の組織：{name}',
 
   // ドラッグ / クリックでファイルを選択する領域

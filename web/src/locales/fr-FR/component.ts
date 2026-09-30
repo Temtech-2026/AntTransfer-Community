@@ -25,14 +25,9 @@ export default {
   'component.globalSearch.scopeAria': 'Description du périmètre de recherche',
   'component.globalSearch.scopeTitle':
     "Périmètre : noms de fichiers et étiquettes (ouvre l'espace de travail des fichiers).",
-  'component.globalSearch.scopeEe':
-    "La recherche plein texte dans le contenu des fichiers nécessite extraction et indexation ; cette capacité relève de l'édition EE.",
 
   // Entrée documentation de la barre supérieure
   'component.docLink.title': 'Documentation',
-
-  // Entrée versions précédentes de la barre supérieure
-  'component.version.history': 'Versions précédentes',
 
   // Contenu de la liste d'articles (composant modèle)
   'component.articleList.publishedAt': 'Publié le',
@@ -105,8 +100,6 @@ export default {
   'component.org.current': 'Déploiement actuel',
   'component.org.create': 'Créer une organisation / équipe',
   'component.org.switch': 'Basculer vers une autre organisation',
-  'component.org.eeHint':
-    "L'isolation totale des données entre organisations (multi-organisations, vente de licences) relève de l'édition EE ; l'édition CE est un déploiement auto-hébergé mono-organisation.",
   'component.org.tooltip': 'Organisation actuelle : {name}',
 
   // Zone de glisser-déposer / sélection de fichiers

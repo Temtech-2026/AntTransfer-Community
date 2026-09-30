@@ -5,8 +5,8 @@
  * 因此这里把搜索词交给文件工作台（`/file?keyword=…`），由它去调真实接口，
  * 本组件不自己发请求——避免出现「顶栏搜到的东西」和「文件页列表」两套口径。
  *
- * <p><b>没做的部分都写明：</b>「文件内文字检索」属 EE（需要内容提取与索引），
- * 说明文字里标注为 EE 能力，不做点了没反馈的假入口。
+ * <p><b>说明文字只讲能搜什么：</b>只写当前可检索的范围（文件名、标签），
+ * 不做点了没反馈的假入口。
  */
 
 import { InfoCircleOutlined, SearchOutlined } from '@ant-design/icons';
@@ -72,8 +72,6 @@ const GlobalSearch: React.FC = () => {
         title={
           <span className={styles.hintText}>
             {intl.formatMessage({ id: 'component.globalSearch.scopeTitle' })}
-            <br />
-            {intl.formatMessage({ id: 'component.globalSearch.scopeEe' })}
           </span>
         }
       >

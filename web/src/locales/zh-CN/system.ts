@@ -229,7 +229,7 @@ export default {
   // 群组管理（占位说明）
   'system.group.title': '群组管理',
   'system.group.subtitle': '暂未开放',
-  'system.group.alert.title': 'CE 版未提供群组管理接口，本页暂为占位说明',
+  'system.group.alert.title': '群组管理接口尚未提供，本页暂为占位说明',
   'system.group.alert.desc':
     '数据表 sys_group / sys_group_member 已存在，但服务端没有对应的管理控制器与权限点。为避免给出「点了必然失败」的入口，这里不提供增删改操作，也不渲染模拟数据。',
   'system.group.section.current.title': '现状',
@@ -258,7 +258,7 @@ export default {
   // 部门管理（只读）
   'system.dept.title': '部门管理',
   'system.dept.subtitle': '组织架构（只读）',
-  'system.dept.alert.title': '只读页：CE 版未提供部门增删改接口',
+  'system.dept.alert.title': '只读页：部门增删改接口尚未提供',
   'system.dept.alert.desc':
     '当前可用的部门端点只有 GET /api/v1/system/users/dept-options（供用户表单下拉与数据范围判定）。本页如实呈现组织架构，不提供无法落地的写操作。部门 ID 同时用于「用户调岗」与数据范围计算，调整前请先确认影响面。',
   'system.dept.column.name': '部门名称',

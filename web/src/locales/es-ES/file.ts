@@ -253,7 +253,7 @@ export default {
     'Cualquiera que tenga el enlace y el código de extracción puede verlo sin iniciar sesión; es adecuado para enviar a socios externos. Al no identificar a la persona, encaja mejor en escenarios «de un solo uso y con límite de veces».',
   'file.share.audience.member': 'Receptor designado',
   'file.share.audience.memberHint':
-    'Autoriza con precisión por correo, teléfono u organigrama, de modo que solo lo vean las personas autorizadas. Requiere una interfaz de autorización interna en el servidor, que la versión CE actual no ofrece, por lo que esta opción no se puede seleccionar.',
+    'Autoriza con precisión por correo, teléfono u organigrama, de modo que solo lo vean las personas autorizadas. Requiere una interfaz de autorización interna en el servidor, que aún no está disponible, por lo que esta opción no se puede seleccionar.',
   'file.share.block.policy': 'Permisos y política de seguridad',
   'file.share.field.codeLabel': 'Contraseña de acceso (código de extracción)',
   'file.share.field.codeRequired': 'Introduce el código de extracción',
@@ -275,7 +275,7 @@ export default {
     'Activo de forma obligatoria: cada descarga registra la cuenta (los visitantes sin sesión, la IP y el UA), la hora y el archivo, y se puede rastrear en el registro de auditoría; no se puede desactivar.',
   'file.share.watermark.label': 'Marca de agua dinámica en la vista previa',
   'file.share.watermark.description':
-    'Requiere que el servidor proporcione el interruptor de marca de agua y la capacidad de renderizado, que la versión CE actual no ofrece; al no marcarlo aquí, el enlace externo de este archivo no tendrá protección por marca de agua.',
+    'Requiere que el servidor proporcione el interruptor de marca de agua y la capacidad de renderizado, que aún no está disponible; al no marcarlo aquí, el enlace externo de este archivo no tendrá protección por marca de agua.',
   'file.share.block.expire': 'Vigencia',
   'file.share.field.expireLabel': 'Duración del enlace',
   'file.share.field.expireRequired': 'Selecciona la vigencia',

@@ -25,14 +25,9 @@ export default {
   'component.globalSearch.scopeAria': '검색 범위 설명',
   'component.globalSearch.scopeTitle':
     '검색 범위: 파일 이름, 태그(파일 워크벤치로 이동).',
-  'component.globalSearch.scopeEe':
-    '파일 내용 전문 검색은 콘텐츠 추출과 색인이 필요하며 EE 기능입니다.',
 
   // 상단 바 사용 문서 진입점
   'component.docLink.title': '사용 문서',
-
-  // 상단 바 이전 버전 진입점
-  'component.version.history': '이전 버전',
 
   // 글 목록(템플릿 컴포넌트)
   'component.articleList.publishedAt': '게시 위치',
@@ -99,8 +94,6 @@ export default {
   'component.org.current': '현재 배포',
   'component.org.create': '조직 / 팀 만들기',
   'component.org.switch': '다른 조직으로 전환',
-  'component.org.eeHint':
-    '조직 간 데이터 완전 격리(다중 조직, 좌석 판매)는 EE 기능입니다. CE 버전은 단일 조직 자체 호스팅 배포입니다.',
   'component.org.tooltip': '현재 조직: {name}',
 
   // 드래그 / 클릭 파일 영역

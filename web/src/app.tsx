@@ -26,7 +26,6 @@ import {
   ProfileSync,
   SiderFooter,
   TransferMonitor,
-  VersionDropdown,
 } from '@/components';
 import {
   buildMenuTree,
@@ -199,7 +198,7 @@ export const layout: RunTimeLayoutConfig = ({
      * 顶栏左侧：Logo + 品牌名 + 组织切换器。
      *
      * <p>组织切换器紧贴品牌，让「当前在哪个组织的空间里操作」一眼可见
-     * （CE 为单组织部署，多组织隔离属 EE，见 OrgSwitcher 的注释）。
+     * （本部署为单组织，切换器只呈现当前组织，见 OrgSwitcher 的注释）。
      */
     headerTitleRender: (logo, title) => (
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
@@ -225,7 +224,7 @@ export const layout: RunTimeLayoutConfig = ({
         <GlobalSearch />
       ),
     /**
-     * 顶栏右侧：通知 / 文档 / 版本 / 语言（头像由 avatarProps 渲染）。
+     * 顶栏右侧：通知 / 文档 / 语言（头像由 avatarProps 渲染）。
      *
      * <p>原先挂在顶栏的上传进度弹层已下线：传输是跨页面的长任务，
      * 改由右下角的传输监控悬浮窗承载（见 `TransferMonitor`），
@@ -239,7 +238,6 @@ export const layout: RunTimeLayoutConfig = ({
       return [
         <NotificationBell key="notify" />,
         <DocLink key="doc" />,
-        <VersionDropdown key="version" />,
         localeEnabled && <LangDropdown key="lang" />,
       ].filter(Boolean);
     },

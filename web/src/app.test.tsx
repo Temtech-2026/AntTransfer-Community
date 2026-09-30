@@ -46,7 +46,6 @@ vi.mock('@/components', () => ({
   LangDropdown: () => null,
   NotificationBell: () => null,
   OfflineBanner: () => null,
-  VersionDropdown: () => null,
 }));
 
 vi.mock('@ant-design/pro-components', () => ({

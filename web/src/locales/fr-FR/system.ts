@@ -258,7 +258,7 @@ export default {
   'system.group.title': 'Gestion des groupes',
   'system.group.subtitle': 'Pas encore disponible',
   'system.group.alert.title':
-    "L'édition CE ne fournit pas d'API de gestion des groupes ; cette page est un texte de remplacement",
+    "L'API de gestion des groupes n'est pas encore fournie ; cette page est un texte de remplacement",
   'system.group.alert.desc':
     "Les tables sys_group / sys_group_member existent, mais le serveur ne possède ni contrôleur de gestion ni point d'autorisation correspondants. Pour éviter des entrées qui échoueraient fatalement, aucune opération de création, modification ou suppression n'est proposée ici, et aucune donnée simulée n'est affichée.",
   'system.group.section.current.title': 'État actuel',
@@ -293,7 +293,7 @@ export default {
   'system.dept.title': 'Gestion des services',
   'system.dept.subtitle': 'Organigramme (lecture seule)',
   'system.dept.alert.title':
-    "Page en lecture seule : l'édition CE ne fournit pas d'API de création, modification ou suppression de service",
+    "Page en lecture seule : l'API de création, modification ou suppression de service n'est pas encore fournie",
   'system.dept.alert.desc':
     "Le seul point d'accès de service disponible est GET /api/v1/system/users/dept-options (pour la liste déroulante du formulaire utilisateur et la détermination du périmètre de données). Cette page présente l'organigramme tel quel, sans opération d'écriture non applicable. L'ID de service sert à la fois à la « mutation d'un utilisateur » et au calcul du périmètre de données ; vérifiez les impacts avant tout ajustement.",
   'system.dept.column.name': 'Nom du service',

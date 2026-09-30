@@ -6,7 +6,7 @@
  * 布局组件
  */
 import Footer from './Footer';
-import { DocLink, LangDropdown, VersionDropdown } from './RightContent';
+import { DocLink, LangDropdown } from './RightContent';
 import { AvatarDropdown } from './RightContent/AvatarDropdown';
 
 /**
@@ -30,4 +30,4 @@ export { default as StandardFormRow } from './StandardFormRow';
 export { default as TagSelect } from './TagSelect';
 export { default as TransferMonitor } from './TransferMonitor';
 
-export { AvatarDropdown, DocLink, Footer, LangDropdown, VersionDropdown };
+export { AvatarDropdown, DocLink, Footer, LangDropdown };

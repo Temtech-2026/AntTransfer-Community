@@ -255,7 +255,7 @@ export default {
     "Toute personne possédant le lien et le code d'extraction peut consulter sans connexion, ce qui convient à l'envoi vers des partenaires externes ; aucune identification n'étant faite, ce mode convient mieux aux scénarios « ponctuels, à nombre de fois limité ».",
   'file.share.audience.member': 'Destinataires désignés',
   'file.share.audience.memberHint':
-    "Autorisation précise par e-mail, numéro de téléphone ou organigramme, visible uniquement des personnes autorisées. Cela nécessite une API d'autorisation interne côté serveur, non fournie par l'édition CE ; cette option n'est donc pas sélectionnable.",
+    "Autorisation précise par e-mail, numéro de téléphone ou organigramme, visible uniquement des personnes autorisées. Cela nécessite une API d'autorisation interne côté serveur, non fournie actuellement ; cette option n'est donc pas sélectionnable.",
   'file.share.block.policy': 'Autorisations et politique de sécurité',
   'file.share.field.codeLabel': "Mot de passe d'accès (code d'extraction)",
   'file.share.field.codeRequired': "Veuillez saisir le code d'extraction",
@@ -279,7 +279,7 @@ export default {
     "Activé de force : chaque téléchargement enregistre le compte (IP et UA pour les visiteurs sans connexion), l'heure et le fichier, traçables dans le journal d'audit ; non désactivable.",
   'file.share.watermark.label': "Filigrane dynamique sur l'aperçu",
   'file.share.watermark.description':
-    "Nécessite que le serveur fournisse l'interrupteur de filigrane et la capacité de rendu, non disponibles dans l'édition CE ; ne pas cocher ici signifie que le lien de partage externe de ce fichier n'a aucune protection par filigrane.",
+    "Nécessite que le serveur fournisse l'interrupteur de filigrane et la capacité de rendu, non disponibles actuellement ; ne pas cocher ici signifie que le lien de partage externe de ce fichier n'a aucune protection par filigrane.",
   'file.share.block.expire': 'Validité',
   'file.share.field.expireLabel': 'Durée de validité du lien',
   'file.share.field.expireRequired': 'Veuillez choisir la durée de validité',

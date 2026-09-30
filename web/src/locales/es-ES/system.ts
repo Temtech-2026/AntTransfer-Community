@@ -251,7 +251,7 @@ export default {
   'system.group.title': 'Gestión de grupos',
   'system.group.subtitle': 'Aún no disponible',
   'system.group.alert.title':
-    'La versión CE no ofrece interfaz de gestión de grupos; esta página es por ahora un texto de marcador de posición',
+    'La interfaz de gestión de grupos aún no está disponible; esta página es por ahora un texto de marcador de posición',
   'system.group.alert.desc':
     'Las tablas de datos sys_group / sys_group_member ya existen, pero el servidor no tiene controladores de gestión ni puntos de permiso correspondientes. Para no ofrecer entradas que «fallarían con seguridad al pulsarlas», aquí no se ofrecen operaciones de alta/baja/modificación ni se renderizan datos simulados.',
   'system.group.section.current.title': 'Situación actual',
@@ -288,7 +288,7 @@ export default {
   'system.dept.title': 'Gestión de departamentos',
   'system.dept.subtitle': 'Estructura organizativa (solo lectura)',
   'system.dept.alert.title':
-    'Página de solo lectura: la versión CE no ofrece interfaz de alta/baja/modificación de departamentos',
+    'Página de solo lectura: la interfaz de alta/baja/modificación de departamentos aún no está disponible',
   'system.dept.alert.desc':
     'El único endpoint de departamentos disponible actualmente es GET /api/v1/system/users/dept-options (para el desplegable del formulario de usuario y la determinación del ámbito de datos). Esta página muestra la estructura organizativa tal como es y no ofrece operaciones de escritura irrealizables. El ID de departamento se usa tanto para el «traslado de usuario» como para el cálculo del ámbito de datos; confirma antes el alcance del impacto.',
   'system.dept.column.name': 'Nombre del departamento',

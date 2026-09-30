@@ -24,14 +24,9 @@ export default {
   'component.globalSearch.scopeAria': '搜索范围说明',
   'component.globalSearch.scopeTitle':
     '搜索范围：文件名、标签（跳转文件工作台）。',
-  'component.globalSearch.scopeEe':
-    '文件内容全文检索需要内容提取与索引，属 EE 能力。',
 
   // 顶栏使用文档入口
   'component.docLink.title': '使用文档',
-
-  // 顶栏历史版本入口
-  'component.version.history': '历史版本',
 
   // 文章列表内容（模板组件）
   'component.articleList.publishedAt': '发布在',
@@ -91,8 +86,6 @@ export default {
   'component.org.current': '当前部署',
   'component.org.create': '新建组织 / 团队',
   'component.org.switch': '切换到其他组织',
-  'component.org.eeHint':
-    '组织间数据完全隔离（多组织、席位售卖）属 EE 能力；CE 版为单组织自托管部署。',
   'component.org.tooltip': '当前组织：{name}',
 
   // 拖拽 / 点选文件区

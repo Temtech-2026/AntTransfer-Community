@@ -245,7 +245,7 @@ export default {
   'system.group.title': 'Group management',
   'system.group.subtitle': 'Not available yet',
   'system.group.alert.title':
-    'Group management APIs are not provided in CE; this page is a placeholder',
+    'Group management APIs are not available yet; this page is a placeholder',
   'system.group.alert.desc':
     'The tables sys_group / sys_group_member already exist, but the server has no corresponding management controller or permission points. To avoid offering entries that are bound to fail, no create/update/delete operations are provided and no mock data is rendered.',
   'system.group.section.current.title': 'Current state',
@@ -277,7 +277,7 @@ export default {
   'system.dept.title': 'Department management',
   'system.dept.subtitle': 'Organization structure (read-only)',
   'system.dept.alert.title':
-    'Read-only page: CE does not provide department create/update/delete APIs',
+    'Read-only page: department create/update/delete APIs are not available yet',
   'system.dept.alert.desc':
     'The only available department endpoint is GET /api/v1/system/users/dept-options (used by the user form dropdown and data scope evaluation). This page presents the organization structure faithfully and offers no write operations that cannot be fulfilled. Department IDs are also used for user transfers and data scope calculation, so confirm the impact before adjusting.',
   'system.dept.column.name': 'Department name',

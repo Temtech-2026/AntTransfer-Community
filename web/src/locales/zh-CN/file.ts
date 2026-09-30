@@ -237,7 +237,7 @@ export default {
     '任何拿到链接与提取码的人都能免登录查看，适合发给外部合作方；不做身份识别，因此更适合「一次性、限次数」的场景。',
   'file.share.audience.member': '指定接收人',
   'file.share.audience.memberHint':
-    '按邮箱、手机号或组织架构精确授权，仅被授权人可见。需要服务端提供内部授权接口，当前 CE 版未提供，因此这一项不可选。',
+    '按邮箱、手机号或组织架构精确授权，仅被授权人可见。需要服务端提供内部授权接口，当前尚未提供，因此这一项不可选。',
   'file.share.block.policy': '权限与安全策略',
   'file.share.field.codeLabel': '访问密码（提取码）',
   'file.share.field.codeRequired': '请输入提取码',
@@ -258,7 +258,7 @@ export default {
     '强制开启：每次下载记录账号（免登录访客记 IP 与 UA）、时间与文件，可在审计日志追溯，不可关闭。',
   'file.share.watermark.label': '预览叠加动态水印',
   'file.share.watermark.description':
-    '需要服务端下发水印开关与渲染能力，当前 CE 版未提供；此处不勾选即表示该文件的外发链接没有水印保护。',
+    '需要服务端下发水印开关与渲染能力，当前尚未提供；此处不勾选即表示该文件的外发链接没有水印保护。',
   'file.share.block.expire': '有效期',
   'file.share.field.expireLabel': '链接有效时长',
   'file.share.field.expireRequired': '请选择有效期',

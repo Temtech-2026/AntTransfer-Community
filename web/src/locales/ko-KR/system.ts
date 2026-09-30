@@ -243,7 +243,7 @@ export default {
   'system.group.title': '그룹 관리',
   'system.group.subtitle': '아직 제공되지 않음',
   'system.group.alert.title':
-    'CE 버전은 그룹 관리 인터페이스를 제공하지 않아 이 페이지는 자리 표시 설명입니다',
+    '그룹 관리 인터페이스가 아직 제공되지 않아 이 페이지는 자리 표시 설명입니다',
   'system.group.alert.desc':
     '데이터 테이블 sys_group / sys_group_member는 이미 존재하지만 서버에 해당 관리 컨트롤러와 권한 포인트가 없습니다. “누르면 반드시 실패하는” 입구를 제공하지 않기 위해 여기서는 추가/삭제/수정 작업을 제공하지 않고 모의 데이터도 렌더링하지 않습니다.',
   'system.group.section.current.title': '현황',
@@ -275,7 +275,7 @@ export default {
   'system.dept.title': '부서 관리',
   'system.dept.subtitle': '조직 구조(읽기 전용)',
   'system.dept.alert.title':
-    '읽기 전용 페이지: CE 버전은 부서 추가/삭제/수정 인터페이스를 제공하지 않습니다',
+    '읽기 전용 페이지: 부서 추가/삭제/수정 인터페이스가 아직 제공되지 않습니다',
   'system.dept.alert.desc':
     '현재 사용 가능한 부서 엔드포인트는 GET /api/v1/system/users/dept-options뿐입니다(사용자 폼 드롭다운과 데이터 범위 판정용). 이 페이지는 조직 구조를 있는 그대로 보여주며 실행할 수 없는 쓰기 작업은 제공하지 않습니다. 부서 ID는 “사용자 전보”와 데이터 범위 계산에 함께 사용되므로 조정 전에 영향을 먼저 확인하세요.',
   'system.dept.column.name': '부서 이름',

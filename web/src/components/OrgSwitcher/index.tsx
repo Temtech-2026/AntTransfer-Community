@@ -1,15 +1,14 @@
 /**
  * 组织 / 团队切换器（顶栏最左，紧贴 Logo）。
  *
- * <p><b>为什么 CE 里只有一个组织：</b>「按组织售卖席位 + 组织间数据完全隔离」是 EE 的
- * 多租户能力（CE 是自托管单租户，一次部署服务一个组织）。因此这里不做假的切换动作，
- * 只如实呈现：
+ * <p><b>为什么只有一个组织：</b>本部署为单组织自托管，一次部署服务一个组织。
+ * 因此这里不做假的切换动作，只如实呈现：
  * <ul>
  *   <li>当前组织 = 本次部署，默认选中且不可切换；</li>
- *   <li>「新建组织」「切换到其他组织」以禁用项 + 说明呈现，避免用户点了没反应。</li>
+ *   <li>「新建组织」「切换到其他组织」以禁用项呈现，避免用户点了没反应。</li>
  * </ul>
  *
- * <p>等 EE 的多租户接口落地时，只需把 {@link OrgSwitcherProps.orgs} 换成远端列表。
+ * <p>接入远端组织列表后，只需把 {@link OrgSwitcherProps.orgName} 换成远端来源。
  */
 
 import {
@@ -60,13 +59,6 @@ const useStyles = createStyles(({ token, css }) => ({
     font-size: 10px;
     color: ${token.colorTextTertiary};
   `,
-  menuHint: css`
-    max-width: 260px;
-    color: ${token.colorTextTertiary};
-    font-size: ${token.fontSizeSM}px;
-    line-height: 1.5;
-    white-space: normal;
-  `,
 }));
 
 export interface OrgSwitcherProps {
@@ -113,12 +105,6 @@ const OrgSwitcher: React.FC<OrgSwitcherProps> = ({ orgName }) => {
       icon: <SwapOutlined />,
       disabled: true,
       label: intl.formatMessage({ id: 'component.org.switch' }),
-    },
-    { type: 'divider' },
-    {
-      key: 'hint',
-      disabled: true,
-      label: <span className={styles.menuHint}>{intl.formatMessage({ id: 'component.org.eeHint' })}</span>,
     },
   ];
 

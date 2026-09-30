@@ -42,7 +42,6 @@ import {
   Result,
   Space,
   Switch,
-  Tag,
   theme,
   Typography,
 } from 'antd';
@@ -78,7 +77,7 @@ interface ShareFormValues {
   downloadLimit: number;
 }
 
-/** 访问方式。CE 只有「凭链接」一种，另一种是 EE 能力，这里保留枚举以便将来直接接上接口。 */
+/** 访问方式。当前只有「凭链接」一种，另一种保留枚举以便将来直接接上接口。 */
 type Audience = 'link' | 'member';
 
 /** 成功态快照：链接 + 本次使用的明文提取码（服务端不再回显）。 */
@@ -450,7 +449,6 @@ export default function ShareModal({ open, node, onClose }: ShareModalProps) {
                     <Text>
                       {intl.formatMessage({ id: 'file.share.audience.member' })}
                     </Text>
-                    <Tag style={{ marginInlineEnd: 0 }}>EE</Tag>
                   </Space>
                   <div>
                     <Text type="secondary" style={{ fontSize: 12 }}>
@@ -571,7 +569,6 @@ export default function ShareModal({ open, node, onClose }: ShareModalProps) {
             <LockedSwitch
               checked={false}
               label={intl.formatMessage({ id: 'file.share.watermark.label' })}
-              tag={<Tag style={{ marginInlineEnd: 0 }}>EE</Tag>}
               description={intl.formatMessage({
                 id: 'file.share.watermark.description',
               })}

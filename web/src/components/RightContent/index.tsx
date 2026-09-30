@@ -4,7 +4,6 @@ import { Button, Tooltip } from 'antd';
 import React from 'react';
 import { LangDropdown } from './LangDropdown';
 import useHeaderActionStyles from './style';
-import { VersionDropdown } from './VersionDropdown';
 
 export const DocLink: React.FC = () => {
   const intl = useIntl();
@@ -25,4 +24,4 @@ export const DocLink: React.FC = () => {
   );
 };
 
-export { LangDropdown, VersionDropdown };
+export { LangDropdown };

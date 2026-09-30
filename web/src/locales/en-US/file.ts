@@ -252,7 +252,7 @@ export default {
     'Anyone holding the link and access code can view it without signing in, which suits external partners; there is no identity check, so it fits one-off, limited-use scenarios best.',
   'file.share.audience.member': 'Named recipients',
   'file.share.audience.memberHint':
-    'Grant precisely by email, phone number or org structure so only the named people can see it. This needs an internal authorization API that the CE edition does not provide yet, so the option is disabled.',
+    'Grant precisely by email, phone number or org structure so only the named people can see it. This needs an internal authorization API the server does not provide yet, so the option is disabled.',
   'file.share.block.policy': 'Permissions and security policy',
   'file.share.field.codeLabel': 'Access code',
   'file.share.field.codeRequired': 'Please enter an access code',
@@ -274,7 +274,7 @@ export default {
     'Always on: each download records the account (IP and user agent for anonymous visitors), the time and the file, and can be traced in the audit log. It cannot be turned off.',
   'file.share.watermark.label': 'Dynamic watermark on previews',
   'file.share.watermark.description':
-    'Needs the server to expose the watermark switch and rendering capability, which the CE edition does not provide yet; leaving it unchecked means this external link has no watermark protection.',
+    'Needs the server to expose the watermark switch and rendering capability, which is not provided yet; leaving it unchecked means this external link has no watermark protection.',
   'file.share.block.expire': 'Validity',
   'file.share.field.expireLabel': 'Link lifetime',
   'file.share.field.expireRequired': 'Please choose a validity period',

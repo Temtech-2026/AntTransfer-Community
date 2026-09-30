@@ -250,7 +250,7 @@ export default {
   'system.group.title': 'グループ管理',
   'system.group.subtitle': '未公開',
   'system.group.alert.title':
-    'CE 版にはグループ管理 API がないため、本ページはプレースホルダーの説明です',
+    'グループ管理 API はまだ提供されていないため、本ページはプレースホルダーの説明です',
   'system.group.alert.desc':
     'データテーブル sys_group / sys_group_member は存在しますが、サーバー側に対応する管理コントローラと権限ポイントがありません。「押せば必ず失敗する」入口を出さないため、ここでは追加・変更・削除の操作を提供せず、模擬データも描画しません。',
   'system.group.section.current.title': '現状',
@@ -283,7 +283,7 @@ export default {
   'system.dept.title': '部門管理',
   'system.dept.subtitle': '組織図（読み取り専用）',
   'system.dept.alert.title':
-    '読み取り専用ページ：CE 版には部門の追加・変更・削除 API がありません',
+    '読み取り専用ページ：部門の追加・変更・削除 API はまだ提供されていません',
   'system.dept.alert.desc':
     '現在利用できる部門エンドポイントは GET /api/v1/system/users/dept-options のみです（ユーザーフォームのドロップダウンとデータ範囲の判定に使用）。本ページは組織図を正確に表示し、実現できない書き込み操作は提供しません。部門 ID は「ユーザーの異動」とデータ範囲の計算にも使われるため、変更前に影響範囲を確認してください。',
   'system.dept.column.name': '部門名',

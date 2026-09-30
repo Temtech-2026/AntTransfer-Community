@@ -25,14 +25,9 @@ export default {
   'component.globalSearch.scopeAria': 'Descripción del alcance de búsqueda',
   'component.globalSearch.scopeTitle':
     'Alcance de búsqueda: nombre de archivo y etiquetas (abre el espacio de trabajo de archivos).',
-  'component.globalSearch.scopeEe':
-    'La búsqueda de texto completo en el contenido de los archivos requiere extracción e indexación de contenido, una capacidad de EE.',
 
   // Entrada a la documentación de uso en la barra superior
   'component.docLink.title': 'Documentación de uso',
-
-  // Entrada a versiones anteriores en la barra superior
-  'component.version.history': 'Versiones anteriores',
 
   // Contenido de la lista de artículos (componente de plantilla)
   'component.articleList.publishedAt': 'Publicado en',
@@ -106,8 +101,6 @@ export default {
   'component.org.current': 'Despliegue actual',
   'component.org.create': 'Crear organización / equipo',
   'component.org.switch': 'Cambiar a otra organización',
-  'component.org.eeHint':
-    'El aislamiento total de datos entre organizaciones (multiorganización, venta de licencias) es una capacidad de EE; la versión CE es un despliegue autoalojado de una sola organización.',
   'component.org.tooltip': 'Organización actual: {name}',
 
   // Zona de arrastre / selección de archivos
