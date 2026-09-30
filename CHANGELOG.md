@@ -1087,6 +1087,37 @@
 
 ### 🔄 Changed（变更）
 
+- 🧹 **清理前端模板遗留与仓库空占位目录（2026-10-01）**：
+  这些目录/文件自 Ant Design Pro 模板初始化后再没被任何代码或构建引用，却一直挂在忽略清单与目录树里
+  消耗注意力；其中 `scripts/simple.js` 更是**危险**的一次性精简脚本——它会用模板路由覆盖
+  `config/routes.ts`（指向 `./Welcome`、`./Admin`、`./table-list` 等早已不存在的页面）后再删除自身。
+  另有一处**隐藏耦合**由 `tsc` 当场抓出并已收口（见第一条）：
+  - **删模板示例服务层**：`web/src/services/ant-design-pro/**`（`/api/currentUser` 等示例，无任何 import 引用），
+    但它同时承载了全局 `API` 命名空间，其中 `API.CurrentUser` 仍被 `app.tsx` / `access.ts` /
+    `services/auth/adapter.ts` 使用（以 `API.` 前缀出现，纯 import 检索查不到）——因此把这 4 个字段
+    （`name` / `avatar` / `userid` / `access`）收编为项目自有类型 `services/auth/types.ts` 的 `CurrentUser`，
+    全局命名空间随之取消；同时移除只为该目录存在的 `vitest.config.ts` 覆盖率排除项与 `biome.json`
+    忽略项——忽略项留着会成为「指向不存在路径」的静默规则；
+  - **删模板预置的演示 API 类型**：`web/types/**`——`index.d.ts` 是按 `config/oneapi.json` 的
+    Ant Design 演示契约（`/api/rule`、`Serati Ma` 等）预生成的 `export namespace API`，模块化导出、
+    0 引用；`types/cache/mock/login.mock.cache.js` 是配套的录制缓存。真实契约在
+    `GET /api/v3/api-docs`（多分组，见 `docs/development/joint-debug-prep.md`），
+    `config/oneapi.json` 暂留待换成真实导出后再生成类型；
+  - **删从未被加载的 mock**：`web/mock/{user,route,notices,utils}.ts`——`config.ts` 的 `mock.include`
+    只收 `src/pages/**/_mock.ts`（唯一真实 mock 是 `src/pages/upload/_mock.ts`），且 `dev` / `start` /
+    `start:*` 一律 `MOCK=none`；`biome.json` 的 `!**/mock` 保留（`npm run record` 仍会写入
+    `mock/requestRecord.mock.js`）；
+  - **删 simple 模式残留**：`web/config/routes.simple.ts` + `web/scripts/simple.js` +
+    `package.json` 的 `simple` 脚本（一次性精简脚本，其目标页面与依赖早已不存在）；
+  - **删空占位**：`sql/migrations/`（仅 `.gitkeep`；Flyway 脚本由 at-bootstrap 的
+    `copy-flyway-migrations` 从 `sql/V*.sql` 复制，构建从不读该目录）与根 `target/` 空目录；
+  - **保留（有意占位，已登记）**：`deploy/helm/`（1.0.0 随包发布的预留 Chart）、
+    `tests/{e2e,performance}`（规划中，用例文档已在）、`deploy/docker/{mysql-initdb.d,m2}`
+    （分别被 compose 挂载 / Dockerfile 读取）、`scripts/db-init.sh`（无 Flyway 的手工环境兜底）；
+  - **验证**：`npm run tsc` / `npm run biome:lint` / `npm test` / `npm run build` 全绿；
+  - **文档同步**：`docs/development/README.md`（仓库导航 sql 描述）、`docs/api/README.md` §7、
+    `web/README.md`。
+
 - 🧹 **用户可见文案不再标注「CE 版 / EE 能力」，并撤下顶栏的模板残留「历史版本」入口（2026-09-30）**：
   界面此前把「这一项为什么不能点」答成了版本号：分享弹窗给「指定接收人」「动态水印」挂 `<Tag>EE</Tag>`、
   组织切换器菜单尾部与顶栏搜索提示各写一段「属 EE 能力 / CE 版未提供」、群组与部门两个只读页的标题

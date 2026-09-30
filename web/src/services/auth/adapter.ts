@@ -2,7 +2,7 @@
  * 认证域出参 → 前端会话模型的适配（纯函数，便于单测）。
  */
 
-import type { AuthUserSummary } from './types';
+import type { AuthUserSummary, CurrentUser } from './types';
 
 /** 超级管理员角色编码（与 `sys_role.code` / `sql/V9__...` 授权语句一致）。 */
 const SUPER_ADMIN_ROLE = 'SUPER_ADMIN';
@@ -16,7 +16,7 @@ const SUPER_ADMIN_ROLE = 'SUPER_ADMIN';
  * <p>{@code access} 字段是 Ant Design Pro 模板遗留（access.ts 的 canAdmin 仍在读），
  * 它<b>不代表权限模型</b>；真正的判定一律走 `access.ts` 的 {@code can(perm_code)}。</p>
  */
-export function toCurrentUser(user?: AuthUserSummary | null): API.CurrentUser | undefined {
+export function toCurrentUser(user?: AuthUserSummary | null): CurrentUser | undefined {
   if (!user?.username) {
     return undefined;
   }

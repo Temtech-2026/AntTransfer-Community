@@ -182,8 +182,8 @@ Authorization: Bearer <accessToken>
 - 💻 已按本契约改造完成：`web/src/requestErrorConfig.ts`（拦截器与策略分流）、
   `web/src/utils/result.ts`（`Result` / `PageResult` 类型 + A~H 策略表，镜像后端 `ErrorCode`）、
   `web/src/utils/token.ts`（双令牌存储）；20 例单测覆盖策略分流与「B 类不弹窗」红线。
-  ⚠️ `web/src/services/ant-design-pro/**` 仍为 Ant Design Pro 模板示例（`/api/currentUser` 等），
-  接入首个真实业务接口时应删除并以 `/api/v1/**` 服务层替换。
+  ✅ 模板示例服务层（`web/src/services/ant-design-pro/**`，含 `/api/currentUser` 等）与本契约无关，
+  已于 2026-10-01 删除；前端服务层统一为 `web/src/services/<领域>/`，全部对接 `/api/v1/**`。
 - 🔕 **「这条新消息该不该响」只有一个裁决点**：全局 `<NotifySoundAlert>`（挂在登录态布局上、不渲染任何 UI）订阅 WebSocket `CHAT` 帧，把 `chatScope / mentionType / 我在该群的 notifyPreference / 是否自己发的` 交给 `shouldRemindMessage`
   （`web/src/services/chat/types.ts`）得出唯一结论，再交由 `soundPlayer` 出声。**四档口径**：
   ① **自己发的永不提醒**——写扩散会把自己那一行原样推回，不拦住就会「自己发消息自己响」；

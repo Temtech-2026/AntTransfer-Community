@@ -60,7 +60,7 @@ anttransfer-community/
 │   ├── at-common / at-gateway / at-auth / at-transfer
 │   └── at-permission / at-file / at-collaboration / at-bootstrap
 ├── web/                   # 前端 Ant Design Pro（Node ≥ 22）
-├── sql/                   # Flyway 脚本：V1__schema.sql / V2__init_data.sql / migrations/
+├── sql/                   # Flyway 脚本唯一事实源：V1__schema.sql ~ V21（构建期复制进 at-bootstrap）
 ├── deploy/{docker,kubernetes,helm}
 ├── scripts/
 └── tests/{e2e,performance}

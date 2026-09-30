@@ -16,6 +16,26 @@ export interface AuthUserSummary {
 }
 
 /**
+ * 渲染用当前用户（ProLayout 头部与头像读的形状），由 {@link toCurrentUser} 从
+ * {@link AuthUserSummary} 映射而来。
+ *
+ * <p>这里<b>不是权限模型</b>：{@code access} 是 Ant Design Pro 模板遗留的粗粒度标记
+ * （仅 `access.ts` 的 canAdmin 读它），真正的判定一律走 {@code can(perm_code)}；
+ * {@code userid} 是后端雪花 ID 的字符串投影，只能用于「是不是同一个人」的比较，
+ * 不能当后端主键参与业务判断（口径见 services/approval/types.ts）。</p>
+ */
+export interface CurrentUser {
+  /** 展示名：昵称优先，缺省回退账号 */
+  name?: string;
+  /** 头像地址（可能缺失，交给头像组件走首字母兜底） */
+  avatar?: string;
+  /** 后端用户主键的字符串投影 */
+  userid?: string;
+  /** 模板遗留标记，仅超级管理员为 `'admin'` */
+  access?: string;
+}
+
+/**
  * 本人自助改密请求（对应 {@code AuthDtos.ChangePasswordRequest}）。
  *
  * <p>这里只描述形状；强度策略（长度 8~64、字母 + 数字、不得与原口令相同）的<b>权威判定在后端</b>，

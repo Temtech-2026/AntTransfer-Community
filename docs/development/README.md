@@ -7,7 +7,7 @@
 ```
 ├── server/                 # 后端 Maven 多模块（见 docs/architecture）
 ├── web/                    # 前端 Ant Design Pro
-├── sql/                    # Flyway 版本化 SQL（V1/V2/migrations）
+├── sql/                    # Flyway 版本化 SQL（唯一事实源，V1~V21 顺序执行）
 ├── deploy/                 # docker / kubernetes / helm 部署物
 ├── scripts/                # 辅助脚本（db 初始化等）
 ├── tests/                  # e2e / performance（规划中）

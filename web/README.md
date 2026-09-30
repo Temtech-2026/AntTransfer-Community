@@ -85,7 +85,7 @@ web/
 | 权限 / 角色 / 审批 / 审计 / 权限地图 | `at-permission` | `/api/v1/permission/**`、`/api/v1/roles/**`、`/api/v1/system/users/**`、`/api/v1/audit/**` |
 
 > 📌 上表前缀是 `server.servlet.context-path: /api` + 控制器 `/v1/...` 的**拼接结果**，与本地代理一一对应（见上文「代理链路」）。
-> 业务页面已按领域落地；仅 `services/ant-design-pro/**` 仍是模板示例，接入首个真实业务接口时应删除。
+> 业务页面已按领域落地，服务层统一在 `src/services/<领域>/`；模板示例 `src/services/ant-design-pro/**` 已于 2026-10-01 删除。
 
 ## 📄 来源与许可
 

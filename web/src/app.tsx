@@ -41,7 +41,7 @@ import {
   toMenuData,
   toProMenuItems,
 } from '@/services/access';
-import { fetchProfile, toCurrentUser } from '@/services/auth';
+import { fetchProfile, toCurrentUser, type CurrentUser } from '@/services/auth';
 import {
   BRAND_ON_PRIMARY,
   BRAND_PRIMARY_ACTIVE,
@@ -64,13 +64,13 @@ const isDev = process.env.NODE_ENV === 'development';
  * */
 export async function getInitialState(): Promise<{
   settings?: Partial<LayoutSettings>;
-  currentUser?: API.CurrentUser;
+  currentUser?: CurrentUser;
   /** 权限域快照，`src/access.ts` 只认这个字段（见 services/access/api.ts）。 */
   permissions?: MyPermission;
   /** 后端动态菜单（D-9 未落地时为空数组，前端回退静态路由菜单）。 */
   menus?: MenuNode[];
   loading?: boolean;
-  fetchUserInfo?: () => Promise<API.CurrentUser | undefined>;
+  fetchUserInfo?: () => Promise<CurrentUser | undefined>;
   settingDrawerOpen?: boolean;
 }> {
   const fetchUserInfo = async () => {

@@ -28,6 +28,7 @@ import {
   type MyPermission,
   type PermCode,
 } from '@/services/access';
+import type { CurrentUser } from '@/services/auth';
 
 /** {@code useAccess()} 的返回类型。 */
 export interface AccessModel {
@@ -58,7 +59,7 @@ export interface AccessModel {
 /** 供 initialState 使用的权限域形状（app.tsx getInitialState 写入）。 */
 export interface AccessInitialState {
   permissions?: MyPermission;
-  currentUser?: API.CurrentUser;
+  currentUser?: CurrentUser;
 }
 
 /**
