@@ -5,38 +5,66 @@ import { createStyles } from 'antd-style';
 import React from 'react';
 
 /** 兜底地址：package.json 未声明 repository 时指向本项目仓库（不再是 Ant Design Pro 模板仓库） */
-const FALLBACK_REPO_URL =
-  'https://gitee.com/Temtech-close_source/AntTransfer-Community';
+const FALLBACK_REPO_URL = 'https://gitee.com/temtech/AntTransfer-Community';
 
 /**
- * 从 package.json 的 repository 推导仓库主页。
+ * 镜像仓库：与主仓库同一份提交历史（commit hash 一一对应），公开可读。
  *
- * 不写死托管方，只做规范化：去掉 `git+` 前缀、把 `git@host:path` 转成 https、去掉 `.git` 后缀。
- * 这样 GitHub / Gitee / GitLab 都能正确成链——本项目托管在 Gitee，若按 github.com 硬判会静默退回
- * 兜底地址，把用户引到别人家的仓库（比不显示链接更糟）。
+ * <p>主仓库地址的唯一权威源仍是 `package.json.repository`——它只能承载一个地址，
+ * 因此镜像在此显式声明，并在页脚**并列展示**：两家托管方的可达性在不同网络环境下并不相同，
+ * 让访问者自己挑一个能打开的，比替他们决定更可靠。</p>
  */
-const getRepoUrl = () => {
-  const raw: unknown = packageJson.repository;
+const MIRROR_REPO_URL = 'https://github.com/Temtech-2026/AntTransfer-Community';
+
+/**
+ * 规范化仓库主页地址：去掉 `git+` 前缀、把 `git@host:path` 转成 https、去掉 `.git` 后缀。
+ */
+const normalizeRepoUrl = (raw: unknown) => {
   const url =
     typeof raw === 'string'
       ? raw
       : ((raw as { url?: string } | undefined)?.url ?? '');
-  const normalized = url
+  return url
     .trim()
     .replace(/^git\+/, '')
     .replace(/^git@([^:]+):/, 'https://$1/')
     .replace(/\.git$/, '')
     .replace(/\/+$/, '');
-  // 只接受 https://host/owner/repo 形态，避免把畸形地址渲染成坏链接
-  return /^https?:\/\/[^/]+\/[^/]+\/[^/]+$/.test(normalized)
-    ? normalized
-    : FALLBACK_REPO_URL;
+};
+
+/** 只接受 https://host/owner/repo 形态，避免把畸形地址渲染成坏链接 */
+const isRepoHomepage = (url: string) =>
+  /^https?:\/\/[^/]+\/[^/]+\/[^/]+$/.test(url);
+
+/**
+ * 从 package.json 的 repository 推导**主**仓库主页。
+ *
+ * 不写死托管方，只做归一：GitHub / Gitee / GitLab 都能正确成链——若按
+ * 某一家的域名硬判，另一家的地址会静默退回兜底地址，把用户引到别人家的仓库
+ * （比不显示链接更糟）。
+ */
+const getRepoUrl = () => {
+  const normalized = normalizeRepoUrl(packageJson.repository);
+  return isRepoHomepage(normalized) ? normalized : FALLBACK_REPO_URL;
+};
+
+type RepoLink = { url: string; host: string; isGithub: boolean };
+
+const toRepoLink = (url: string): RepoLink => {
+  const host = new URL(url).hostname;
+  return { url, host, isGithub: host.endsWith('github.com') };
 };
 
 const REPO_URL = getRepoUrl();
-/** 仓库托管域名：用于页脚文案，避免把 Gitee 仓库标成 GitHub */
-const REPO_HOST = new URL(REPO_URL).hostname;
-const IS_GITHUB = REPO_HOST.endsWith('github.com');
+
+/**
+ * 页脚展示的仓库链接：主仓库 + 镜像，按地址去重
+ * （package.json 哪天改指 GitHub 时，不至于出现两条一模一样的链接）。
+ */
+const REPO_LINKS: RepoLink[] = [REPO_URL, MIRROR_REPO_URL]
+  .filter((url, index, all) => all.indexOf(url) === index)
+  .map(toRepoLink);
+
 const COMMIT_HASH = process.env.COMMIT_HASH || '';
 
 const useStyles = createStyles(({ token, css }) => ({
@@ -138,19 +166,23 @@ const Footer: React.FC = () => {
           </a>
         </span>
         <Divider orientation="vertical" className={styles.divider} />
-        <a
-          className={styles.link}
-          href={REPO_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          {IS_GITHUB ? (
-            <GithubOutlined style={{ marginRight: 4 }} />
-          ) : (
-            <LinkOutlined style={{ marginRight: 4 }} />
-          )}
-          {REPO_HOST}
-        </a>
+        {/* 主仓库与镜像并列：两家可达性因网络环境而异，给访问者自己挑 */}
+        {REPO_LINKS.map((repo) => (
+          <a
+            key={repo.url}
+            className={styles.link}
+            href={repo.url}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {repo.isGithub ? (
+              <GithubOutlined style={{ marginRight: 4 }} />
+            ) : (
+              <LinkOutlined style={{ marginRight: 4 }} />
+            )}
+            {repo.host}
+          </a>
+        ))}
       </div>
     </div>
   );
