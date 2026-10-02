@@ -43,6 +43,7 @@ package com.anttransfer.common.constant;
  *   at:chatatt:ticket:{ticket} 会话附件取件票据，TTL 5min，绑定 attachmentId+consumerUserId+nodeId，可重试至过期
  *   at:chat:retention-lock     会话消息保留期清理互斥锁，TTL 15min（不主动释放，自然过期）
  *   at:share:pick:{ticket}     分享核销后取件票据，TTL 5min，绑定 shareId+fileId+accessType，可重复读至过期
+ *   at:share:expire-notify:{shareId}  链接到期提醒幂等键（SETNX），TTL 7d，抑制同一链接重复提醒
  *   at:perm:{userId}           用户权限标识缓存，TTL 30min，授权变更主动失效
  *   at:perm:escalate:{appId}   超时未审批升级提醒幂等键，默认 TTL 24h
  *   at:perm:emergency:{appId}  紧急通道强提醒幂等键（P1 开关），默认 TTL 30min

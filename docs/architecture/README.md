@@ -41,7 +41,7 @@ AntTransfer CE（Community Edition）采用 **模块化单体（Modular Monolith
 | `at-collaboration` | 协作域 | 多人协作空间 / 分享链接 / **站内通知与轻 IM**（含 `@` 提及、保留期清理） |
 | `at-bootstrap` | 启动聚合 | 聚合全部模块，独占 `spring-boot-maven-plugin` |
 
-> ⚠️ **铁律**（`server/pom.xml` 头部亦有注释约束）：
+> ⚠️ **铁律**（仓库根父 POM `pom.xml` 头部亦有注释约束）：
 
 1. 业务模块与 `at-gateway` **禁止互相依赖**，只允许依赖 `at-common`；
 2. `at-common` **禁止反向依赖**任何 `at-*` 业务模块；
@@ -71,5 +71,5 @@ AntTransfer CE（Community Edition）采用 **模块化单体（Modular Monolith
 
 ## 📌 遗留说明
 
-- 🗄️ `archive/`：迁移前的单体脚手架代码，**不参与构建**（已被 `.dockerignore` 排除），仅供追溯。
-- 🗂️ `doc/`：早期草图/示意图，内容将逐步并入本目录后废弃。
+- 🗄️ `archive/` 与 🗂️ `doc/`：迁移前的单体脚手架代码与早期草图/示意图，**均已从仓库移除**（`git ls-files` 无记录，工作区亦不存在）。
+  `.dockerignore` 仍保留 `archive/` 排除项，以防本地残留目录被卷入构建上下文。

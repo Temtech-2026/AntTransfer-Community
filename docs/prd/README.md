@@ -6,7 +6,7 @@
 | 版本 / 状态 | v0.2-draft · 待评审（v0.2 增补：P0 补「工作台数据总览」、P1 补「批量打包 / 任务级限速 / 文件历史版本」，并新增 §4.1 实现现状核查） |
 | 日期 | 2026-09-13 |
 | 优先级口径 | MoSCoW + P0/P1 双轨：**Must ↔ P0**（1.0 发布门槛）、**Should ↔ P1**（1.x 迭代）、**Won't ↔ EE 专属**（战略规划书右栏能力，仅留扩展点），详见 §1.1 |
-| 技术基线 | 前端 React 19 / Ant Design Pro v6（Umi Max + TypeScript，Node ≥ 22）；后端 Spring Boot 3.5 / Java 21 模块化单体（`server/` 8 个 `at-*` 模块）；MySQL 8.0 + Redis 7 + Flyway |
+| 技术基线 | 前端 React 19 / Ant Design Pro v6（Umi Max + TypeScript，Node ≥ 22）；后端 Spring Boot 3.5 / Java 21 模块化单体（`server/` 8 个 `at-*` 模块）；MySQL 8.4 + Redis 7 + Flyway |
 | 目标用户 | 开发者与中小团队（≤ 500 人规模） |
 | 关联文档 | [README](../../README.md)、[架构说明](../architecture/README.md)、[系统设计](../architecture/system-design.md)、[核心用例时序](../architecture/use-case-flows.md)、[API 约定](../api/README.md)、[错误码表](../api/error-codes.md)、[AT-DIFF 待裁决](../development/AT-DIFF-todos.md) |
 
@@ -337,7 +337,7 @@ AntTransfer CE 面向**开发者与中小团队**，解决三类日常痛点：
 > 原则：**默认不做的能力，在架构上留出接缝**，保证未来可按插拔方式演进而不破坏 CE 现有闭环。
 > 溯源：下表与战略规划书「0.3 节」右栏 **EE 专属**能力对齐；EE 立项时按预留接缝承接，CE 不引入。
 
-| Won't 项 | 本期处理方式 | 预留扩展点（命名以附录 C 为准，实现位置见 [architecture.md §2](./architecture.md)） |
+| Won't 项 | 本期处理方式 | 预留扩展点（命名以附录 C 为准，实现位置见 [architecture.md §2](../architecture/architecture.md)） |
 | --- | --- | --- |
 | **AI DLP** | 不上传内容扫描/敏感词/涉密识别 | **`ContentScanInterceptor`**（`at-common` SPI）；CE 默认 `SuffixAndKeywordScanInterceptor`（后缀黑名单 + 文件名敏感词，**真实生效**）；EE 按 `@Order` 叠加 `DlpContentScanInterceptor` |
 | **杀毒** | 不做病毒扫描 | **`VirusScanner`**（`at-common` SPI，与 DLP 共用「有序管道 + Deny 优先 + fail-closed」语义）；CE 默认 `NoopVirusScanner`（PASS）；EE 接 `ClamAvVirusScanner` |
@@ -352,7 +352,7 @@ AntTransfer CE 面向**开发者与中小团队**，解决三类日常痛点：
 > ✅ **扩展点落地状态（2026-09-29）**：上表**已全部落地为真实 SPI**（不再是设计约定）——
 > 7 个接缝的接口定义在 `at-common` 的 `spi` 子包，CE 默认实现与 `@ConditionalOnMissingBean`
 > 装配门禁同批建立，且每个接缝都有**实际消费点**与回归测试（清单见
-> [`architecture.md` §2.3「落地登记」](./architecture.md)）。命名统一取附录 C 口径，
+> [`architecture.md` §2.3「落地登记」](../architecture/architecture.md)）。命名统一取附录 C 口径，
 > 原 `AuthenticationProvider` / 审批链 `Policy` / 「后处理管道 Hook」/「内容渲染处理器」等 PRD 现名
 > **已按 §2.1 映射表回写为附录 C 命名**（`AuditSink` / 组织边界抽象附录 C 未列，保留 PRD 现名待裁决）。
 >

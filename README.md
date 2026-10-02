@@ -8,7 +8,7 @@
 ![Java](https://img.shields.io/badge/Java-21-orange.svg?logo=openjdk)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.14-6DB33F.svg?logo=springboot)
 ![Maven](https://img.shields.io/badge/Maven-3.9-C71A36.svg?logo=apachemaven)
-![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1.svg?logo=mysql)
+![MySQL](https://img.shields.io/badge/MySQL-8.4-4479A1.svg?logo=mysql)
 ![Redis](https://img.shields.io/badge/Redis-7.x-DC382D.svg?logo=redis)
 ![Flyway](https://img.shields.io/badge/Flyway-versioned-CC0200.svg)
 ![React](https://img.shields.io/badge/React-19-61DAFB.svg?logo=react)

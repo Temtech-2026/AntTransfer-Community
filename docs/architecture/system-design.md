@@ -56,8 +56,11 @@ at-file 的落库服务，但 use-case-flows §1 上传主线明确“写 sys_fi
 - **接口位置（2026-09-29 收紧）**：**CE/EE 扩展点的 7 个 SPI 统一定义在 at-common 的
   `com.anttransfer.common.spi` 子包**（`identity` / `scan` / `crypto` / `watermark` / `approval` /
   `transport`，见 [architecture.md §2.2 / §2.3](./architecture.md)）——EE 只需依赖 at-common 即可实现
-  **任一**扩展点，不必反向依赖某个业务模块；模块**私有的跨模块协作端口**（如 at-file 的
-  `FileIngestPort`）则留在各自模块的 `spi` / `api` 子包内。两者用途不同，**勿混谈**；
+  **任一**扩展点，不必反向依赖某个业务模块；模块**私有的跨模块协作端口**（如 `FileIngestPort`）
+  **当前实际也定义在 at-common 的领域子包**（`common.file` / `common.mybatis` / `common.security` /
+  `common.notify`），业务模块只持有其实现（如 at-file 的 `spi/FileIngestAdapter`）——原定「留在各自
+  模块的 `spi` / `api` 子包内」未采纳，以现状为准（见 [architecture.md §1.3](./architecture.md)）。
+  两者用途不同，**勿混谈**；
 - 跨模块数据库写操作必须落在**同一个本地事务**中编排（同库），不允许拆成两个
   “先写 A 表再写 B 表”的独立事务。
 
@@ -348,14 +351,24 @@ Key 与 TTL 的**唯一权威常量**在 at-common `RedisKeyConstants`（各业�
 | `at:share:count:{token}` | String = 剩余配额镜像（DECR 前置闸，DB 裁决） | 随链接剩余有效期 | 链接失效 / 撤销清理；丢失回源 DB 重建（§5.3） |
 | `at:share:lock:{token}` | String = 提取码错误计数（INCR，计数与锁定同键） | 30 min（**触发锁定时刷新为完整时长**） | 错 5 次临时锁（`4011`，判定须比值 ≥ 阈值，禁 `hasKey`）；提取码正确 DEL |
 | `at:share:ticket:{ticket}` | String = 一次性取件票据载荷（JSON：shareId/fileId/accessType） | 5 min | `GETDEL` 取用即焚；丢失即失效、需重新换票（CE 两步式取件，§5.3-5） |
+| `at:share:pick:{ticket}` | String = 核销后取件票据载荷（JSON：shareId/fileId/accessType） | 5 min | **可重复读**（非一次即焚）：浏览器重试 / `Range` 断点续传 / 多线程分段拉取均属正常请求；次数闸门不受影响——下载次数已在核销瞬间由 DB 原子扣减，TTL 内重复读不多出额度 |
+| `at:share:expire-notify:{shareId}` | String = `SETNX` 幂等标记（到期前扫描任务 `ShareExpireNotifyScheduler`） | 7 d | 抑制同一链接重复提醒；丢失最多多提醒一次（防御态，P-8），链接状态与到期判定不受影响 |
+| `at:file:ticket:{ticket}` | String = 登录用户下载票据载荷（JSON：userId/nodeId/fileId/expireAt） | 5 min | **可重复使用至过期**（同一用户重试下载属正常行为）；取件时逐项比对绑定对象，任一不匹配即 `4018`（票据承载权限，不能只验真伪不验对象） |
+| `at:chatatt:ticket:{ticket}` | String = 会话附件取件票据载荷（JSON：attachmentId/consumerUserId/nodeId/usageMode） | 5 min | 同 `at:file:ticket` **可重复读**；授权来源是 `sys_chat_attachment` 行（他人授权给我），权限判定前移到换票瞬间，取件逐项比对，任一不匹配即 `4028` |
 | `at:perm:{userId}` | 用户可达权限点聚合（角色静态 ∪ 授权动态快照） | 30 min | 授权 / 角色变更、账号停用主动 DEL；丢失由 RBAC 判定重算（P-8） |
+| `at:perm:escalate:{applicationId}` | String = `SETNX` 幂等标记（超时未审批「升级提醒」） | 24 h（`...approval.escalation-idempotent-window` 可覆盖） | 同一申请单每日最多升级提醒一次；丢失最多多提醒一次（防御态，P-8） |
+| `at:perm:emergency:{applicationId}` | String = `SETNX` 幂等标记（紧急通道「强提醒」，P1 开关默认关闭） | 30 min（`...approval.emergency.idempotent-window` 可覆盖） | 仅抑制重复强提醒，丢失不影响审批状态与 SLA 判定（P-8） |
 | `at:rl:{类}#{方法}[:业务key]:{维度}` | String = 固定窗口限流计数（Lua `INCR` + 首增 `EXPIRE` 原子） | = `@RateLimit.windowSeconds`（窗口即 TTL，动态） | 超限 `4290`（HTTP 429）；Redis 异常降级放行（防御态，P-8） |
 | `at:ws:channel` | Pub/Sub 频道名 | 常驻 | 集群 WebSocket 广播通道 |
+| `at:ws:presence:{userId}` | String = 最近活跃时刻（epoch millis） | 动态 = `anttransfer.collaboration.ws.heartbeat-timeout-seconds`（默认 90 s） | 与「连接判死」窗口**严格同源**（键还在 ⟺ 服务端仍认为连接可能活着）；键存在但活跃时刻过旧 = `UNSTABLE`（前端红点）；丢失仅状态点显示不准（P-8） |
+| `at:ws:presence:watch:{targetId}` | ZSET = 成员为订阅者 userId / 分值为续订时刻（epoch millis） | 2 min | 客户端在会话打开期间每 30 s 续订（容忍连续 3 次丢失）；过期成员仅不再被选中推送，键级 TTL 兜底回收 |
 | `at:chat:retention-lock` | String = 聊天消息保留期清理的分布式锁（`SETNX` 占位） | 15 min | **不主动释放**，实例崩溃靠 TTL 兜底；**Redis 异常时降级放行**（清理幂等，而「锁坏了就不清理」会让保留期悄悄失效） |
 
-> 语义红线：本表中仅 `at:token:refresh:{userId}`、「分享链接临时锁」与「`at:share:ticket`」属 Redis 单写
+> 语义红线：本表中仅 `at:token:refresh:{userId}`、「分享链接临时锁」与四个**取件票据键**
+> （`at:share:ticket` / `at:share:pick` / `at:file:ticket` / `at:chatatt:ticket`）属 Redis 单写
 > （写丢失会放宽安全窗口 / 使票据失效需重换，但**不破坏数据正确性**——频次与配额仍以 DB 为准）；
-> 其余各键全部遵循 P-8（DB 为主、Redis 丢失可自愈）。
+> 其余各键（含 `at:share:expire-notify`、`at:perm:escalate` / `at:perm:emergency`、`at:ws:presence(:watch)`）
+> 全部遵循 P-8（DB 为主、Redis 丢失可自愈）。
 
 ## 8. 🔍 现状核对（As-Is）与实现顺序
 

@@ -63,7 +63,7 @@
 
 ## 2️⃣ 🔐 权限审批主线（RBAC 标准流程）
 
-**参与模块**：`at-permission`（申请/审批/授权判定，主）、`at-auth`（当前用户/审批人身份）、`at-collaboration`（资源归属与通知域监听）、`at-common`（审计事件/`AuditSink` 扩展点）。
+**参与模块**：`at-permission`（申请/审批/授权判定，主）、`at-auth`（当前用户/审批人身份）、`at-collaboration`（资源归属与通知域监听）、`at-common`（审计事件 / `AuditSink` 扩展点，**该扩展点尚未建立**，见 [AT-DIFF-10](../development/AT-DIFF-todos.md)）。
 
 **申请单要素**：`apply_type`（ACCESS/DOWNLOAD/EDIT/SHARE）+ `resource`（`resource_type`/`resource_id`）+ `purpose`（目的/理由）+ `desired_expire_at`（拟授权到期时刻，默认申请 24 h，批复可调整）。
 
@@ -81,7 +81,7 @@
 
 ### 2.2 🗄️ 数据表（Flyway 脚本已落地）
 
-> 📌 权威 DDL 见 [sql/V1__schema.sql](../../../sql/V1__schema.sql)（审批与授权族：`sys_approval_request` /
+> 📌 权威 DDL 见 [sql/V1__schema.sql](../../sql/V1__schema.sql)（审批与授权族：`sys_approval_request` /
 > `sys_approval_node` / `sys_user_file_permission`，2026-09-06 二次重置并收敛原 V3 语义），
 > 本文档不再整段复制 DDL，以防双源漂移。要点：申请单 `uk_application_no` 单号唯一、
 > `idx_applicant_resource` 支撑活动态判重；授权表 `grant_source`（1-角色继承 / 2-审批获得）、

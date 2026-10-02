@@ -5,7 +5,7 @@
 | 文档定位 | **架构落地说明书**：回答「进程怎么跑、模块怎么分、依赖往哪走、代码怎么放、请求怎么流、扩展点在哪、部署怎么摆」 |
 | 版本 / 状态 | v1.0 · 2026-09-13（与 `system-design.md` v0.1-draft 配套；冲突时以本文 §1.3 的修订说明为准） |
 | 适用读者 | 二次开发者 / 贡献者（实现前必读）· 评审人（§3 门禁速查）· 运维（§1.6） |
-| 技术基线 | Spring Boot 3.5 / Java 21 · Maven 多模块 · MySQL 8.0 + Redis 7 + Flyway · React 19 / Ant Design Pro v6 |
+| 技术基线 | Spring Boot 3.5 / Java 21 · Maven 多模块 · MySQL 8.4 + Redis 7 + Flyway · React 19 / Ant Design Pro v6 |
 | 关联文档 | [架构总览](./README.md) · [系统设计](./system-design.md) · [核心用例时序](./use-case-flows.md) · [红队评审](./red-team-review.md) · [API 契约](../api/README.md) · [部署指南](../deployment/README.md) · [PRD](../prd/README.md) |
 
 > 🎯 一句话：**一个 Spring Boot 进程内，用 Maven 模块边界 + 依赖铁律 + SPI 依赖倒置，把「单体部署的简单」和「领域边界的清晰」同时拿下。**
@@ -108,7 +108,7 @@ at-gateway  at-auth  at-transfer  at-file  at-permission  at-collaboration
 | --- | --- | --- | --- |
 | `FileMetadataPort` | `at-file` | `at-transfer`（合并落库编排） | 建/查 `sys_file` 元数据，供上传合并在同一事务内调用 |
 | `FileIngestPort` | `at-file`（已有 `FileIngestAdapter`，**已落地**） | `at-transfer`（秒传预检 + 合并落库） | 秒传命中即建引用（`tryInstant` → `Optional<FileIngestResult>`）；合片产物**逐流**传入登记（`ingest(FileIngestCommand, InputStream)`）。配套 `FileIngestCommand`（userId / 文件名 / 目标目录 / SHA-256 / 字节数）与 `FileIngestResult`（`fileId` / `nodeId`，**以字符串过线**规避 JS 大整数精度丢失）。**上表 `FileMetadataPort` 尚未建**：本轮按「更窄的意图端口」落地，后续若两者并存须收敛为一个，勿留双入口 |
-| `PermissionCheckPort` | `at-permission` | `at-auth`（过滤器可选加载权限，[AT-DIFF-02](../development/AT-DIFF-todos.md) 方案 B） | 按 userId 取权限点/数据范围 |
+| `PermissionCheckPort` | `at-permission` | `at-auth`（过滤器可选加载权限，[AT-DIFF-02](../development/AT-DIFF-todos.md) 方案 B） | 按 userId 取权限点/数据范围。**尚未建**：CE 当前为惰性解析（`@RequiresPerm` 切面触发 `PermissionService` → Redis 缓存），AT-DIFF-02 方案 B 未采纳；与 AT-DIFF-02 中提及的 `PermissionAuthorityProvider` 命名尚未收敛，落地前须二选一 |
 | `CurrentUserProvider` | `at-auth`（已有 `SecurityCurrentUserProvider`） | `at-permission` 及业务模块 | 取当前登录用户身份（**已落地**） |
 | `NotificationPort` | `at-collaboration`（通知域，**已落地**） | `at-permission` / `at-transfer` | 写站内通知（`sys_notify_message`）；配套 `NotificationCommand`（收发件人 / 类型 / 业务锚点）与 `NotifyType` 编码表。**渠道开关与落库实现统一收敛于此域**——原先 `at-permission` 自带的站内信 / 邮件实现与开关已删除，避免两套口径分歧 |
 
@@ -210,7 +210,7 @@ server/at-<module>/src/main/java/com/anttransfer/<module>/
         └───┬────────────────────────┬───────┘
             │ JDBC :3306             │ RESP :6379
    ┌────────▼────────┐      ┌────────▼────────┐
-   │  MySQL 8.0      │      │  Redis 7        │
+   │  MySQL 8.4      │      │  Redis 7        │
    │  业务数据/Flyway │      │  会话/缓存/限流  │
    └─────────────────┘      └─────────────────┘
             │
@@ -363,7 +363,7 @@ record TransportRequest(String scheme, int port, boolean secure) {}
 
 | 原则 | 说明 |
 | --- | --- |
-| **不晚于首个功能落地** | 例：`at-file` 实现存储时**同时**抽出 `FileStore` + `CryptoCodec`；`at-permission` 实现审批时**同时**以 `ApprovalNodeResolver` 承载单级实现。否则 EE 化时被迫改已发布接口 |
+| **不晚于首个功能落地** | 例：`at-file` 实现存储时**同时**抽出 `FileStorage` + `CryptoCodec`；`at-permission` 实现审批时**同时**以 `ApprovalNodeResolver` 承载单级实现。否则 EE 化时被迫改已发布接口 |
 | **CE 必须有默认 Bean** | 每个 SPI 在 CE 必须可运行（Noop / 单级 / 明文），不得让 `@Autowired` 因缺实现而启动失败 |
 | **接缝不引入运行时分支** | 通过 `List<XxxSpi>` 有序管道 + `@ConditionalOnMissingBean` 装配，禁止在业务代码里 `if (eeEnabled)` |
 | **建立即登记** | 新增 SPI 时在 §2.1 登记，并在 `red-team-review.md` 回改清单留痕 |
@@ -437,9 +437,9 @@ record TransportRequest(String scheme, int port, boolean secure) {}
 | --- | --- | --- | --- | --- |
 | **D-1**（= A-1） | 跨模块协作口径：「只走事件总线」vs「读走 SPI + 写走单事务」 | 按本文 §1.3 读写分道（`P-3`）实现；SPI 定义在 `at-common`，事件只承载副作用 | 与外部计划书对齐最终口径；**若坚持纯事件总线**，须重审 [T-01] / [T-02] / [T-03]，并同步改 `use-case-flows` §1.1-7 / §2.3-5 与对应集成测试 | 三条主线跑通后；或外部计划书给出权威口径时 |
 | **D-2**（= A-2 / A-3） | CE/EE 扩展点命名的权威源：附录 C 7 接口 vs PRD §8 现名 | 🟡 **主体已收口（2026-09-29）**：7 个接口已按附录 C 命名落地到 `at-common` SPI（§2.3 落地登记）；② **已完成**——`docs/prd/README.md` §8 已按 §2.1 映射表回写，双名并存消除 | ① **残留**：将附录 C 原文补入 `docs/`（或明确放弃）——仅影响溯源，不再影响实现 | 附录 C 原文可得时（不阻塞任何开发） |
-| **D-3** | 红队 v1.1「待回改项」是否代为改动 | 已在 [红队评审·回改清单](./red-team-review.md) 登记但**未改动** | 回改 `system-design.md` §1.3（`mapper` → `repository`）、`docs/prd/README.md` §8、`docs/api/README.md`（幂等键 / 分页上界 / 免登录端点防刷 / 秒传预检语义）、`docs/development/AT-DIFF-todos.md` AT-DIFF-04、`web/src/utils/result.ts` | 随首轮功能实现一并回改；**「对外契约 4 项」按发布门禁第 7 条须在写首个 Controller 前完成** |
+| **D-3** | 红队 v1.1「待回改项」是否代为改动 | 已在 [红队评审·回改清单](./red-team-review.md) 登记；**截至 2026-10-02 剩余 3 项未改动**（`docs/prd/README.md` §8 已回写、AT-DIFF-04 已修复，见右栏） | 回改 `system-design.md` §1.3（`mapper` → `repository`）、`docs/api/README.md`（幂等键 / 分页上界 / 免登录端点防刷）、`web/src/utils/result.ts`；而 `docs/prd/README.md` §8 **已于 2026-09-29 回写**、`docs/development/AT-DIFF-todos.md` AT-DIFF-04 错误码 **已于 2026-09-13 修复**（`403(1003)` / `401(1006)`）、`docs/api/README.md` 秒传预检语义 **已明确**（见 D-4）——**此三项已完成、不再列入本项** | 随首轮功能实现一并回改；**「对外契约 4 项」按发布门禁第 7 条须在写首个 Controller 前完成** |
 | **D-4**（= D-3「对外契约 4 项」 · DoD-3） | 统一响应体 / 分页 / 错误码的「对外契约」收口与「经前后端确认」留痕：`Result<T>` / `PageResult<T>` / 错误码表已定稿并被遵守，但 **API-03 写接口幂等键尚无定义**（`docs/api/README.md` 全文无 `Idempotency-Key`），免登录端点「集中化白名单 + 防刷」未补齐，「经前后端确认」只有「已完成改造」的事实描述、**无评审结论与日期** | `Result<T>`、分页 `PageResult<T>`（默认 20 / 上限 100，由 `MybatisPlusConfig` 强制收敛）、错误码表 + A~H 策略**按现状实现**（后端 `ErrorCode` 为单一权威源，前端 `result.ts` 镜像策略表 + 20 例单测）；免登录端点已列 §5 表、秒传预检语义已明确 | ① 在 `docs/api/README.md` 补 **`Idempotency-Key` 写接口幂等键**定义（适用范围 / 生成规则 / 重放响应）；② 补免登录端点「集中化白名单 + 防刷约定」；③ 补一份前后端确认留痕（评审结论 + 日期），使「经确认」可追溯 | 写第一个 Controller 之前（**硬前置**，发布门禁第 7 条；与 D-3 同源，此处按 DoD-3 收口口径单列） |
-| **D-5**（DoD-4） | **审批线**核心接口未「定稿」，尚不足支撑 Phase 4 直接照做（上传线已于 2026-09-14 落地收口） | **上传线 ✅ 已落地**（五端点 + 字段级 schema 由实现定稿：multipart 字段 `chunk` / `hash`、索引取路径、`precheck` 用 JSON body、`received` 回索引数组）；**剩余仅审批线**——按 §2.3 已定的 `POST /api/v1/permission/applications` 单端点推进 | ① 补齐审批线缺失端点：审批动作（approve / reject / reassign，**路径未定**，仅红队 [V-03] 出现过一次 `PATCH applications/{id}`）、撤销、待办 / 我的申请 / 详情查询、审批规则配置；② 为**审批线**补字段级 schema（DTO 字段名 / 类型 / 必填；上传线的 `chunk` / `hash` 载体与 `precheck` JSON body 已由 2026-09-14 实现定稿），消除 Phase 4 歧义；③ `docs/api/README.md` §1 前缀表补 `at-permission` 的 `/permission/applications` 与 `/permission/menus`（动态菜单，见 **D-9**）；④ 解除两份文档 `draft` 标记并落「定稿」版本；⑤ 与 **D-9** 合并推进：为 `GET /api/v1/permission/menus` 补字段级 schema（节点 `routePath` / `component` / `icon` / `visible`、父子层级、排序与权限过滤口径） | 进入 Phase 4 编码前（**硬前置**） |
+| **D-5**（DoD-4） | **审批线**核心接口未「定稿」，尚不足支撑 Phase 4 直接照做（上传线已于 2026-09-14 落地收口） | **上传线 ✅ 已落地**（五端点 + 字段级 schema 由实现定稿：multipart 字段 `chunk` / `hash`、索引取路径、`precheck` 用 JSON body、`received` 回索引数组）；**剩余仅审批线**——按 §2.3 已定的 `POST /api/v1/permission/applications` 单端点推进 | ① 补齐审批线缺失端点：审批动作（approve / reject / reassign，**路径未定**，仅红队 [V-03] 出现过一次 `PATCH applications/{id}`）、撤销、待办 / 我的申请 / 详情查询、审批规则配置；② 为**审批线**补字段级 schema（DTO 字段名 / 类型 / 必填；上传线的 `chunk` / `hash` 载体与 `precheck` JSON body 已由 2026-09-14 实现定稿），消除 Phase 4 歧义；③ `docs/api/README.md` §1 前缀表补 `at-permission` 的 `/permission/applications`（现以 `/api/v1/permission/...` 泛化列出、未单列；`/permission/menus` 已于 2026-10-02 入表并标注「规划中 · 尚未实现」，见 **D-9**）；④ 解除两份文档 `draft` 标记并落「定稿」版本；⑤ 与 **D-9** 合并推进：为 `GET /api/v1/permission/menus` 补字段级 schema（节点 `routePath` / `component` / `icon` / `visible`、父子层级、排序与权限过滤口径） | 进入 Phase 4 编码前（**硬前置**） |
 | **D-6**（DoD-1 ①） | CE/EE 功能边界未「**书面冻结**」：`docs/prd/README.md` 仍标 `v0.2-draft · 待评审`，无评审结论 / 冻结日期 | 以 PRD §1.1（范围表）+ §4（功能清单）+ §8（Won't）三表**内部自洽**为准推进 | 组织一次范围评审，把 PRD 状态由 `draft` 置为 `frozen`，并留下评审结论 / 日期 / 参与方；同步冻结 §1.1 / §4 / §8 / §2.1 各处清单 | M1 里程碑评审前（或范围发生变更时） |
 | **D-7**（= A-2 范围侧 · DoD-1 ②） | 「P0/P1 清单与**战略规划书 0.3 节**逐项对应无遗漏」当前**无法验证**：战略规划书（含 0.3 节 P0 / P1 / EE 三栏原文）未入库，附录 C 原文亦零命中 | 按 §1.1 内注释「战略规划书当前为外部归档文档，入库后在此补精确章节引用」暂缓；先完成**内部自洽核对**（已核对：§1.1 P0 8 类 / P1 12 项被 §4 全覆盖；§8 Won't 9 项与 §1.1 Won't 栏一一对应；§2.1 覆盖全部 9 个 Won't 能力） | ① 战略规划书入库并落实 §1.1 的章节引用；② 对 0.3 节三栏与 §1.1 / §4 / §8 **逐项比对并出具「无遗漏」结论** | 战略规划书可得时；不晚于 D-6 的范围评审 |
 | **D-8**（= N-1 · ✅ **已收口**） | `at:share:lock:{token}` 提取码锁定 TTL 存在两套口径：**15 min**（需求口述清单）vs **30 min**（代码与全部文档） | **采纳 30 min**（2026-09-13 裁定）：`RedisKeyConstants.SHARE_LOCK_TTL_SECONDS = 30 * 60L`、`system-design.md` §5.3 与 §7.1、PRD US-03「连续 5 次 → 临时锁定（30 分钟）」、红队 [C-08] **四处一致**；15 min 系与 `at:login:fail`（确为 15 min）串行误抄 | 无需回改（项目内本已一致）。后续若确需调整 TTL，须同步 4 处：`RedisKeyConstants` / `system-design` §5.3+§7.1 / PRD US-03 / CHANGELOG，并重开红队 [C-08] | **不适用（已收口）** |

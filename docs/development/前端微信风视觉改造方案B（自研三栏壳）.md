@@ -7,7 +7,7 @@
 | 适用读者 | 方案评审人（§1 / §10）· 前端实现者（§3 / §4）· 项目负责人（§5 / §8） |
 | 技术基线 | React 19 / Umi Max · Ant Design Pro v6（antd 6，`variant: 'filled'`）· `antd-style` CSS-in-JS |
 | 改造范围 | **仅 `web/`**，但**包含 `web/config/routes.ts`**（需做导航收敛，见 §10 D-1）；后端与 `web/src/services/**` 零改动 |
-| 关联文档 | [方案 A（主案）](./前端微信风视觉改造方案.md) · [开发指南](./README.md) · [前端权限映射](./frontend-permission-map.md) · [架构落地说明](../architecture/architecture.md) |
+| 关联文档 | [方案 A（主案）](./前端微信风视觉改造方案A.md) · [开发指南](./README.md) · [前端权限映射](./frontend-permission-map.md) · [架构落地说明](../architecture/architecture.md) |
 
 > 🎯 **一句话**：用自研的「60px 导航条 + 列表栏 + 内容区」三栏壳替换 `ProLayout`，换取最接近微信的骨架；代价是迁移全部布局钩子、自己重建菜单 i18n 树，以及 11 个表格页在压缩后的内容区里体验退化。
 

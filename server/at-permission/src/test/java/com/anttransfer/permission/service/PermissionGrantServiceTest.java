@@ -50,7 +50,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * 授权判定与回收单元测试：<b>expire_time 实时判断</b>（不依赖定时任务）、Deny 规则、调岗/离职重评估。
+ * 授权判定与回收单元测试：<b>expire_at 实时判断</b>（不依赖定时任务）、Deny 规则、调岗/离职重评估。
  *
  * @author AntTransfer CE
  */
