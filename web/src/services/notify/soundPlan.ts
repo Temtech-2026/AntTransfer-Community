@@ -119,7 +119,7 @@ function isAcceptedAudioFile(name: string, type: string): boolean {
  * </ol>
  */
 export function planNotifySound(setting: NotifySetting | null): NotifySoundPlan {
-  if (!setting || !setting.soundEnabled) {
+  if (!setting?.soundEnabled) {
     return { kind: 'silent' };
   }
   const preset = resolveNotifySoundPreset(setting.soundPreset);
