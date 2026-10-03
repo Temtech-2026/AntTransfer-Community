@@ -118,6 +118,16 @@ class ChunkedUploadMergeIntegrationTest {
         registry.add("anttransfer.transfer.max-chunk-count", () -> 1024);
         // 并发任务上限设为 2，便于用「第三个任务」精确触发 4103
         registry.add("anttransfer.transfer.max-active-tasks", () -> 2);
+        // 上传类型闸门（扩展名白名单 + 魔数一致性）由 FileUploadValidator 单测与
+        // UploadWhitelistConfigTest 专项覆盖；本用例要验的是「分片 → 合并 → 字节逐位一致」，
+        // 载荷是与任何文件格式无关的随机字节，故在此只放开 bin。
+        // 两点必须留意：
+        //   ① 覆盖的仅是测试上下文，绝不放宽生产 application.yml 的白名单——放行范围是业务策略，
+        //      不能为了测试变宽松（生产配置由 UploadWhitelistConfigTest 守住）；
+        //   ② 随机载荷仍会过「可执行魔数」分支：首 2 字节为 MZ（或首 4 字节为 ELF）时，
+        //      FileMagic 判为 executable 族，本类会以「文件内容与扩展名不符（疑似伪装文件）」拒绝。
+        //      当前种子实测未命中；将来换种子或改 FILE_SIZE 需重跑本类确认。
+        registry.add("anttransfer.file.allowed-extensions", () -> "bin");
     }
 
     @Autowired
