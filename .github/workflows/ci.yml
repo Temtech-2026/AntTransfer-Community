@@ -4,8 +4,12 @@
 #   1) backend ：JDK21 + Maven 全量 verify（测试 + Spotless 许可证头 + JaCoCo 覆盖率判定），
 #                并将各模块 jacoco.xml 上传 Codecov（阈值策略见仓库根 codecov.yml）；
 #   2) frontend：Node 22 + Vitest 全量用例 + tsc 类型检查 + 生产构建。
-# 门禁说明：任一 job 失败即 CI 红；仓库侧把 backend / frontend 配置为必需检查（required status checks）
-#          即可实现「测试失败即阻断合并」。
+#   3) security：供应链与凭证扫描——OWASP Dependency-Check（CVSS ≥ 7 失败）、
+#                npm audit（生产依赖 high 失败）、gitleaks（历史提交里的密钥）。
+# 门禁说明：任一 job 失败即 CI 红；仓库侧把 backend / frontend / security 配置为必需检查
+#          （required status checks）即可实现「测试失败即阻断合并」。
+# ⚠️ 覆盖范围提示：本文件仅对 GitHub 镜像仓库生效；主仓库为 Gitee，推送 Gitee 不会触发任何 job，
+#    需在 Gitee 侧另建等价流水线，否则「阻断合并」在主开发路径上是空转的。
 name: CI
 
 on:
@@ -79,3 +83,56 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+  # ==========================================================================
+  # 安全扫描（供应链 + 凭证）：与功能测试解耦为独立 job
+  # 为什么独立：这类扫描失败的原因（新披露 CVE、误报、历史密钥）与本次代码改动无关，
+  #           混在 backend/frontend 里会让「测试通过但 CI 红」的原因难以定位。
+  # ==========================================================================
+  security:
+    name: Security (SCA + Secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # gitleaks 需要完整历史：默认浅克隆（depth=1）只能看到最后一次提交，
+          # 历史里已泄漏的密钥会永远扫不出来。
+          fetch-depth: 0
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Make Maven wrapper executable
+        run: chmod +x mvnw
+
+      # 卡点：CVSS ≥ 7（High / Critical）即构建失败。
+      # 首次运行会下载 NVD 库，耗时数分钟；配置 NVD_API_KEY secret 可避免匿名配额限流。
+      - name: OWASP Dependency-Check (fail on CVSS >= 7)
+        run: ./mvnw -B -ntp -Psecurity-scan dependency-check:check -DfailBuildOnCVSS=7
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # 卡点：仅查生产依赖（--omit=dev）——devDependencies 不进产物，不构成运行时风险，
+      # 若一并卡 high，构建工具链一升级就会红，属噪声。
+      - name: npm audit (production deps, fail on high)
+        working-directory: web
+        run: npm audit --omit=dev --audit-level=high
+
+      # 卡点：历史提交中检出密钥即失败（配置见 .gitleaks.toml）
+      - name: gitleaks (secrets in git history)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

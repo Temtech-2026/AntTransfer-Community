@@ -133,6 +133,11 @@
              门槛规则见父工程 <build> 中 jacoco-maven-plugin 的 check 执行。 -->
         <jacoco.version>0.8.15</jacoco.version>
 
+        <!-- ===== OWASP Dependency-Check：依赖供应链 CVE 扫描 =====
+             仅在 -Psecurity-scan 时启用（见文末 <profiles>），不参与默认构建，
+             以免每次本地 verify 都要联网拉取 NVD 库。 -->
+        <dependency-check.version>12.1.0</dependency-check.version>
+
         <!-- ===== Maven Enforcer：构建前置校验（JDK 版本门禁） =====
              校验「运行 Maven 的 JDK」本身——它同时也是 spring-boot:run 派生 JVM 的来源，
              故必须为 JDK 21；失效场景与拦截理由见 <build> 中该插件的注释。 -->
@@ -399,9 +404,10 @@ spring-boot:run 派生的 JVM 取「跑 Maven 的那个 JDK」，JDK 不对时�
                     <!-- 3) 门槛判定：DoD 要求（完整口径见 docs/development/dod.md）
                            · 模块整体【行覆盖率 ≥ 85%】（BUNDLE 维度，按模块逐一判定）；
                            · 安全逻辑【行覆盖率 ≥ 90%】（CLASS 维度，类名含 .security. 的类逐一判定）。
-                         ⚠️ 实测基线（2026-09-14）：整体 36.5%（1892/5184）、安全包 52.9%（120/227），
-                         远低于目标值，故当前置 haltOnFailure=false —— verify 会打印判定明细但不
-                         阻断构建，避免 CI 长期红灯；待补齐测试后可删除该参数，即刻变为硬门禁。 -->
+                         ⚠️ 实测基线（2026-10-03 刷新）：整体 44.16%（3621/8200）、安全包 55.08%（141/256），
+                         仍远低于目标值（8/8 模块低于 85%、15 个安全类低于 90%，该轮 check 共打印 23 条违规），
+                         故当前置 haltOnFailure=false —— verify 会打印判定明细但不阻断构建，避免 CI 长期红灯；
+                         待补齐测试后可删除该参数，即刻变为硬门禁。 -->
                     <execution>
                         <id>jacoco-check</id>
                         <phase>verify</phase>
@@ -482,4 +488,45 @@ spring-boot:run 派生的 JVM 取「跑 Maven 的那个 JDK」，JDK 不对时�
             </plugin>
         </plugins>
     </build>
+
+    <!-- ============================================================================
+         profile：security-scan（供应链 CVE 卡点）
+         ============================================================================
+         为什么用 profile 而不是把插件绑到 verify：Dependency-Check 首次运行需联网下载 NVD
+         全量库（数百 MB、数分钟），且离线环境必然失败。若绑进默认生命周期，等于让每次
+         本地 `mvn verify` 都变慢甚至失败，最终结果一定是被绕过或注释掉——安全门禁一旦
+         妨碍日常开发就会失效。故默认不激活，仅由 CI 的安全 job 显式调用：
+
+             ./mvnw -B -ntp -Psecurity-scan dependency-check:check -DfailBuildOnCVSS=7
+
+         卡点语义：CVSS ≥ 7（High / Critical）即构建失败。版本 ${dependency-check.version}
+         需随 Maven Central 更新定期核对。
+         ============================================================================ -->
+    <profiles>
+        <profile>
+            <id>security-scan</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.owasp</groupId>
+                        <artifactId>dependency-check-maven</artifactId>
+                        <version>${dependency-check.version}</version>
+                        <configuration>
+                            <!-- 高危即失败：7.0 为 CVSS v3 High 下界 -->
+                            <failBuildOnCVSS>7</failBuildOnCVSS>
+                            <!-- 默认只报告，不自动修；报告留档供整改跟踪 -->
+                            <formats>
+                                <format>HTML</format>
+                                <format>JSON</format>
+                            </formats>
+                            <!-- 匿名配额会被限流，CI 中经 NVD_API_KEY 注入 -->
+                            <nvdApiKey>${env.NVD_API_KEY}</nvdApiKey>
+                            <!-- CPE 误报抑制（如确需豁免，在此登记 CVE + 理由，禁止无限期豁免） -->
+                            <failOnError>true</failOnError>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

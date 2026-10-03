@@ -9,6 +9,7 @@
   },
   "scripts": {
     "analyze": "cross-env ANALYZE=1 max build",
+    "audit": "npm audit --omit=dev --audit-level=high",
     "build": "max build && node scripts/gen-version.mjs",
     "deploy": "cross-env CI=true max build && gh-pages -d dist",
     "dev": "cross-env UMI_ENV=dev MOCK=none max dev",

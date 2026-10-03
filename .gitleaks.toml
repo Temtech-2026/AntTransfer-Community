@@ -1,0 +1,29 @@
+# AntTransfer CE — gitleaks 配置（CI security job 使用）
+#
+# 设计取向：**默认全量规则 + 极窄豁免**。
+# 为什么不用「只扫自定义规则」：密钥泄漏的高发形态（云厂商 AK/SK、私钥、JWT、数据库 URL）
+# 都在 gitleaks 默认规则集里，自建规则集一定会比默认集窄，等于主动放弃检出能力。
+# 为什么豁免要写到路径级最小粒度：allowlist 一旦写成宽泛正则（如 `docs/.*`），
+# 往后任何人都能靠「把密钥放进文档」绕过扫描。
+
+title = "AntTransfer CE"
+
+[extend]
+# 继承 gitleaks 默认规则集，只在其上做最小豁免
+useDefault = true
+
+[allowlist]
+description = "测试夹具与占位示例：非真实凭证"
+
+# 仅豁免单元测试 / 集成测试源码中的固定假值（如 at-auth 测试里的示例 JWT 与口令）。
+# 注意：这里刻意不豁免 docs/、.github/、配置模板——真实密钥最常被误提交的地方恰是这些位置。
+paths = [
+  '''(^|/)src/test/.*''',
+  '''(^|/)web/src/__tests__/.*''',
+  '''(^|/)web/src/.*\.test\.(ts|tsx|js)$''',
+]
+
+# 占位值（文档与模板中要求用户自行替换的字符串）
+regexes = [
+  '''(?i)(your|my|example|placeholder|changeme|xxx|test)[-_]?(api[-_]?key|secret|password|token)''',
+]
