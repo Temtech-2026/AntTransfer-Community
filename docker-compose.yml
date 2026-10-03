@@ -80,6 +80,9 @@ services:
     image: anttransfer/server:latest
     container_name: at-server
     restart: unless-stopped
+    # 健康探针来自镜像自带的 HEALTHCHECK（Dockerfile：curl /api/actuator/health，
+    # DB / Redis 失联即 unhealthy），此处刻意不重复声明，避免两处口径漂移。
+    # 查看：docker compose ps（at-server 的 STATUS 会显示 healthy / unhealthy）。
     ports:
       # 仅绑定宿主回环：对外流量统一由前置反向代理（Nginx / 网关）走 80/443 进入，
       # 后端本体不直接暴露公网；容器网络内仍以 server:8080 互访，不受影响。
