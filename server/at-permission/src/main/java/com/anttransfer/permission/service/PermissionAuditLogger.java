@@ -18,6 +18,7 @@ package com.anttransfer.permission.service;
 import com.anttransfer.common.audit.OperationLog;
 import com.anttransfer.common.audit.repository.OperationLogMapper;
 import com.anttransfer.common.security.AuthenticatedUser;
+import com.anttransfer.common.security.SensitiveDataMasker;
 import com.anttransfer.permission.security.AuthzContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
@@ -56,7 +57,9 @@ import java.util.Map;
  * 恰恰在库里查不到。</p>
  *
  * <p><b>绝不记录敏感字段：</b>口令明文 / 哈希、令牌、提取码等一律不入 {@code detail}；
- * 重置口令只记「谁重置了谁的」，不记内容。</p>
+ * 重置口令只记「谁重置了谁的」，不记内容。该约束<b>不依赖调用方自觉</b>：{@code detail} 在
+ * 序列化前统一经 {@link SensitiveDataMasker#maskMap} 按键名机械清洗，即便未来有人误 put，
+ * 落库的也只是 {@code ***}（按键名判定，整棵子树替换，见 {@link SensitiveDataMasker}）。</p>
  *
  * @author AntTransfer CE
  */
@@ -140,7 +143,8 @@ public class PermissionAuditLogger {
         entity.setTraceId(MDC.get("traceId"));
         entity.setIp(truncate(clientIp(request), MAX_IP_LENGTH));
         entity.setResult(success ? OperationLog.RESULT_SUCCESS : OperationLog.RESULT_FAIL);
-        entity.setDetail(truncate(objectMapper.writeValueAsString(detail), MAX_DETAIL_LENGTH));
+        entity.setDetail(truncate(objectMapper.writeValueAsString(SensitiveDataMasker.maskMap(detail)),
+                MAX_DETAIL_LENGTH));
         entity.setLogTime(LocalDateTime.now());
         return entity;
     }

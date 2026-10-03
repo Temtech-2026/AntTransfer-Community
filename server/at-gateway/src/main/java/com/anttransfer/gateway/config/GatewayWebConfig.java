@@ -16,7 +16,9 @@
 package com.anttransfer.gateway.config;
 
 import com.anttransfer.gateway.filter.AccessLogFilter;
+import com.anttransfer.gateway.filter.SecurityHeadersFilter;
 import com.anttransfer.gateway.filter.TraceIdFilter;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -47,6 +49,25 @@ public class GatewayWebConfig implements WebMvcConfigurer {
     /** CORS 允许来源白名单（Pattern）；dev 默认放开，生产经环境变量收紧 */
     @Value("${anttransfer.cors.allowed-origin-patterns:*}")
     private List<String> allowedOriginPatterns;
+
+    /**
+     * CORS 严格模式：true 时启动即校验白名单，携带凭证期间出现通配来源直接拒绝启动。
+     * 默认 false 以兼容 dev；生产环境必须显式置 true（红队 [D-01]）。
+     */
+    @Value("${anttransfer.cors.strict:false}")
+    private boolean corsStrict;
+
+    /** 安全响应头总开关。 */
+    @Value("${anttransfer.security.headers.enabled:true}")
+    private boolean securityHeadersEnabled;
+
+    /** CSP 策略串；留空则用 {@link SecurityHeadersFilter#DEFAULT_CSP}。 */
+    @Value("${anttransfer.security.headers.content-security-policy:}")
+    private String contentSecurityPolicy;
+
+    /** true = 以 Report-Only 方式下发 CSP（只报不拦），用于上线首周观察。 */
+    @Value("${anttransfer.security.headers.report-only:false}")
+    private boolean cspReportOnly;
 
     /**
      * 链路追踪过滤器：最高优先级，保证所有请求先打上 traceId。
@@ -83,6 +104,44 @@ public class GatewayWebConfig implements WebMvcConfigurer {
                 .allowedHeaders("*")
                 .allowCredentials(true)
                 .maxAge(3600);
+    }
+
+    /**
+     * 安全响应头过滤器：order = {@code HIGHEST_PRECEDENCE + 2}，排在 TraceId / AccessLog 之后、
+     * Spring Security 的 HeaderWriterFilter 之前。
+     */
+    @Bean
+    public FilterRegistrationBean<SecurityHeadersFilter> securityHeadersFilterRegistration() {
+        SecurityHeadersFilter filter = new SecurityHeadersFilter(
+                securityHeadersEnabled, contentSecurityPolicy, cspReportOnly);
+        FilterRegistrationBean<SecurityHeadersFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.addUrlPatterns("/*");
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 2);
+        return registration;
+    }
+
+    /**
+     * CORS 严格模式启动校验：携带凭证（{@code allowCredentials=true}）时禁止通配来源。
+     *
+     * <p>放在启动期而非请求期——配错的 CORS 是「静默开放」型缺陷：请求照常返回 200，
+     * 只有浏览器侧的跨域读取得到了授权，运行时日志里看不出任何异常。启动即失败是唯一
+     * 能让它被发现的时机。</p>
+     *
+     * @throws IllegalStateException 白名单中含通配来源且严格模式开启
+     */
+    @PostConstruct
+    void validateCorsOriginPatterns() {
+        if (!corsStrict) {
+            return;
+        }
+        for (String pattern : resolveOriginPatterns()) {
+            if ("*".equals(pattern)) {
+                throw new IllegalStateException(
+                        "anttransfer.cors.strict=true 时禁止通配来源：allowCredentials=true 与 "
+                                + "allowedOriginPatterns=* 组合会让任意站点携带用户凭证读取本域接口，"
+                                + "请收敛为显式域名白名单");
+            }
+        }
     }
 
     private String[] resolveOriginPatterns() {

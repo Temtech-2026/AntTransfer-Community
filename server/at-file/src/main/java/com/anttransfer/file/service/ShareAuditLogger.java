@@ -17,6 +17,7 @@ package com.anttransfer.file.service;
 
 import com.anttransfer.common.audit.OperationLog;
 import com.anttransfer.common.audit.repository.OperationLogMapper;
+import com.anttransfer.common.security.SensitiveDataMasker;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,6 +43,10 @@ import java.util.Map;
  *
  * <p><b>UA 落位</b>：{@code sys_operation_log} 无 UA 列，UA 与上下文一并写入 {@code detail}
  * （JSON，超长截断），不新增 Flyway 迁移。</p>
+ *
+ * <p><b>敏感字段机械化清洗：</b>{@code detail} 在序列化前统一经
+ * {@link SensitiveDataMasker#maskMap} 按键名清洗。外发场景的 {@code extra} 会带提取码 / 口令
+ * 之类的上下文，靠调用方「记得别 put」防不住，且本表 append-only、删不掉。</p>
  *
  * @author AntTransfer CE
  */
@@ -91,7 +96,8 @@ public class ShareAuditLogger {
             entity.setTraceId(MDC.get("traceId"));
             entity.setIp(truncate(clientIp, MAX_IP_LENGTH));
             entity.setResult(success ? OperationLog.RESULT_SUCCESS : OperationLog.RESULT_FAIL);
-            entity.setDetail(truncate(objectMapper.writeValueAsString(detail), MAX_DETAIL_LENGTH));
+            entity.setDetail(truncate(objectMapper.writeValueAsString(SensitiveDataMasker.maskMap(detail)),
+                    MAX_DETAIL_LENGTH));
             entity.setLogTime(LocalDateTime.now());
             operationLogMapper.insert(entity);
         } catch (Exception e) {

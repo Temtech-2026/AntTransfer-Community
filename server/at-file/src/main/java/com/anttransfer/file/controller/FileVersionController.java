@@ -84,8 +84,11 @@ public class FileVersionController {
         }
         String sha256 = FileHashUtils.sha256Hex(file);
         try {
+            // 原始文件名必须下传：版本上传与直传落在同一条类型校验链上。缺了名字就只剩魔数可查，
+            // 「a.exe 带合法魔数」这类伪装会同时漏过扩展名白名单与双重扩展名识别
             return Result.ok(fileContentService.uploadNewVersion(CurrentUserContext.currentUserId(), nodeId,
-                    file.getContentType(), sha256, file.getSize(), file.getInputStream(), remark));
+                    file.getOriginalFilename(), file.getContentType(), sha256, file.getSize(),
+                    file.getInputStream(), remark));
         } catch (IOException e) {
             throw new BusinessException(ErrorCode.FILE_UPLOAD_FAIL, "读取上传文件失败");
         }

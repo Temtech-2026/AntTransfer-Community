@@ -19,6 +19,16 @@ springdoc:
   swagger-ui:
     enabled: false
 
+# CORS 严格模式（红队 [D-01]）：fail-closed。
+# 生产若未显式设置 ANTTRANSFER_CORS_ALLOWED_ORIGINS，白名单仍是 *，
+# 启动期即抛 IllegalStateException 拒绝启动——这是刻意的：
+# 配错的 CORS 属「静默开放」型缺陷，请求照常返回 200，只有浏览器侧跨域读取被授权，
+# 运行时日志看不出任何异常，启动失败是唯一能让它被发现的时机。
+# 该键被 at-gateway / at-auth / at-collaboration(WebSocket) 三处同源消费，改此一处即全生效。
+anttransfer:
+  cors:
+    strict: true
+
 mybatis-plus:
   configuration:
     # 生产关闭 SQL 控制台输出

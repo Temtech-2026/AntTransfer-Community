@@ -19,6 +19,8 @@ import com.anttransfer.common.constant.RedisKeyConstants;
 import com.anttransfer.common.exception.BusinessException;
 import com.anttransfer.common.ratelimit.RateLimit;
 import com.anttransfer.common.result.ErrorCode;
+import com.anttransfer.common.security.ClientIpResolver;
+import jakarta.servlet.http.HttpServletRequest;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
@@ -111,12 +113,31 @@ public class RateLimitAspect {
         return RedisKeyConstants.rateLimitKey(target, rateLimit.key(), currentDimension());
     }
 
-    /** 限流维度：默认客户端 IP（携带凭证接口通常再叠加业务 key / 用户维度） */
+    /**
+     * 限流维度：客户端 IP。
+     *
+     * <p><b>必须经 {@link ClientIpResolver}，不能直接取 {@code getRemoteAddr()}。</b>
+     * 直接取会同时踩两个坑，且都很致命：</p>
+     * <ul>
+     *   <li><b>生产在 nginx 之后</b>（见 {@code deploy/nginx}），{@code remoteAddr} 是代理 IP，
+     *       于是全站共用一个计数桶——正常用户互相挤爆，限流变成自我 DoS；</li>
+     *   <li>改用 {@code X-Forwarded-For} 又走向另一极端：该头客户端完全可控，
+     *       攻击者每次伪造一个新 IP 即可让 per-IP 限流形同虚设，还能把任意字符串
+     *       注入 Redis 键空间。{@code ClientIpResolver} 同时解决两点——取反代链首跳，
+     *       且只放行合法 IP 字面量，否则降级回 {@code remoteAddr}。</li>
+     * </ul>
+     *
+     * <p>该解析口径与各域审计（{@code FileAuditLogger} 等）一致；三处若各记一个 IP，
+     * 「限流把谁拦了」和「审计记的是谁」就对不上，事后无法复盘。</p>
+     */
     private String currentDimension() {
         if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attrs) {
-            String ip = attrs.getRequest().getRemoteAddr();
-            return ip == null || ip.isBlank() ? "unknown" : ip;
+            HttpServletRequest request = attrs.getRequest();
+            return ClientIpResolver.resolve(
+                    request.getHeader(ClientIpResolver.HEADER_X_FORWARDED_FOR),
+                    request.getHeader(ClientIpResolver.HEADER_X_REAL_IP),
+                    request.getRemoteAddr());
         }
-        return "unknown";
+        return ClientIpResolver.UNKNOWN;
     }
 }

@@ -16,6 +16,7 @@
 package com.anttransfer.file.service;
 
 import com.anttransfer.common.security.AuthenticatedUser;
+import com.anttransfer.common.security.SensitiveDataMasker;
 import com.anttransfer.common.audit.OperationLog;
 import com.anttransfer.common.audit.repository.OperationLogMapper;
 import com.anttransfer.file.security.CurrentUserContext;
@@ -54,6 +55,10 @@ import java.util.Map;
  * 审计只在一切顺利时可信，等于没有。故失败记录开独立事务先提交，
  * 业务事务随后回滚也不影响它。成功记录则相反：继续加入调用方事务，
  * 使「业务回滚了、库里却留着一条成功」不可能发生。</p>
+ *
+ * <p><b>敏感字段机械化清洗：</b>{@code detail} 在序列化前统一经
+ * {@link SensitiveDataMasker#maskMap} 按键名清洗（口令 / 令牌 / 提取码等整棵子树替换为
+ * {@code ***}）。不靠调用方自觉——审计表是 append-only，一次误 put 就是明文永久留档。</p>
  *
  * @author AntTransfer CE
  */
@@ -127,7 +132,8 @@ public class FileAuditLogger {
         entity.setTraceId(MDC.get("traceId"));
         entity.setIp(truncate(clientIp(request), MAX_IP_LENGTH));
         entity.setResult(success ? OperationLog.RESULT_SUCCESS : OperationLog.RESULT_FAIL);
-        entity.setDetail(truncate(objectMapper.writeValueAsString(detail), MAX_DETAIL_LENGTH));
+        entity.setDetail(truncate(objectMapper.writeValueAsString(SensitiveDataMasker.maskMap(detail)),
+                MAX_DETAIL_LENGTH));
         entity.setLogTime(LocalDateTime.now());
         return entity;
     }

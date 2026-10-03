@@ -21,6 +21,7 @@ import com.anttransfer.auth.model.dto.AuthDtos.RefreshTokenRequest;
 import com.anttransfer.auth.model.vo.AuthVos.TokenResponse;
 import com.anttransfer.auth.model.vo.AuthVos.UserSummary;
 import com.anttransfer.auth.service.AuthService;
+import com.anttransfer.common.ratelimit.RateLimit;
 import com.anttransfer.common.result.Result;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -65,8 +66,16 @@ public class AuthController {
     /**
      * 登录：账号密码 → 双令牌（access 30min + refresh 7d）。
      * 免登录白名单端点。
+     *
+     * <p><b>为什么这里只做 per-IP 限流、不叠加 per-账号维度：</b>账号维度的失败锁定已由
+     * {@code LoginAttemptService} 承担（连续失败即锁定，红队 [D-03] 落地）。此处补的是它
+     * 覆盖不到的另一半——<b>单来源撞库</b>：同一个 IP 轮换用户名去试，每个账号都碰不到锁定阈值。
+     * 若在此再挂一个 per-账号窗口，就会与失败计数形成两套阈值不同的「锁定」语义，
+     * 让「为什么被拦」不可解释，故刻意不叠加。</p>
      */
     @PostMapping("/token")
+    @RateLimit(windowSeconds = 60, max = 30, key = "login",
+            message = "登录尝试过于频繁，请稍后再试")
     public Result<TokenResponse> login(@Valid @RequestBody LoginRequest request) {
         return Result.ok(authService.login(request.username(), request.password()));
     }
@@ -74,8 +83,13 @@ public class AuthController {
     /**
      * 刷新：refresh token 换发新令牌对（单次有效，轮换 + 复用检测）。
      * 免登录白名单端点。
+     *
+     * <p>该端点免登录且每次都要打 DB + Redis，是现成的放大面；限流只约束单来源刷量，
+     * 不改变「refresh 单次有效 + 复用检测」的既有裁决口径。</p>
      */
     @PostMapping("/token/refresh")
+    @RateLimit(windowSeconds = 60, max = 60, key = "refresh",
+            message = "令牌刷新过于频繁，请稍后再试")
     public Result<TokenResponse> refresh(@Valid @RequestBody RefreshTokenRequest request) {
         return Result.ok(authService.refresh(request.refreshToken()));
     }

@@ -23,6 +23,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 文件管理配置：{@code anttransfer.file.*}（不含 {@code .share} 子树，那部分归 {@link ShareProperties}）。
@@ -47,6 +48,20 @@ public class FileProperties {
      * 同一内容重复落盘天然写到同一路径，物理去重无需额外协调。</p>
      */
     private String storageRoot = "./data/files";
+
+    /**
+     * 允许上传的扩展名白名单（全小写、不含点）。
+     *
+     * <p><b>代码默认值是空集 = 拒绝全部上传，这是刻意的 fail-closed。</b>真正的清单由
+     * {@code application.yml} 的 {@code anttransfer.file.allowed-extensions} 显式给出——
+     * 让「部署时漏配」表现为「传什么都失败」（立刻被发现），而不是静默变成「什么都能传」。
+     * 配置守卫见 {@code UploadWhitelistConfigTest}。</p>
+     *
+     * <p>它不是唯一防线：危险扩展名（html / js / exe / xml / svg …）另有硬编码黑名单
+     * {@code FileUploadValidator.DANGEROUS_EXTENSIONS} 先于本白名单生效，写进来也不放行；
+     * png / jpg / pdf / zip / Office / 音视频等还会额外校验魔数与扩展名是否一致。</p>
+     */
+    private Set<String> allowedExtensions = Set.of();
 
     /** 单文件大小上限：默认 10 GiB（超出以 4006 拒绝） */
     private long maxFileSize = 10L * 1024 * 1024 * 1024;

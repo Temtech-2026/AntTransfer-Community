@@ -16,7 +16,9 @@
 package com.anttransfer.file.service;
 
 import com.anttransfer.common.exception.BusinessException;
+import com.anttransfer.common.file.FileMagic;
 import com.anttransfer.common.result.ErrorCode;
+import com.anttransfer.common.security.FileUploadValidator;
 import com.anttransfer.common.spi.scan.VirusScanner;
 import com.anttransfer.file.config.FileProperties;
 import com.anttransfer.file.extension.FileScanPipeline;
@@ -30,6 +32,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.PushbackInputStream;
 import java.io.UncheckedIOException;
 import java.util.Locale;
 
@@ -99,9 +102,11 @@ public class FileContentService {
         if (sizeBytes > properties.getMaxFileSize()) {
             throw new BusinessException(ErrorCode.FILE_TOO_LARGE);
         }
+        // 类型闸门必须在落盘之前：内容寻址的落盘不可回滚，先写字节再校验等于把危险内容永久留在库里
+        ValidatedContent validated = validateContent(name, contentType, in);
         String relativePath;
         try {
-            relativePath = fileStorage.storeContent(in, normalizedSha);
+            relativePath = fileStorage.storeContent(validated.stream(), normalizedSha);
         } catch (IOException e) {
             log.error("文件落盘失败：sha256={}, sizeBytes={}", normalizedSha, sizeBytes, e);
             throw new BusinessException(ErrorCode.FILE_UPLOAD_FAIL, e);
@@ -110,7 +115,7 @@ public class FileContentService {
         // 注意此处不删物理内容——内容寻址是共享的，删它会连带破坏引用同一份字节的其他文件
         fileScanPipeline.assertClean(scanContext(normalizedSha, name, sizeBytes, ownerUserId));
         return fileNodeService.registerStoredContent(ownerUserId, name, folderId, level,
-                contentType, normalizedSha, sizeBytes, relativePath);
+                validated.contentType(), normalizedSha, sizeBytes, relativePath);
     }
 
     /**
@@ -119,16 +124,17 @@ public class FileContentService {
      * <p>与 {@link #upload} 的差别是「不新建条目」：字节换了一份，引用条目仍是同一条，旧内容转为历史版本。
      * 落盘依旧走内容寻址，因此「新版本与旧版本内容相同」不会多占磁盘，也不会凭空多出一个版本。</p>
      *
-     * @param ownerUserId 归属用户 ID
-     * @param nodeId      条目 ID
-     * @param contentType MIME 类型
-     * @param sha256      内容 SHA-256（由调用方在服务端计算）
-     * @param sizeBytes   字节数
-     * @param in          内容流（由调用方负责关闭）
-     * @param remark      版本备注（可空）
+     * @param ownerUserId  归属用户 ID
+     * @param nodeId       条目 ID
+     * @param originalName 客户端上报的<b>原始</b>文件名（供类型校验，勿先清洗）
+     * @param contentType  MIME 类型（客户端上报，仅作兜底；魔数能判定时一律以服务端结论为准）
+     * @param sha256       内容 SHA-256（由调用方在服务端计算）
+     * @param sizeBytes    字节数
+     * @param in           内容流（由调用方负责关闭）
+     * @param remark       版本备注（可空）
      * @return 新版本视图（版本功能关闭时返回当前版本视图）
      */
-    public FileVersionVO uploadNewVersion(Long ownerUserId, Long nodeId, String contentType,
+    public FileVersionVO uploadNewVersion(Long ownerUserId, Long nodeId, String originalName, String contentType,
                                           String sha256, long sizeBytes, InputStream in, String remark) {
         String normalizedSha = sha256 == null ? null : sha256.trim().toLowerCase(Locale.ROOT);
         if (normalizedSha == null || normalizedSha.isBlank()) {
@@ -142,16 +148,18 @@ public class FileContentService {
         }
         // 落盘不可回滚，务必先把「无权 / 已回收」这类必然失败的情况拦在写字节之前
         fileNodeService.requireVersionTarget(ownerUserId, nodeId);
+        ValidatedContent validated = validateContent(originalName, contentType, in);
         String relativePath;
         try {
-            relativePath = fileStorage.storeContent(in, normalizedSha);
+            relativePath = fileStorage.storeContent(validated.stream(), normalizedSha);
         } catch (IOException e) {
             log.error("新版本落盘失败：nodeId={}, sha256={}, sizeBytes={}", nodeId, normalizedSha, sizeBytes, e);
             throw new BusinessException(ErrorCode.FILE_UPLOAD_FAIL, e);
         }
-        // 版本上传同样过闸门；此路径未加载条目名，扩展名留空（EE 若依赖扩展名可按内容嗅探）
-        fileScanPipeline.assertClean(scanContext(normalizedSha, null, sizeBytes, ownerUserId));
-        return fileVersionService.createVersion(ownerUserId, nodeId, contentType, normalizedSha,
+        // 版本上传同样过闸门。此前这里传 null，导致 EE 的内容扫描拿不到扩展名、只能退回按内容嗅探；
+        // 现已随 originalName 一并补齐，两条上传路径的扫描上下文口径一致
+        fileScanPipeline.assertClean(scanContext(normalizedSha, originalName, sizeBytes, ownerUserId));
+        return fileVersionService.createVersion(ownerUserId, nodeId, validated.contentType(), normalizedSha,
                 sizeBytes, relativePath, remark);
     }
 
@@ -171,5 +179,52 @@ public class FileContentService {
                 throw new UncheckedIOException(e);
             }
         });
+    }
+
+    /**
+     * 上传内容的类型闸门：扩展名白名单 + 魔数一致性双校验（{@link FileUploadValidator}）。
+     *
+     * <p><b>为什么钉在 Service 层而不是各个 Controller：</b>这里是两条独立链路唯一汇合的地方——
+     * 小文件直传（{@code FileController.upload}）与分片合并（{@code TransferTaskService.merge}
+     * → {@code FileIngestPort}）。只在前者加校验，分片上传就是现成的绕过口；
+     * 钉在这里顺带也覆盖了「新版本上传」。</p>
+     *
+     * <p><b>为什么用 {@link PushbackInputStream}：</b>嗅探要读头部字节，但紧接着的落盘仍必须从第 0
+     * 字节开始。回推而非「先读头再把两段拼成一个新流」，是为了不复制整份内容——上传动辄 GiB 级，
+     * 为嗅探多留一份内存副本不可接受。</p>
+     *
+     * <p>返回值中的 MIME <b>以服务端结论优先</b>：客户端上报的 Content-Type 全程不可信。</p>
+     *
+     * @throws BusinessException 类型校验未通过（{@link ErrorCode#FILE_TYPE_NOT_ALLOWED}）
+     */
+    private ValidatedContent validateContent(String originalName, String clientContentType, InputStream in) {
+        PushbackInputStream stream = new PushbackInputStream(in, FileMagic.SNIFF_LENGTH);
+        byte[] head;
+        try {
+            head = stream.readNBytes(FileMagic.SNIFF_LENGTH);
+            stream.unread(head);
+        } catch (IOException e) {
+            log.error("读取文件头失败，无法完成类型校验", e);
+            throw new BusinessException(ErrorCode.FILE_UPLOAD_FAIL, e);
+        }
+        FileUploadValidator.Decision decision =
+                FileUploadValidator.validate(originalName, head, properties.getAllowedExtensions());
+        if (!decision.allowed()) {
+            // 只记 reason 不记原始文件名：文件名是攻击者可控输入，且此时可能含控制字符，
+            // 直接落日志有注入风险；reason 里的扩展名已过结构性检查
+            log.warn("上传类型校验未通过：reason={}", decision.reason());
+            throw new BusinessException(ErrorCode.FILE_TYPE_NOT_ALLOWED, decision.reason());
+        }
+        String contentType = decision.contentType() != null ? decision.contentType() : clientContentType;
+        return new ValidatedContent(stream, contentType);
+    }
+
+    /**
+     * 通过类型闸门后的成果物。
+     *
+     * @param stream      已回推文件头的完整内容流（供落盘使用，自第 0 字节可读）
+     * @param contentType 服务端认定的 MIME（魔数可判定时非空，否则回落到客户端上报值）
+     */
+    private record ValidatedContent(InputStream stream, String contentType) {
     }
 }

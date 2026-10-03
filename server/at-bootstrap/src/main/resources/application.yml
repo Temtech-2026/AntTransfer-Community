@@ -161,6 +161,53 @@ anttransfer:
   # 映射 ShareProperties（@ConfigurationProperties("anttransfer.file.share")）。
   # 下列取值与代码默认值一致，显式列出便于运维查阅与按需覆盖（不改代码即可调策略）。
   file:
+    # 上传扩展名白名单（红队 [R-02]，fail-closed）。校验口径是「扩展名白名单 + 魔数一致性」双查：
+    # 只查扩展名挡不住改名换后缀；只查魔数挡不住「合法魔数 + 危险后缀」（如带 MZ 头的 a.exe）。
+    # 危险扩展名（html / js / exe / sh / xml / svg / jar …）另有硬编码黑名单，先于本清单生效，写进来也不放行。
+    # 与 FileProperties#allowedExtensions 的关系：代码默认值是空集（= 拒绝全部上传），
+    # 故本清单是「上传可用」的必要条件；一旦被误删，表现为所有上传都失败而非什么都能传
+    # （由 UploadWhitelistConfigTest 守卫，避免静默退化成放开）。
+    allowed-extensions:
+      - png
+      - jpg
+      - jpeg
+      - gif
+      - bmp
+      - webp
+      - pdf
+      - txt
+      - md
+      - log
+      - csv
+      - json
+      - yml
+      - yaml
+      - ini
+      - conf
+      - properties
+      - sql
+      - zip
+      - 7z
+      - rar
+      - gz
+      - doc
+      - docx
+      - xls
+      - xlsx
+      - ppt
+      - pptx
+      - wps
+      - et
+      - dps
+      - vsd
+      - vsdx
+      - mp3
+      - wav
+      - ogg
+      - mp4
+      - mov
+      - webm
+      - mkv
     share:
       # 总开关：关闭后「创建 / 撤销 / 查询 / 访客换票」全部拒绝（熔断），
       # 但不影响已生成链接的「核销取件」（避免熔断时已外发的链接突然不可取）。
@@ -264,6 +311,10 @@ anttransfer:
     # dev 默认放开；生产须用环境变量 ANTTRANSFER_CORS_ALLOWED_ORIGINS 收紧为显式来源白名单
     #（如 http://your.domain 或 https://*.company.com），携带凭证场景禁止使用 *
     allowed-origin-patterns: '${ANTTRANSFER_CORS_ALLOWED_ORIGINS:*}'
+    # 严格模式（红队 [D-01]）：true 时启动期校验白名单，携带凭证 + 通配来源直接拒绝启动。
+    # 默认 false 仅为兼容 dev 前端直连；生产 profile 已置 true（见 application-prod.yml）。
+    # 开关只影响「是否在启动期校验」，不放宽任何实际放行范围。
+    strict: '${ANTTRANSFER_CORS_STRICT:false}'
 
 # ---------------- 版本与运维探针（actuator） ----------------
 # 目的：让「线上跑的是哪个提交」成为一条命令可查的事实，而不是靠时间戳间接推断。

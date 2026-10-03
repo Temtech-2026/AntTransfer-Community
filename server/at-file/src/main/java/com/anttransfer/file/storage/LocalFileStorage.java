@@ -141,7 +141,14 @@ public class LocalFileStorage implements FileStorage {
         if (relativePath == null || relativePath.isBlank()) {
             throw new IllegalArgumentException("相对路径不能为空");
         }
-        return root.resolve(relativePath).normalize();
+        Path resolved = root.resolve(relativePath).normalize();
+        if (!resolved.startsWith(root)) {
+            // normalize 只折叠 ../ 并不保证不越界：../../etc/passwd 会被折叠成根目录之外的绝对路径。
+            // 下载（resource）与删除（delete）都经本方法，一旦越界即等价于任意文件读 / 删，
+            // 故必须在出口处显式拒绝——与 toRelative 的越界检查保持同一口径。
+            throw new IllegalArgumentException("路径越出存储根：" + relativePath);
+        }
+        return resolved;
     }
 
     @Override

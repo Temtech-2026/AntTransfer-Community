@@ -16,6 +16,7 @@
 package com.anttransfer.permission.util;
 
 import com.anttransfer.common.audit.OperationLog;
+import com.anttransfer.common.security.OutputSanitizer;
 import com.anttransfer.permission.model.vo.AuditLogVO;
 
 import java.nio.charset.StandardCharsets;
@@ -111,17 +112,16 @@ public final class AuditLogCsv {
         return String.valueOf(result);
     }
 
-    /** 按 CSV 规则转义：仅含分隔符 / 引号 / 换行的字段才加引号包裹。 */
+    /**
+     * 按 CSV 规则转义：仅含分隔符 / 引号 / 换行的字段才加引号包裹，
+     * 并对 {@code = + - @} 开头的字段做公式注入中和。
+     *
+     * <p>{@code detail} 内含完全由攻击者控制的 {@code User-Agent}：若某条记录的 UA 为
+     * {@code =cmd|'/c calc'!A1}，导出 CSV 后由审计员用 Excel 打开即触发公式执行。
+     * 转义交给 {@link OutputSanitizer#csvCell(String)} 统一实现，避免此处再漏一次。</p>
+     */
     private static String escape(String value) {
-        if (value == null || value.isEmpty()) {
-            return "";
-        }
-        boolean needQuote = value.indexOf(',') >= 0
-                || value.indexOf('"') >= 0
-                || value.indexOf('\n') >= 0
-                || value.indexOf('\r') >= 0;
-        String escaped = value.replace("\"", "\"\"");
-        return needQuote ? '"' + escaped + '"' : escaped;
+        return OutputSanitizer.csvCell(value);
     }
 
     private static String text(Object value) {
