@@ -147,3 +147,10 @@ temp/
 # 本地验证/评估用临时载体（Flyway 校验等一次性产物，禁止入库）
 .verify_tmp/
 .verify/
+
+# ============ 本机工具产物（禁止提交） ============
+# playwright-cli 会话缓存（登录态、页面 dump，数量上百，属工具私有状态）
+.playwright-cli/
+# playwright-cli 落在仓库根的快照残留（非项目配置）
+login.yaml
+document.title
