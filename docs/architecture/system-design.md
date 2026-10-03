@@ -405,6 +405,12 @@ Redis Key 规划定稿：at-common `RedisKeyConstants`（`at:` 前缀 Key/TTL �
 at-transfer 46 / at-permission 225 / at-file 148 / at-collaboration 72 / at-bootstrap 30）；
 前端 **73 文件 / 828 例**全绿。
 
+**回归证据（2026-10-03 刷新）**：后端 8 模块 **794 例**全绿（at-common 50 / at-gateway 55 / at-auth 81 /
+at-transfer 46 / at-permission 227 / at-file 171 / at-collaboration 110 / at-bootstrap 54），
+行覆盖率整体 **44.16%（3621 / 8200）**、安全 **55.08%（141 / 256）**；前端 **78 文件 / 1093 例**全绿。
+上一段「2026-09-29 实跑」保留为当轮记录，**最新基线以本段为准**，明细见
+[dod.md](../development/dod.md)。
+
 **待实现（按 P0 顺序建议，相关表已随 V1 就绪）**：
 1. ~~认证切面 + 双令牌 + Redis 会话~~ **✅ 已实现（2026-09-07）**：Spring Security 过滤链 +
    access JWT（`ver=token_epoch`）+ refresh Redis 白名单原子轮换 + 登录失败计数锁定；

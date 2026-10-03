@@ -95,6 +95,14 @@ sql/
   初始化数据，避免 initdb.d 先灌库导致 Flyway 重复执行 V2（固定 ID 插入）冲突。
   数据库层自定义脚本（Flyway 不管理的操作，如建测试账号）放
   `deploy/docker/mysql-initdb.d/`（默认空目录，见该目录 README）。
-- 🗄️ 双数据库支持：MySQL 即默认数据源（`application-mysql.yml` 为显式拆分示例）；
-  PostgreSQL 见 `server/at-bootstrap/application-pg.yml`（依赖与 profile 已就绪，但 V1/V2 为
-  MySQL 方言，需按 `V1__schema.sql` 文件头「PostgreSQL 差异点」改写脚本后再启用）。
+- 🗄️ **MySQL 为唯一可用存储**：`application.yml` 默认 `com.mysql.cj.jdbc.Driver` 连 MySQL 8；
+  `application-mysql.yml` 为「显式 MySQL」的等价拆分示例。`V1` ~ `V21` 全部 21 个脚本均为 MySQL 8
+  方言，且仅此一套可执行。
+- 🐘 PostgreSQL **仅为示例 profile，不构成「双数据库支持」**：`server/at-bootstrap/application-pg.yml`
+  只切数据源（driver / url / 账号），驱动与 `flyway-database-postgresql` 依赖虽已就绪，但
+  `V1` ~ `V21` 全为 MySQL 方言（截至 V21，其中 **13 个**脚本带「PostgreSQL 差异点」注记：V1 / V2 /
+  V4 / V5 / V9 / V13 ~ V18 / V20 / V21），
+  须按 `V1__schema.sql` 文件头「PostgreSQL 差异点」逐条改写（tinyint→smallint、datetime→timestamp、
+  列内 `on update CURRENT_TIMESTAMP` 转触发器、行内 `KEY` / `UNIQUE KEY` 转独立 `CREATE INDEX`、
+  `COMMENT` 转 `COMMENT ON`、`collate` / `ENGINE` 无对应写法）后才可能启用；**改写完成前 PG 上
+  Flyway 迁移无法跑通**，勿按「已支持双库」对外表述。

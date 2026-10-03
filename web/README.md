@@ -37,7 +37,7 @@ npm run dev
 1. `npm run dev` 带 **`MOCK=none`**，mock 已关闭；后端不在 8080 时 `/api` 必然失败——需先 `make dev-up`（MySQL/Redis）再 `make run`（后端 8080）。
 2. 代理**只对 dev server 生效**：`npm run preview` / `build` 产物不走 `proxy.ts`，此时 `src/app.tsx:193` 的 `baseURL` 会切到官方 demo 域名，属预期行为，勿误判为代理故障。
 
-**状态（2026-09-29）**：本地 dev 代理链路与后端 `/api/v1/**` 已按同一前缀回归（前端全量 **73 文件 / 828 用例**全绿，含请求层与错误码策略分流断言）；若代理失败，仍按 CORS（`anttransfer.cors.allowed-origin-patterns`）→ 路径拼接 → 后端白名单顺序排查。
+**状态（2026-09-29 实测）**：本地 dev 代理链路与后端 `/api/v1/**` 已按同一前缀回归（前端测试 **73 文件 / 828 例（09-29）→ 78 文件 / 1093 例（10-03）** 全绿，含请求层与错误码策略分流断言；代理链路本身的人工联调最近一次仍为 09-29）；若代理失败，仍按 CORS（`anttransfer.cors.allowed-origin-patterns`）→ 路径拼接 → 后端白名单顺序排查。
 
 ## ⚙️ 常用脚本
 
@@ -48,7 +48,7 @@ npm run dev
 | `npm run preview` | 预览构建产物（默认 8000 端口） |
 | `npm run lint` | Biome 代码检查 + TypeScript 类型检查 |
 | `npm run tsc` | TypeScript 类型检查 |
-| `npm run test` | Vitest 单元测试（全量，当前 **73 文件 / 828 用例**） |
+| `npm run test` | Vitest 单元测试（全量，**73 文件 / 828 例（09-29）→ 78 文件 / 1093 例（10-03）**） |
 | `npm run test:coverage` | 同上 + v8 覆盖率报告 |
 | `npm run test:watch` / `npm run test:ui` | 监听模式 / 可视化 UI |
 | `npm run openapi` | 从 OpenAPI 生成接口服务（需先配置 schema 来源） |

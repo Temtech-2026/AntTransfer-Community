@@ -1,7 +1,9 @@
 # ✅ 完成标准（DoD）核对表
 
-> **核对日期**：2026-09-14
-> **核对方式**：仓库实跑 + 配置溯源（非文档推断）——后端 `./mvnw verify`（JDK 21）、前端 `npm test` / `npm run tsc` / `npm run build`。
+> **核对日期**：2026-09-14（首次核对）· **2026-10-03 全量刷新**
+> **核对方式**：仓库实跑 + 配置溯源（非文档推断）——后端 `./mvnw -B -ntp verify`（JDK 21）、前端 `npm test` / `npm run tsc` / `npm run build`。
+> **2026-10-03 刷新范围**：重跑后端 `verify`（含测试 + Spotless + JaCoCo `report`/`check`）与前端 `npm test`，
+> 用例数与**覆盖率基线**全部替换为实测值；上一版遗留的「覆盖率基线待下一轮刷新」待办已在本轮关闭。
 > **⚠️ 与阶段 DoD 区分**：[`architecture.md` § 🎯 本阶段 DoD 现状对照](../architecture/architecture.md) 管的是**阶段范围 DoD**（功能边界冻结 / 用户故事 / 契约定稿），
 > 本文管的是**交付质量 DoD**（冒烟 / 覆盖率 / 压测 / 前端工程化）。两者并行，互不替代。
 
@@ -16,14 +18,14 @@
 
 ---
 
-## 🧭 结论速览（2026-09-14；用例统计 2026-09-29 刷新）
+## 🧭 结论速览（2026-09-14 首次核对；用例数与覆盖率 2026-10-03 全量刷新）
 
 | # | 标准 | 判定 | 一句话结论 |
 | --- | --- | --- | --- |
 | 1 | 冒烟用例集 100% 通过 | ❌ **未达成** | 用例集 S01–S17 已定义，但**联调首轮尚未执行**，无通过率数据；仓库内也无法复跑（载体是外部 Apifox 集合） |
-| 2 | 覆盖率 ≥ 85% / 安全 ≥ 90% + CI 阻断 | 🟡 **机制已建成 / 门槛未达** | 本次接入 JaCoCo + Codecov + 前端 CI job；实测整体 **36.50%**、安全 **52.86%**，距 85% / 90% 差距显著（2026-09-29 仅复跑 `test`、**未重跑 JaCoCo `verify`**，覆盖率基线待下一轮刷新；用例数已由 383 增至 661） |
+| 2 | 覆盖率 ≥ 85% / 安全 ≥ 90% + CI 阻断 | 🟡 **机制已建成 / 门槛未达** | JaCoCo + Codecov + 前端 CI job 已就位；**2026-10-03 实测整体 44.16%（3621/8200）、安全 55.08%（141/256）**，较 09-14 基线（36.50% / 52.86%）双升，但距 85% / 90% 仍差距显著——**8/8 模块全部低于 85%、15 个安全类低于 90%**；用例数 383 → 661 → **794** |
 | 3 | 压测报告有基线数据 | ❌ **未达成** | JMeter / wrk 方案与判定规则齐备，但 k6「尚未接入」、结果记录表为空、未接入 actuator（GAP-04），P95 与内存泄漏**均无数据** |
-| 4 | 前端测试 + 构建无类型错误 | ✅ **达成** | **73 个测试文件 / 828 用例全绿**（2026-09-29 刷新，2026-09-14 为 21 文件 / 225 例）；`tsc --noEmit` 零错误；`max build` 生产构建成功 |
+| 4 | 前端测试 + 构建无类型错误 | ✅ **达成** | **78 个测试文件 / 1093 用例全绿**（2026-10-03 复跑；09-29 为 73 文件 / 828 例、09-14 为 21 文件 / 225 例）；`tsc --noEmit` 零错误；`max build` 生产构建成功 |
 
 **达成度：1 / 4 达成、1 / 4 机制就绪但门槛未达、2 / 4 未达成。**
 
@@ -44,8 +46,9 @@
 | --- | --- |
 | 后端全量 `./mvnw verify`（JDK 21，2026-09-14） | **BUILD SUCCESS**：**383 用例 / 0 失败 / 0 错误 / 0 跳过** |
 | 后端全量 `./mvnw -B test`（JDK 21，**2026-09-29 复跑**） | **BUILD SUCCESS**：**661 用例 / 0 失败 / 0 错误 / 0 跳过**（30 / 55 / 55 / 46 / 225 / 148 / 72 / 30，依 at-common → at-gateway → at-auth → at-transfer → at-permission → at-file → at-collaboration → at-bootstrap）；本轮 A/B/C 三批（通知接线三件 / @提及与保留期 / CE-EE 扩展点）新增回归全绿 |
-| 其中 Testcontainers 集成测试（真实 MySQL/Redis + Flyway） | 认证流程 8 例、**分片上传合并 5 例**、分享配额并发 3 例、传输统计 3 例 —— **全部通过** |
-| 前端 `npm test` | **828 用例 / 73 文件全绿**（2026-09-29 复跑；2026-09-14 为 225 例） |
+| 后端全量 `./mvnw -B -ntp verify`（JDK 21，**2026-10-03 复跑**） | **BUILD SUCCESS**：**794 用例 / 0 失败 / 0 错误 / 0 跳过**（50 / 55 / 81 / 46 / 227 / 171 / 110 / 54，依 at-common → at-gateway → at-auth → at-transfer → at-permission → at-file → at-collaboration → at-bootstrap）；较 09-29 的 661 例净增 **+133**（at-collaboration +38 / at-auth +26 / at-bootstrap +24 / at-file +23 / at-common +20 / at-permission +2，gateway 与 transfer 持平） |
+| 其中 Testcontainers 集成测试（真实 MySQL/Redis + Flyway，2026-10-03） | **45 例全部通过**：认证流程 10、会话别名 E2E 13、消息发送幂等 E2E 5、**分片上传合并 5**、文件内容竞态 E2E 6、分享配额并发 3、传输统计 3（较 09-14 新增 3 个 E2E 集成测试类） |
+| 前端 `npm test` | **1093 用例 / 78 文件全绿**（2026-10-03 复跑；09-29 为 828 例 / 73 文件、09-14 为 225 例 / 21 文件） |
 
 > 说明：这些测试覆盖了冒烟用例集的**部分**链路（如分片上传、认证、分享限额），但**不能替代** Apifox 冒烟用例的端到端结论（用例还覆盖建号、审批、菜单、审计导出等未入库自动化路径）。
 
@@ -70,74 +73,95 @@
 > 📌 覆盖率判定规则（JaCoCo 语义）：**85% 按模块（BUNDLE）逐一判定**，**90% 按类（CLASS）逐一判定**（类名含 `.security.`）。
 > ⚠️ **`check` 当前为 report-only**：`<haltOnFailure>false</haltOnFailure>` —— verify 会**打印判定明细但不阻断构建**。
 > 原因见下方「门槛未达」：直接硬门禁会让 **CI 永久红灯、阻断所有合并**。**达标后删除该行即变为硬门禁**（`pom.xml` 中已就地标注 ⛔）。
+> 🔬 **2026-10-03 实测佐证 report-only 确实生效**：该轮 `verify` 中 `jacoco:check` 共打印 **23 条规则违规**
+> （**8 条 BUNDLE**——8/8 模块全部低于 0.85；**15 条 CLASS**——安全类低于 0.90），整轮构建仍为 **BUILD SUCCESS**。
 
-### 覆盖率实测基线（2026-09-14，`./mvnw verify` 后统计 `target/site/jacoco/jacoco.csv`）
+### 覆盖率实测基线（**2026-10-03**，`./mvnw -B -ntp verify` 后统计 `target/site/jacoco/jacoco.csv`）
 
-| 模块 | 行覆盖率 | 已覆盖行 | 总行数 |
+| 模块 | 行覆盖率 | 已覆盖行 | 总行数 | 09-14 基线 | 变化 |
+| --- | --- | --- | --- | --- | --- |
+| `at-bootstrap` | 83.70% | 113 | 135 | 83.70% | —（**距 85% 仅 1.30pp**） |
+| `at-permission` | 78.61% | 1169 | 1487 | 80.64% | 🔻 −2.03pp（分母 1446 → 1487 扩张快于测试增长，非覆盖退化） |
+| `at-common` | 74.42% | 320 | 430 | 65.14% | 🔼 +9.28pp |
+| `at-transfer` | 68.58% | 299 | 436 | 62.18% | 🔼 +6.40pp |
+| `at-collaboration` | 51.18% | 756 | 1477 | 无数据 | 🆕 首次纳入 |
+| `at-auth` | 41.07% | 322 | 784 | 29.79% | 🔼 +11.28pp |
+| `at-gateway` | 35.14% | 91 | 259 | 23.39% | 🔼 +11.75pp |
+| `at-file` | **17.26%** | 551 | 3192 | **3.30%** | 🔼 +13.96pp（**仍为最大缺口**） |
+| **全部模块** | **44.16%** | **3621** | **8200** | **36.50%** | 🔼 **+7.66pp** |
+
+| 安全范围（包名含 `security`，行维度） | 覆盖率 | 已覆盖 / 总行 | 09-14 基线 |
 | --- | --- | --- | --- |
-| `at-permission` | 80.64% | 1166 | 1446 |
-| `at-bootstrap` | 83.70% | 113 | 135 |
-| `at-common` | 65.14% | 114 | 175 |
-| `at-transfer` | 62.18% | 240 | 386 |
-| `at-auth` | 29.79% | 129 | 433 |
-| `at-gateway` | 23.39% | 51 | 218 |
-| `at-file` | **3.30%** | 79 | 2391 |
-| `at-collaboration` | 无数据（**2026-09-29 已补测试：72 例**，本条为 09-14 基线，见下方说明） | — | — |
-| **全部模块** | **36.50%** | **1892** | **5184** |
+| `at-transfer.security` | 83.33% | 5 / 6 | 83.33% |
+| `at-permission.security` | 80.00% | 4 / 5 | 80.00% |
+| `at-file.security` | 71.79% | 28 / 39 | 71.79% |
+| `at-auth.security` | 53.61% | 104 / 194 | 48.54% |
+| `at-common.security` | 0.00% | 0 / 6 | 0.00% |
+| `at-collaboration.security` | 0.00% | 0 / 6 | 无数据 |
+| **安全合计** | **55.08%** | **141 / 256** | **52.86%（120 / 227）** |
 
-| 安全范围（包名含 `security`，行维度） | 覆盖率 | 已覆盖 / 总行 |
-| --- | --- | --- |
-| `at-transfer.security` | 83.33% | 5 / 6 |
-| `at-permission.security` | 80.00% | 4 / 5 |
-| `at-file.security` | 71.79% | 28 / 39 |
-| `at-auth.security` | 48.54% | 83 / 171 |
-| `at-common.security` | 0.00% | 0 / 6 |
-| **安全合计** | **52.86%** | **120 / 227** |
+> 📌 **安全口径说明（勿误算）**：上表按**包名含 `security`** 统计，与 `pom.xml` 规则
+> `<element>CLASS</element>` + `<include>*security.*</include>` 的实际判定范围一致——该模式匹配「全限定类名含 `.security.`」，
+> 因此 `at-auth` 的 `config/SecurityConfig`（6 / 41 行，FQN 不含 `.security.`）**不计入**；
+> 若把它一并计入会得出 **49.49%（147 / 297）的偏低值，勿采用**。`at-common.security` / `at-collaboration.security` 各仅 6 行
+> （前者为 `UserAdminPort` / `UserLookupPort` 的内嵌 record，后者为 `CurrentUserContext`），是安全项最易补齐的部分。
 
-> ✅ `at-collaboration` **已不再无数据（2026-09-29）**：该模块已补测试（当前 **72 例**，覆盖站内通知 / 会话列表 /
-> 消息发送与撤回 / 保留期清理），JaCoCo 会随下一轮 `verify` 自动纳入报告与判定；本覆盖率表为 **2026-09-14 基线**，
-> **未含**本轮 A/B/C 三批的增量代码与测试。
+> ✅ `at-collaboration` **已正式纳入判定（2026-10-03）**：JaCoCo 已产出该模块报告并参与 `check` 判定（51.18%，110 例）。
+> 上一版「说明」中「JaCoCo 会随下一轮 `verify` 自动纳入」的预期**已在本轮兑现**。
 
 ### 差距与达标路径（按性价比排序）
 
-1. **`at-file`（3.3% / 1893 未覆盖行）是最大缺口**：`com.anttransfer.file.service` 单包 1893 行未覆盖（分片上传服务层），
-   `controller` / `storage` / `util` / `job` / `model.vo` 全为 0%。这是抬升整体覆盖率**唯一的关键路径**。
-2. `at-gateway` 23.4%：`filter`（0/31）、`error`（0/79）、`ratelimit`（0/34）、`config`（0/23）——这些是**横切安全逻辑**，应优先补。
-3. `at-auth` 29.8%：`auth.service` 17.91%（36/201）、`auth.config` 14.89%（7/47）——登录/令牌主链路。
-4. 剩余模块已接近目标（permission 80.6% / bootstrap 83.7%），小幅补齐即可越过 85%。
-5. 达到目标后：删除 `pom.xml` 中的 `<haltOnFailure>false</haltOnFailure>`，并把 `codecov.yml` 的 project target 由 36% 上调至 85%。
+1. **`at-file`（17.26%，2641 未覆盖行）是最大缺口，独占全部未覆盖行的 57.7%（2641 / 4579）**：
+   `com.anttransfer.file.service` 单包即 **2143 行未覆盖**（218 / 2361，9.2%，分片上传服务层），
+   `controller`（0 / 120）、`spi`（0 / 17）、`model.dto`（0 / 16）为 0%。这是抬升整体覆盖率**唯一的关键路径**。
+2. `at-gateway` 35.14%（91 / 259）：`error`（0 / 79）、`ratelimit`（0 / 34）、`filter`（0 / 31）、`config`（2 / 25）——这些是**横切安全逻辑**，应优先补；
+   同模块 `transport`（97.3%）与 `exception`（100%）已达标，可直接作为门禁范本。
+3. `at-auth` 41.07%（322 / 784）：`service` 36.6%（159 / 435）、`security` 53.61%（104 / 194）、`controller`（0 / 45）、`config` 28.3%（15 / 53）——登录 / 令牌主链路。
+4. `at-collaboration` 51.18%（756 / 1477）：`service` 已达 84.7%（597 / 705），但 `ws` 仅 20.7%（70 / 338）、`notify`（0 / 121）、`event`（0 / 67）、
+   `controller`（0 / 58）全为 0%——本轮新增用例集中在 service 层，横切层仍是空白。
+5. **最接近目标**：`at-bootstrap` 83.70%（距 85% 仅 **1.30pp**）与 `at-permission` 78.61%（距 **6.39pp**），小幅补齐即可先行越过 85%。
+6. 达到目标后：删除 `pom.xml` 中的 `<haltOnFailure>false</haltOnFailure>`，并把 `codecov.yml` 的 project target 由 36% 上调至 85%
+   （当前 44.16% 已高于 36% 防回归下限，**上调须先完成第 1~4 项**）。
 
 ### 「CI 中测试失败即阻断合并」
 
 - 机制侧**已具备**：`backend` job 执行 `./mvnw -B -ntp verify`，测试失败 / Spotless 违规 / （达标后的）覆盖率不达标都会让该 job 变红；`frontend` job 同理。
 - 但「**阻断合并**」还需**仓库侧设置**：把 `Backend (Maven verify)` 与 `Frontend (Vitest + Build)` 配置为 **required status checks**（分支保护）。
   **该设置不在仓库内**（`.github/` 无分支保护配置文件），属待完成的仓库设置项，需在 GitHub 仓库 Settings 中手工开启。
+- ⚠️ **更前置的缺口（2026-10-03 核查新增）**：仓库内**不存在任何 Gitee 侧 CI 配置**（已扫描 `.gitee/` / `.workflow` / `Jenkinsfile` /
+  `.gitlab-ci.yml`，均无），CI 仅由 `.github/workflows/` 承载；而远端 `origin` 指向 **Gitee**（`github` 为镜像仓库）。
+  即**推送主仓库（Gitee）时不会触发任何 CI**——「测试失败即阻断合并」在**主开发路径上是空转的**。
+  这与上一条「job 会红但未配 required」是**两个独立缺口**：即使配好 required status checks，也只对**镜像仓库**生效，
+  主仓库仍需自建 CI（或把开发流程切到镜像仓库）。
 
-### ⚠️ 本地行尾误判（勿当成 CI 失败）+ 它掩盖的 14 处真违规
+### ⚠️ 本地行尾误判（勿当成 CI 失败）+ 已收口的 14 处真违规
 
 Windows 本机执行 `./mvnw verify` 时，Spotless 会因 **39 个 Java 文件**工作区换行符为 **LF** 而报格式违规
 （Spotless 默认按 `PLATFORM` 取换行符，Windows = CRLF；分布：at-transfer 24 / at-permission 6 / at-common 3 /
 at-bootstrap 2 / at-file 2 / at-auth 1 / at-gateway 1）。这 39 个不能一概而论，须分两类处理：
 
-| 类别 | 数量 | 判据 | Linux CI |
-| --- | --- | --- | --- |
-| 纯行尾误判（工作区 LF） | 25 | `git ls-files --eol` 索引为 LF，Linux 的 `PLATFORM` 换行符亦为 LF | **不会红** |
-| license header 残缺 | 14 | 与平台无关 | **必然红** |
+| 类别 | 数量 | 判据 | Linux CI | 当前状态（2026-10-03） |
+| --- | --- | --- | --- | --- |
+| 纯行尾误判（工作区 LF） | 25 | `git ls-files --eol` 索引为 LF，Linux 的 `PLATFORM` 换行符亦为 LF | **不会红** | 本地偶发，无需处理 |
+| license header 残缺 | 14 | 与平台无关 | ~~必然红~~ | ✅ **已修复**（`3d21b20`） |
 
 - **25 个纯行尾**：本地执行一次 `./mvnw spotless:apply` 把工作区转成 CRLF 即可消除，且 `git add -n .` **不会**暂存它们
   （`core.autocrlf=true` 下 CRLF 会被规范化回 LF，与索引一致 —— `git status` 显示的 `M` 是假象）。
-- **14 个 header 残缺**（全在 `at-transfer`，随 `794f1ee` 2026-09-14 引入）：header 只有
-  `* Licensed under the Apache License, Version 2.0.` 一行，缺 Apache-2.0 完整正文。涉及
-  `config/TransferProperties.java`、`controller/TransferController.java`、`model/dto/{MergeRequest,PrecheckRequest}.java`、
+- ✅ **14 个 header 残缺已收口**（2026-10-03 核实）：该批文件（全在 `at-transfer`，随 `794f1ee` 2026-09-14 引入，当时 header 只有
+  `* Licensed under the Apache License, Version 2.0.` 一行、缺 Apache-2.0 完整正文）已由提交 **`3d21b20`**
+  「chore(transfer): 补全 14 个源文件的 Apache-2.0 许可头，修掉 CI 必然红的 Spotless 真违规」统一补全。
+  复核方式：扫描 `server/**/src/{main,test}/java/**/*.java` 共 **469** 个文件，**全部**含
+  `www.apache.org/licenses/LICENSE-2.0` 与 `limitations under the License` 完整正文，**不完整计数 = 0**；
+  2026-10-03 全量 `verify` 中 Spotless 亦为 **9/9 模块通过（0 needs changes）**。
+  名单（仅供溯源）：`config/TransferProperties.java`、`controller/TransferController.java`、`model/dto/{MergeRequest,PrecheckRequest}.java`、
   `model/entity/TransferTask.java`、`model/vo/{ChunkPartsVO,MergeResultVO,PartUploadedVO,PrecheckResultVO}.java`、
-  `repository/TransferTaskMapper.java`、`service/{ChunkIndexes,ChunkStore,TransferTaskService,TransferTaskStateStore}.java`
-  —— 必须 `spotless:apply` 补全后**提交**；第 1 节证据表那次 BUILD SUCCESS 对这 14 个文件不成立。
+  `repository/TransferTaskMapper.java`、`service/{ChunkIndexes,ChunkStore,TransferTaskService,TransferTaskStateStore}.java`。
 
-> ⚠️ `-Dspotless.check.skip=true` 会**同时**跳过换行符与 header 检查，只能用于「已确认是 25 个纯行尾」的场景，
-> **不可当常规做法**（它会掩盖上面 14 个真违规）。正确顺序：`./mvnw spotless:apply` → `./mvnw -B -ntp verify`。
+> ⚠️ `-Dspotless.check.skip=true` 会**同时**跳过换行符与 header 检查，只能用于「已确认是纯行尾误判」的场景，
+> **不可当常规做法**。正确顺序：`./mvnw spotless:apply` → `./mvnw -B -ntp verify`。
 >
-> 📝 本段 2026-09-15 复核更正：原记录称「Spotless 会因 3 个文件…… 故 CI 不会红」，实测工作区 LF 的文件为 **39 个**
-> （at-common 那 3 个只是构建最先撞上的），且其中 14 个与平台无关、CI 必然红。
+> 📝 沿革：2026-09-15 复核更正（原记录称「3 个文件……故 CI 不会红」→ 实测工作区 LF 为 **39 个**，其中 14 个与平台无关、CI 必然红）；
+> **2026-10-03 收口**——14 个 header 已由 `3d21b20` 修复，本段起不再是待办项。
 
 ---
 
@@ -164,13 +188,13 @@ at-bootstrap 2 / at-file 2 / at-auth 1 / at-gateway 1）。这 39 个不能一�
 
 ## 4️⃣ 前端关键 Hook/组件有测试 + `npm run build` 无类型错误 —— ✅ 达成
 
-### 证据（2026-09-14 实跑；2026-09-29 刷新）
+### 证据（2026-09-14 首次实跑；**2026-10-03 全量刷新**）
 
-| 项目 | 命令 | 结果 |
-| --- | --- | --- |
-| 单元/组件测试 | `npm test` | **73 个测试文件 / 828 用例全部通过**（2026-09-29 复跑；2026-09-14 为 21 文件 / 225 例） |
-| 类型检查 | `npm run tsc`（`tsc --noEmit`） | **零错误** |
-| 生产构建 | `npm run build`（`max build`） | **成功**（产出 `web/dist`） |
+| 项目 | 命令 | 结果 | 最近验证 |
+| --- | --- | --- | --- |
+| 单元/组件测试 | `npm test` | **78 个测试文件 / 1093 用例全部通过**（09-29 为 73 文件 / 828 例、09-14 为 21 文件 / 225 例） | ✅ **2026-10-03 本轮实跑** |
+| 类型检查 | `npm run tsc`（`tsc --noEmit`） | **零错误** | 2026-09-29（本轮未复跑） |
+| 生产构建 | `npm run build`（`max build`） | **成功**（产出 `web/dist`） | 2026-09-29（本轮未复跑） |
 
 关键 Hook/组件覆盖（示例，非全量）：
 
@@ -217,10 +241,12 @@ cd web && npm test && npm run tsc && npm run build
 | 优先级 | 事项 | 关联标准 | 负责面 |
 | --- | --- | --- | --- |
 | P0 | 执行 Apifox 冒烟集合（S01–S17）并回填 `joint-debug-prep.md` §5 | 1 | 测试 / 联调 |
+| P0 | **为主仓库（Gitee）接通 CI，或把开发流切到 GitHub 镜像**（当前主仓库推送不触发任何 CI） | 2 | 仓库管理员 |
 | P0 | GitHub 仓库设置 required status checks（backend + frontend） | 2 | 仓库管理员 |
-| P1 | 补齐 `at-file` 服务层测试（1893 行未覆盖，整体覆盖率关键路径） | 2 | 后端 |
-| P1 | 补 `at-gateway` filter / error / ratelimit 横切逻辑测试 | 2 | 后端 |
+| P1 | 补齐 `at-file` 服务层测试（**2143 行未覆盖**，独占全部未覆盖行 57.7%，整体覆盖率关键路径） | 2 | 后端 |
+| P1 | 补 `at-gateway` error / ratelimit / filter 横切逻辑测试（0 / 79、0 / 34、0 / 31） | 2 | 后端 |
+| P1 | 补 `at-collaboration` 横切层：`ws`（70 / 338）、`notify`（0 / 121）、`event`（0 / 67） | 2 | 后端 |
 | P1 | 跑一轮 JMeter/wrk 基线并回填结果表；做 ≥ 2 h 长稳内存观测 | 3 | 测试 / 运维 |
-| P2 | 删除 `pom.xml` 的 `haltOnFailure=false`，`codecov.yml` target 上调至 85% | 2 | 后端 |
+| P2 | 删除 `pom.xml` 的 `haltOnFailure=false`（当前 23 条违规均不阻断），`codecov.yml` target 由 36% 上调至 85% | 2 | 后端 |
 | P2 | 接入 actuator + micrometer（GAP-04），降低压测观测成本 | 3 | 后端 |
 | P2 | 把可自动化冒烟用例沉淀到 `tests/e2e`（Playwright） | 1 | 测试 |

@@ -656,7 +656,8 @@
 | `docs/architecture/use-case-flows.md` | 头部状态刷新；§1.1 步骤 7 补 `TransferCompletedEvent`；§2.1 事件表补通知类副作用；补 @提及、取件回执、下载水印等已落地步骤 | A/B/C（✅ 2026-09-29） |
 | `docs/api/README.md` | §1 前缀表补 `mentionUserIds` / `mentionUnreadCount` 与通知类型 8/9/4；§7 补三类系统通知帧 | A/B（✅ 2026-09-29） |
 | `docs/api/error-codes.md` | §五副作用补取件回执（`9`）/ 传输完成（`8`）/ 到期前提醒（`4`）；`4011` 锁定提醒改为「恰好跨过阈值发一次」 | A（✅ 2026-09-29） |
-| `docs/development/README.md` · `dod.md` | 测试用例与覆盖率基线刷新（后端 661 例 / 前端 73 文件 828 例）；AT-DIFF 计数由「5 处」更正为「登记 11 项、代码内 3 处」 | 回归（✅ 2026-09-29） |
+| `docs/development/README.md` · `dod.md` | 测试用例统计刷新（后端 661 例 / 前端 73 文件 828 例；⚠️ **当轮仅复跑 `test`，未重跑 JaCoCo `verify`**，故覆盖率基线仍沿用 2026-09-14 版）；AT-DIFF 计数由「5 处」更正为「登记 11 项、代码内 3 处」 | 回归（✅ 2026-09-29） |
+| `docs/development/README.md` · `dod.md` | **用例数与覆盖率基线全量刷新**（重跑 `./mvnw -B -ntp verify` + `npm test`）：后端 **794 例** / 前端 **78 文件 1093 例**；覆盖率整体 **36.50% → 44.16%**、安全 **52.86% → 55.08%**（口径：包名含 `security`，与 `pom.xml` 的 `*security.*` 规则一致）；`at-collaboration` 首次产出报告并纳入判定；同时更正 §2「14 处 license header 真违规」为**已由 `3d21b20` 收口**，并新增「主仓库（Gitee）无任何 CI 配置」的缺口登记 | 回归（✅ 2026-10-03） |
 | `docs/deployment/README.md` | 环境变量表补 `message-cleanup-cron` / `message-retention-days`（下限 30 硬钳制）；上线清单补通知回执与保留期清理核验 | B（✅ 2026-09-29） |
 | `docs/architecture/red-team-review.md` · `docs/prd/README.md` §4.2 | 工作台指标（US-11）数据源收敛并回写红队三处表述（速览 F / 位置与证据 / 收敛红线）：`TransferStatisticsService` 直读 `sys_operation_log` 单表聚合（走 `idx_user_time`），**不另立统计表 / 不用 Redis 计数器** | PRD-05（✅ 2026-09-29） |
 

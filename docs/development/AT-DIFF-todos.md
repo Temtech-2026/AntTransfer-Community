@@ -279,6 +279,9 @@ IDE 提示（任选其一）：
 > `TODO[AT-DIFF-]` 标记**（位置无唯一锚点，也不属「写法待裁决」），只在本文档登记；
 > 文档头部 grep 计数仍为 3 处（02 / 03 / 05）。
 >
+> **（GAP-11 补记于 2026-10-02）**：来源与上同（§4.1 实现现状核查），但是**做 10 GiB 级上传实跑补证时实测命中**的
+> ——入口放行证据来自真跑，非纯静态复核；其「失败态暂存无法回收」部分同时暴露了 `at-transfer` 缺失暂存 TTL 清扫。
+>
 > **已由现有条目覆盖、本节不重复登记的缺口**（仅交叉引用）：
 > - **共享空间 P0 未落地**（`sys_space` 仅骨架实体、无 Controller / Service / 成员角色端点）→ 见 **D-11**
 >   （两表结构已落地，待 at-collaboration 四层接管读写）；
@@ -306,6 +309,7 @@ IDE 提示（任选其一）：
 | [GAP-08](#gap-08轻-im-缺-提及与消息保留策略) | ~~轻 IM 缺 @ 提及与「消息保留 ≥ 30 天」策略~~ **✅ 已关闭（2026-09-29）**：行级 `mentioned` 标记 + `mentionUserIds` 上行 + 会话 `mentionUnreadCount`；`ChatRetentionScheduler` 分批物理清理（下限 30 天） | P1 验收缺口 | `at-collaboration/.../service/ChatService.java`、`.../job/ChatRetentionScheduler.java`、`sql/V18__chat_mention_and_retention.sql` |
 | [GAP-09](#gap-09安全徽标所需字段未下发) | 安全徽标所需字段未下发：`watermarkEnabled` / `expireAt` | P1 能力缺口 | `at-file/.../model/vo/FileNodeVO.java`、`web/src/pages/file/components/SecurityBadges.tsx` |
 | [GAP-10](#gap-10个人资料自助仅落头像缺改昵称) | 个人资料自助仅落头像：缺「本人改昵称」端点（`PUT /v1/users/me`） | P1 能力缺口 | `server/at-auth/.../controller/UserSelfController.java` |
+| [GAP-11](#gap-11分片上传未在入口校验单文件上限) | 分片路径的入口上限（64 GiB）与文件域上限（10 GiB）两套并存且未对齐：10~64 GiB 的文件被受理、全量传完后才在 `merge` 被 4006 拒绝；失败态暂存膨胀到 2 × 文件大小且无回收路径 | P0 验收 / 资源缺口 | `at-transfer/.../service/TransferTaskService.java`（`resolveChunkSize` / `merge`）、`at-file/.../service/FileContentService.java`（`upload`） |
 
 ---
 
@@ -539,6 +543,49 @@ IDE 提示（任选其一）：
   ④ 同步 §1 前缀表与 PRD §4 / §4.1 的表述。
 - **触发时机**：个人中心 / 用户体验完善期；建议与「群成员展示名口径」相关需求一并做
   （两者共用同一份展示名回落规则，分两次做必然出现两套口径）。
+
+### GAP-11：分片上传未在入口校验单文件上限
+
+> **状态**：待修（2026-10-02 实跑发现）。**发现方式**：做「10 GiB 级上传实跑补证」时，
+> 顺手按 §7「超过上限的文件在上传入口即被拒绝并提示」做边界实测，入口未拒。
+
+- **现象**：上传有两条路径、**两套互不知晓的上限**：
+  - **分片路径** `POST /v1/transfers/precheck` 只按自己的天花板判定 —— `max-chunk-size`（64 MiB）×
+    `max-chunk-count`（1024）= **64 GiB**。该守卫的真实目的是保护 `uploaded_indexes varchar(8192)`
+    （1024 片序列化后 4011 字符，见 PRD §4.1「分片上传 / 断点续传」行 2026-10-02 凭证），**完全不看文件域上限**；
+  - **文件域上限** `FileProperties.maxFileSize`（默认 **10 GiB**，`application.yml` 未覆盖）只在
+    `FileContentService.upload` 落盘前生效，而分片路径要走到 `merge` 才会经过它；
+  - **直传路径** `/v1/files/instant` 也先回「秒传未命中」，同样不以 4006 前置拒绝。
+  结果：**10 GiB < 大小 ≤ 64 GiB** 的文件会被受理、**全量传完并完成拼件**后，才在 `merge` 被 4006 拒绝。
+- **证据**（2026-10-02 实跑，`sizeBytes=10738466816` = 10 GiB + 1 MiB，默认配置）：
+  - **入口放行**：`POST /v1/transfers/precheck` → `http=200` / `code=4001`（`秒传未命中，请按分片上传`）、
+    `chunkSize=11534336`（11 MiB，自动放大）、`chunkCount=931`；
+  - **全量白传**：931 / 931 片全部 `code=0`，`sentMB=10241`、`elapsed=119s`（≈86 MB/s）、暂存 10241 MB；
+  - **迟到的拒绝**：`POST /v1/transfers/{id}/merge` → `http=413` / `code=4006`（`文件大小超出限制`）、
+    `elapsed=35s` —— 即**带宽与「拼件 + 服务端重算 SHA-256」都消耗完之后**才失败；
+  - **失败态暂存膨胀且无法回收**：任务 `status=4`、`error_msg=文件大小超出限制`；任务目录 = 931 个 `*.part`
+    （10241 MB）**+ `merged.bin`（10241 MB）= 20482 MB（2 × 文件大小）**；
+    `DELETE /v1/transfers/{uploadId}` → `http=409` / `code=4102`（`当前传输状态不允许该操作`，
+    因 `CANCELABLE_STATUSES` 只含 `0/1/2/6`，失败态 `4` 不在内），暂存仍 20482 MB；
+    `at-transfer` 全模块 `@Scheduled` **零命中**（无暂存 TTL 清扫）→ 该目录**无任何 API / 定时回收路径**，
+    本次由人工删盘回收（20482 MB → 0）。
+  - **对照**：同尺寸 `POST /v1/files/instant` 返回 `code=4001`（先判内容是否存在，而非按上限拒绝）。
+- **代码锚点**：`TransferTaskService#resolveChunkSize`（守卫只到 `maxChunkSize × maxChunkCount`）→
+  `TransferTaskService#merge`（先 `chunkStore.merge` 拼件 + 重算 SHA-256，再 `fileIngestPort.ingest`）→
+  `FileIngestAdapter#ingest` → `FileContentService#upload`（第 99-101 行 `sizeBytes > properties.getMaxFileSize()`
+  → `FILE_TOO_LARGE`，位置在 `storeContent` 之前）。
+- **影响**：① 用户白传最多 64 GiB（带宽 + 暂存盘），§7「超过上限的文件在**上传入口**即被拒绝并提示」在分片路径**不成立**；
+  ② 失败态把暂存从 1× 抬到 2× 文件大小且不可回收，叠加「不取消就永久占盘」与「每用户 `max-active-tasks=3`」，
+  构成可自伤的暂存盘耗尽路径（单任务实测滞留 20 GiB）；③ **正确性无损**：上限守卫在 `storeContent` 之前，
+  内容寻址库不会产生垃圾，`sys_file` 无残留。
+- **回头需完成**：① **统一上限口径**：把文件域上限下发给 `at-transfer`（经 SPI / 端口查 `FileProperties.maxFileSize`），
+  使 `precheck` 即以 `4006` 拒绝；若产品确认「分片上传可放宽到 64 GiB」，则须让**单一配置源**同时驱动两条路径
+  （现在并存两套且无人协调）；② `instantUpload` 同样补上限校验；③ 非完整性失败也要释放 `merged.bin`
+  （`merge` 的失败分支当前只在 `FILE_INTEGRITY_ERROR` 时 `deleteTaskDir`）；④ 失败态可回收：或把 `status=4`
+  纳入可取消，或落 `TransferStagingCleaner` —— 参照 GAP-08 采用的 `FileCleanupScheduler` 同构方案
+  （分布式锁 + 分批 + 幂等）；⑤ 与 **GAP-01 遗留项③**（前端超限前置校验）同批：服务端入口拒得住，前端提示才有依据。
+- **触发时机**：与 **GAP-01 遗留项**同批。若近期要上「大文件（> 10 GiB）分片上传」需求，**必须先做 ①**，
+  否则该需求会直接撞上 4006（且是在传完之后）。
 
 ---
 

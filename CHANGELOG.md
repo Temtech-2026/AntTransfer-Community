@@ -1087,6 +1087,18 @@
 
 ### 🔄 Changed（变更）
 
+- 📄 **修正「双数据库支持」误导性口径（2026-10-02）**：`sql/README.md` 末条原以「🗄️ 双数据库支持」起头，
+  正文却写「V1/V2 为 MySQL 方言、需改写脚本后再启用」——**标题与正文自相矛盾**，最容易被摘出来当成
+  「PG 也能直接跑」。现拆成两条明确断言：MySQL 为**唯一可用存储**（`V1` ~ `V21` 全 21 个脚本即
+  MySQL 8 方言，仅此一套可执行）；PostgreSQL **仅为示例 profile，不构成「双数据库支持」**，并补记
+  「`V1` ~ `V21` 全为 MySQL 方言（13 个脚本带「PostgreSQL 差异点」注记）」、6 条必须逐条改写点
+  （tinyint→smallint / datetime→timestamp / 列内 `on update CURRENT_TIMESTAMP` 转触发器 /
+  行内 `KEY`·`UNIQUE KEY` 转独立 `CREATE INDEX` / `COMMENT` 转 `COMMENT ON` / `collate`·`ENGINE` 无对应写法）
+  与「改写完成前 PG 上 Flyway 迁移跑不通」。另 `docker-compose.dev.yml` 头部「直接连
+  localhost:3307 / localhost:6379」补注：3307 / 6379 只是**默认值**，`.env` 覆盖
+  `MYSQL_PORT` / `REDIS_PORT` 后须按覆盖后端口连（本机 6379 已被其它项目的 redis 容器占用、
+  `.env` 写 `REDIS_PORT=6380`，照抄 6379 会连到别人的 Redis）。
+
 - 🧹 **清理前端模板遗留与仓库空占位目录（2026-10-01）**：
   这些目录/文件自 Ant Design Pro 模板初始化后再没被任何代码或构建引用，却一直挂在忽略清单与目录树里
   消耗注意力；其中 `scripts/simple.js` 更是**危险**的一次性精简脚本——它会用模板路由覆盖
