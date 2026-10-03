@@ -34,8 +34,19 @@
 
 ## 📮 执行
 
-如遇辱骂、骚扰或其他不可接受的行为，请通过维护者在仓库资料中公开的联系方式举报。所有投诉都会被及时审阅与调查，并根据情况采取必要且恰当的回应。维护者有义务对举报人信息保密。
+如遇辱骂、骚扰或其他不可接受的行为，请举报至维护者邮箱 **`temtech2026@163.com`**（也可通过 GitHub 仓库 `Security` 页的私密渠道联系维护者）。
+
+- 🕵️ 所有投诉都会被及时审阅与调查，**举报人信息严格保密**，不会向被举报方透露来源；
+- 🧭 处理方式视情节轻重而定，可能包括：私下沟通提醒、要求公开更正或道歉、删除 / 编辑不当内容、警告、临时或永久禁止参与本社区；
+- ⚖️ 维护者本人若涉及冲突，应回避该事件的处置；
+- 📝 若你不确定某行为是否越界，欢迎先来信询问——我们更愿意在事态恶化前一起解决。
 
 ## 📖 参考
 
 本公约改编自 [Contributor Covenant](https://www.contributor-covenant.org) 2.1 版，可访问 <https://www.contributor-covenant.org/version/2/1/code_of_conduct/> 查看原文。
+
+## 🌐 English Summary
+
+This project adopts the **Contributor Covenant v2.1**. Be kind, be inclusive, respect differing views, accept constructive criticism gracefully, and put the community first. Harassment, insults, personal or political attacks, sexualized language or imagery, and publishing others' private information are **not tolerated**. Maintainers may edit or remove contributions and temporarily or permanently ban participants.
+
+**Reporting**: contact the maintainers at `temtech2026@163.com` (or via the repository's `Security` page). All reports are reviewed promptly and **kept confidential**; the response is proportional to the severity of the incident, ranging from a private warning to a permanent ban.

@@ -7,6 +7,9 @@ body:
     attributes:
       value: |
         感谢你的建议！请描述清楚「要解决什么问题」，而不仅是「要什么功能」。
+
+        - 🧭 使用类提问请改用 `question` 模板（渠道总览见 `SUPPORT.md`）；🔒 安全漏洞请按 `SECURITY.md` 私密披露。
+        - Thanks for your proposal — focus on the **problem to solve**, not just the feature you want. Usage questions belong in the `question` template; **security issues must go through `SECURITY.md`.**
   - type: textarea
     id: problem
     attributes:

@@ -1,0 +1,59 @@
+name: 使用提问
+description: 询问使用方法、配置或排查思路（非缺陷、非功能建议）
+title: "[Question]: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        欢迎提问 🙌 提问前花两分钟自查，通常能更快得到答案：
+
+        - 📚 先查文档：`docs/getting-started/`（快速开始）· `docs/deployment/`（部署）· `docs/development/`（开发）
+        - 🔍 再搜 Issue：**含已关闭的 Issue**，很多问题已经有人问过
+        - 🧭 支持渠道总览见仓库根 `SUPPORT.md`
+        - 🔒 涉及**安全漏洞**请勿在此提问，请按 `SECURITY.md` 走私密渠道
+
+        Before asking, please search existing issues (including closed ones) and skim the docs above.
+        **Do not report security vulnerabilities here** — follow `SECURITY.md` instead.
+  - type: textarea
+    id: goal
+    attributes:
+      label: 想达成什么（What are you trying to do）
+      description: 请描述目标与使用场景，而不只是贴一段报错。
+      placeholder: 部署到服务器后，希望前端由宿主 Nginx 托管、后端走 compose 三服务，但……
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: 已经试过什么（What have you tried）
+      description: 已查过的文档章节、已执行的命令、已排除的可能原因。
+      placeholder: |
+        1. 已按 docs/deployment/README.md 配置 .env
+        2. 已执行 docker compose up -d，at-server 状态为 unhealthy
+        3. 已确认 mysql / redis 容器均为 healthy
+    validations:
+      required: true
+  - type: textarea
+    id: detail
+    attributes:
+      label: 相关配置 / 输出
+      description: 命令、日志、截图。⚠️ 请先隐去口令、密钥、真实域名与内网地址等敏感信息。
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: 版本 / 提交
+      description: master@<commit>、Tag 或镜像标签。
+      placeholder: master@1a2b3c4d
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 确认（Confirm）
+      options:
+        - label: 我已搜索过已有 Issue（含已关闭）与相关文档，确认这不是重复提问
+          required: true
+        - label: 我确认这不是安全漏洞（安全漏洞请按 SECURITY.md 私密披露）
+          required: true

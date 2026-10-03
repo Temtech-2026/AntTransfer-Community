@@ -52,9 +52,9 @@
 ```text
 anttransfer-community/
 ├── README.md  LICENSE  CHANGELOG.md
-├── CONTRIBUTING.md  CODE_OF_CONDUCT.md  SECURITY.md
+├── CONTRIBUTING.md  CODE_OF_CONDUCT.md  SECURITY.md  SUPPORT.md
 ├── Makefile  docker-compose.yml  docker-compose.dev.yml  .env.example
-├── .github/{ISSUE_TEMPLATE,workflows,CODEOWNERS}
+├── .github/{ISSUE_TEMPLATE,workflows,CODEOWNERS,PULL_REQUEST_TEMPLATE.md}
 ├── docs/{getting-started,architecture,api,deployment,development}
 ├── server/                # 后端 Maven 多模块
 │   ├── at-common / at-gateway / at-auth / at-transfer
@@ -123,7 +123,7 @@ cd web && npm install && npm run dev
 
 - 🚀 [快速开始](docs/getting-started/README.md) · 🏗️ [架构说明](docs/architecture/README.md) · 🔌 [API 约定](docs/api/README.md)
 - 📋 [产品需求 PRD](docs/prd/README.md) · ☁️ [部署指南](docs/deployment/README.md) · 💻 [开发指南](docs/development/README.md)
-- 🤝 [贡献指南](CONTRIBUTING.md) · 🛡️ [行为准则](CODE_OF_CONDUCT.md) · 🔒 [安全策略](SECURITY.md) · 📝 [更新日志](CHANGELOG.md)
+- 🤝 [贡献指南](CONTRIBUTING.md) · 🛡️ [行为准则](CODE_OF_CONDUCT.md) · 🔒 [安全策略](SECURITY.md) · 🆘 [支持渠道](SUPPORT.md) · 📝 [更新日志](CHANGELOG.md)
 
 ## 🗺️ 路线图 / Roadmap
 

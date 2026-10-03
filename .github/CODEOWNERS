@@ -1,11 +1,57 @@
-# 代码归属（Code Owners）
-# 命中规则的变更将自动请求对应团队/成员 Review。
-# 说明：@anttransfer/community-maintainers 为占位团队，正式 GitHub 团队建立后替换。
+# =============================================================================
+# 代码归属（Code Owners）— AntTransfer Community
+#
+# 作用：变更命中规则时，GitHub 自动把对应团队/成员加为 Reviewer 候选。
+#
+# ⚠️ 边界（别把它当成强制手段）：
+#   · CODEOWNERS 只解决「该请求谁 Review」，**不等于**「必须有几人 Approve」；
+#     强制力来自仓库分支保护规则（Require a pull request before merging）；
+#   · GitHub 分支保护只能设**全局**最少 Approve 人数，无法按目录区分，
+#     因此 CONTRIBUTING.md 的「一般改动 1 人 / 核心模块 2 人」靠约定 + 维护者把关落地；
+#   · 若填写的团队/用户不存在或无写权限，GitHub 会**静默跳过**该条请求（不报错、不阻断），
+#     所以在正式依赖本文件前，必须把下面的占位替换为真实账号，否则等于没有 Review 路由；
+#   · 语法限制：`#` 注释必须**独占一行**，不要在规则行尾追加注释（会被当成 owner 解析）。
+#
+# 📌 现状：默认规则指向占位团队 @anttransfer/community-maintainers（尚未创建）。
+#   建立 GitHub 团队后，请按下方「核心目录」清单取消注释并替换为真实团队/成员。
+# 📌 适用面：本文件仅对 **GitHub 镜像仓库**生效；Gitee 主仓库不支持 CODEOWNERS，
+#   请在 Gitee 侧用「保护分支 + 指定审查人」做等价配置（人数口径同上）。
+# =============================================================================
 
-# 默认归属：核心维护团队
+# 默认归属：核心维护团队（占位，需替换）
 * @anttransfer/community-maintainers
 
-# 按目录可进一步细化，例如：
-# /server/at-auth/        @anttransfer/auth-maintainers
-# /web/                   @anttransfer/frontend-maintainers
-# /docs/                  @anttransfer/docs-maintainers
+# -----------------------------------------------------------------------------
+# 核心目录 —— 需 2 人 Review（见 CONTRIBUTING.md § Review 口径）
+# 启用方式：取消对应行注释，并把占位团队替换为真实团队/成员（多个用空格分隔）。
+# -----------------------------------------------------------------------------
+
+# 共享内核：全模块公共依赖，改动影响面最大
+# /server/at-common/          @anttransfer/core-maintainers
+# 认证、令牌与登录链路
+# /server/at-auth/            @anttransfer/security-maintainers
+# RBAC、权限点与审批
+# /server/at-permission/      @anttransfer/security-maintainers
+# 文件落盘、秒传、外发链接（含配额与提取码）
+# /server/at-file/            @anttransfer/core-maintainers
+# 传输编排与业务主流程
+# /server/at-transfer/        @anttransfer/core-maintainers
+# 数据库迁移：只增不改，回滚成本最高
+# /sql/                       @anttransfer/db-maintainers
+# 镜像构建与非 root / 健康检查口径
+# /Dockerfile                 @anttransfer/ops-maintainers
+# 编排：卷、探针、依赖顺序、端口绑定
+# /docker-compose.yml         @anttransfer/ops-maintainers
+# /docker-compose.dev.yml     @anttransfer/ops-maintainers
+# CI 门禁与安全扫描
+# /.github/workflows/         @anttransfer/ops-maintainers
+# 披露流程与时限口径本身
+# /SECURITY.md                @anttransfer/security-maintainers
+
+# -----------------------------------------------------------------------------
+# 其余目录 —— 一般 1 人 Review（可按需细分，命名与上面保持一致）
+# -----------------------------------------------------------------------------
+
+# /web/                       @anttransfer/frontend-maintainers
+# /docs/                      @anttransfer/docs-maintainers
+# /deploy/                    @anttransfer/ops-maintainers

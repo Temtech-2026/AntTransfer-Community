@@ -7,6 +7,9 @@ body:
     attributes:
       value: |
         感谢提交 Bug。请尽量提供完整信息，缺失关键字段的 Issue 可能被标记为待补充。
+
+        - 🧭 支持渠道总览见仓库根 `SUPPORT.md`；🔒 **安全漏洞请勿在此提交**，请按 `SECURITY.md` 私密披露。
+        - Thanks for filing a bug report — please fill in every required field; issues missing key information may be labelled as needing more info. **Security vulnerabilities must go through `SECURITY.md`, not this public form.**
   - type: textarea
     id: description
     attributes:
